@@ -71,8 +71,7 @@ fn is_dev() -> bool {
 
 #[tauri::command]
 fn are_updates_enabled() -> bool {
-    cfg!(feature = "updater")
-        && env::var("MODRINTH_EXTERNAL_UPDATE_PROVIDER").is_err()
+    false // Disabled for Bedringh
 }
 
 #[cfg(feature = "updater")]

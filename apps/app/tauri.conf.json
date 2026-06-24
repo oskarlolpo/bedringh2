@@ -62,10 +62,10 @@
 			}
 		]
 	},
-	"productName": "Modrinth App",
+	"productName": "Bedringh",
 	"version": "../app-frontend/package.json",
-	"mainBinaryName": "Modrinth App",
-	"identifier": "ModrinthApp",
+	"mainBinaryName": "Bedringh",
+	"identifier": "com.bedringh.app",
 	"plugins": {
 		"deep-link": {
 			"desktop": {
