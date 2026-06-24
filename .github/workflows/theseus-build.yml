@@ -150,7 +150,7 @@ jobs:
           if [ '${{ startsWith(github.ref, 'refs/tags/v') || inputs.sign-windows-binaries }}' = 'true' ]; then
             choco install jsign --ignore-dependencies # GitHub runners come with a global Java installation already
           else
-            dasel delete -f apps/app/tauri-release.conf.json 'bundle.windows.signCommand'
+            dasel delete -f apps/app/tauri-release.conf.json 'bundle.windows.signCommand' || true
           fi
 
       - name: Build macOS app
