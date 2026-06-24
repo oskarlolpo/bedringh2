@@ -171,6 +171,8 @@ defineExpose({
 </template>
 
 <style scoped lang="scss">
+@import '../../../../../../../../packages/assets/styles/astralrinth/soft-inputs.scss';
+
 .modal {
 	position: absolute;
 }

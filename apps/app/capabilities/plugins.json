@@ -92,6 +92,7 @@
 				}
 			]
 		},
+		"auth:allow-offline-login",
 		"auth:default",
 		"import:default",
 		"jre:default",

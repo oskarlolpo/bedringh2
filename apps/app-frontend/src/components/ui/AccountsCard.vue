@@ -94,6 +94,16 @@
 			</div>
 		</div>
 	</Accordion>
+	<AccountsInputModals
+		ref="accountsInputModals"
+		v-model:offlinePlayerName="offlinePlayerName"
+		:ely-by-login-disabled="false"
+		ely-by-login-value=""
+		ely-by-password=""
+		ely-by-two-factor-code=""
+		:offline-login-disabled="offlineLoginDisabled"
+		@submit-offline="addOfflineProfile"
+	/>
 </template>
 
 <script setup lang="ts">
@@ -115,6 +125,8 @@ import {
 } from '@modrinth/ui'
 import type { Ref } from 'vue'
 import { computed, onUnmounted, ref } from 'vue'
+
+import AccountsInputModals from './astralrinth/accounts/input/AccountsInputModals.vue'
 
 import { trackEvent } from '@/helpers/analytics'
 import {
@@ -149,6 +161,10 @@ const loginDisabled = ref(false)
 const defaultUser = ref<string | undefined>()
 const equippedSkin = ref<Skin | null>(null)
 const headUrlCache = ref(new Map<string, string>())
+
+const accountsInputModals = ref<InstanceType<typeof AccountsInputModals> | null>(null)
+const offlinePlayerName = ref('')
+const offlineLoginDisabled = ref(false)
 
 async function refreshValues() {
 	defaultUser.value = await get_default_user().catch(handleError)
@@ -298,18 +314,22 @@ const messages = defineMessages({
 	},
 })
 
-async function addOfflineAccount() {
-	const name = prompt('Введите имя для оффлайн аккаунта:')
-	if (!name) return
+function addOfflineAccount() {
+	accountsInputModals.value?.showOffline()
+}
 
-	const trimmedName = name.trim()
+async function addOfflineProfile() {
+	if (!offlinePlayerName.value) return
+
+	const trimmedName = offlinePlayerName.value.trim()
 	if (trimmedName.length < 3 || trimmedName.length > 20) {
-		alert('Имя должно быть от 3 до 20 символов.')
+		handleError('Имя должно быть от 3 до 20 символов.')
 		return
 	}
 	
 	try {
-		loginDisabled.value = true
+		offlineLoginDisabled.value = true
+		accountsInputModals.value?.hideOffline()
 		const result = await import('@/helpers/auth').then(m => m.offline_login(trimmedName))
 		if (result) {
 			await setAccount(result)
@@ -318,7 +338,8 @@ async function addOfflineAccount() {
 	} catch (error) {
 		handleError(error)
 	} finally {
-		loginDisabled.value = false
+		offlineLoginDisabled.value = false
+		offlinePlayerName.value = ''
 	}
 }
 

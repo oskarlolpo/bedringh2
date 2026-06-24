@@ -151,7 +151,7 @@ watch(
 			id="accent-color"
 			:model-value="localStorage.getItem('accent_color') || 'green'"
 			name="Accent color dropdown"
-			class="max-w-40"
+			class="max-w-40 shrink-0 min-w-32"
 			:options="[
 				{ value: 'green', label: 'Green' },
 				{ value: 'purple', label: 'Purple' },
