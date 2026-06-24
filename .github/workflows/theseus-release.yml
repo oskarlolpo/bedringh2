@@ -15,7 +15,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       startsWith(github.event.workflow_run.head_branch, 'v')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     env:
       VERSION_TAG: ${{ github.event.workflow_run.head_branch }}
       LINUX_X64_BUNDLE_ARTIFACT_NAME: App bundle (x86_64-unknown-linux-gnu)
@@ -108,40 +108,6 @@ jobs:
           echo "Generated manifest for version ${VERSION_TAG}:"
           cat updates.json
 
-      - name: Upload release artifacts
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.LAUNCHER_FILES_BUCKET_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.LAUNCHER_FILES_BUCKET_SECRET_ACCESS_KEY }}
-          AWS_BUCKET: ${{ secrets.LAUNCHER_FILES_BUCKET_NAME }}
-          AWS_REGION: ${{ secrets.LAUNCHER_FILES_BUCKET_REGION }}
-          AWS_ENDPOINT_URL: ${{ secrets.LAUNCHER_FILES_BUCKET_ENDPOINT_URL }}
-          AWS_PAGER: ''
-          # Work around incompatible checksum behavior with some S3-like object storage providers,
-          # such as Cloudflare R2. See:
-          # - https://developers.cloudflare.com/r2/examples/aws/aws-cli/
-          # - https://developers.cloudflare.com/r2/examples/aws/aws-sdk-java/
-          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-        run: |
-          for macosBundleType in 'macos' 'dmg'; do
-            aws s3 cp --recursive \
-              "${MACOS_UNIVERSAL_BUNDLE_ARTIFACT_NAME}/universal-apple-darwin/release/bundle/${macosBundleType}" \
-              "s3://${AWS_BUCKET}/versions/${VERSION_TAG#v}/macos"
-          done
-
-          for linuxBundleType in 'appimage' 'deb' 'rpm'; do
-            aws s3 cp --recursive \
-              "${LINUX_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/${linuxBundleType}" \
-              "s3://${AWS_BUCKET}/versions/${VERSION_TAG#v}/linux"
-          done
-
-          for windowsBundleType in 'nsis'; do
-            aws s3 cp --recursive \
-              "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/${windowsBundleType}" \
-              "s3://${AWS_BUCKET}/versions/${VERSION_TAG#v}/windows"
-          done
-
-          aws s3 cp updates.json "s3://${AWS_BUCKET}"
 
       - name: Create GitHub release
         env:
