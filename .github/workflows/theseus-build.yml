@@ -126,7 +126,7 @@ jobs:
         run: |
           APP_VERSION="${{ inputs.app-version-override }}"
           if [ -z "$APP_VERSION" ]; then
-            APP_VERSION="$(git describe --tags --always | sed -E 's/-([0-9]+)-(g[0-9a-fA-F]+)$/-canary+\1.\2/')"
+            APP_VERSION="$(git describe --tags --always | sed -E 's/-([0-9]+)-(g[0-9a-fA-F]+)$/-canary+\1/')"
           fi
           BUILD_ENVIRONMENT="${{ inputs.environment || 'prod' }}"
           echo "Setting application version to $APP_VERSION"
