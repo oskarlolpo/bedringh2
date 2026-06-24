@@ -63,29 +63,6 @@ jobs:
           LAST_GITHUB_RELEASE_PUBLISHED_AT=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.published_at // ""' 2>/dev/null || true)
           LAST_GITHUB_RELEASE_PUBLISHED_AT="$LAST_GITHUB_RELEASE_PUBLISHED_AT" npx --yes tsx scripts/build-theseus-release-notes.ts
 
-      - name: Generate version manifest
-        run: |
-          # Reference: https://tauri.app/plugin/updater/#server-support
-          jq -nc \
-            --arg versionTag "${VERSION_TAG#v}" \
-            --rawfile releaseNotes release-notes.md \
-            --rawfile windowsX64UpdateArtifactSignature "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/nsis/Bedringh_${VERSION_TAG#v}_x64-setup.nsis.zip.sig" \
-          '{
-            "version": $versionTag,
-            "notes": $releaseNotes,
-            "pub_date": now | todateiso8601,
-            "platforms": {
-              "windows-x86_64": {
-                "signature": $windowsX64UpdateArtifactSignature,
-                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.nsis.zip")",
-                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.exe")"]
-              }
-            }
-          }' > updates.json
-
-          echo "Generated manifest for version ${VERSION_TAG}:"
-          cat updates.json
-
 
       - name: Create GitHub release
         env:
