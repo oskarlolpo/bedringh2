@@ -554,7 +554,7 @@ impl Credentials {
         .fetch(exec)
         .try_fold(DashMap::new(), |acc, x| {
             let uuid = Uuid::parse_str(&x.uuid).unwrap_or_default();
-            let mut credentials = Self {
+            let credentials = Self {
                 offline_profile: MinecraftProfile {
                     id: uuid,
                     name: x.username,

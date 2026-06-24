@@ -190,7 +190,6 @@ fn reqwest_client_builder() -> reqwest::ClientBuilder {
         .tcp_keepalive(Some(time::Duration::from_secs(10)))
         .connect_timeout(time::Duration::from_secs(5))
         .timeout(time::Duration::from_secs(15))
-        .trust_env(true)
         .user_agent(crate::launcher_user_agent())
 }
 
