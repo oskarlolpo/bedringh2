@@ -14,6 +14,7 @@ fn main() {
                     .commands(&[
                         "check_reachable",
                         "login",
+                        "offline_login",
                         "remove_user",
                         "get_default_user",
                         "set_default_user",
