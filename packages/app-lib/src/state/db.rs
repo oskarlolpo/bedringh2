@@ -37,7 +37,9 @@ pub(crate) async fn connect(
         );
     }
 
-    sqlx::migrate!().ignore_missing(true).run(&pool).await?;
+    let mut migrator = sqlx::migrate!();
+    migrator.set_ignore_missing(true);
+    migrator.run(&pool).await?;
 
     if let Err(err) = stale_data_cleanup(&pool).await {
         tracing::warn!(
