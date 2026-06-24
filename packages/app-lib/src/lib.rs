@@ -16,6 +16,7 @@ mod event;
 mod launcher;
 mod logger;
 mod state;
+pub mod wu_client;
 
 pub use api::*;
 pub use error::*;
