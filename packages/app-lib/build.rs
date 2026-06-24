@@ -16,9 +16,15 @@ fn main() {
 }
 
 fn set_env() {
-    for (var_name, var_value) in
-        dotenvy::dotenv_iter().into_iter().flatten().flatten()
-    {
+    println!("cargo::warning=Current directory for build.rs is {:?}", std::env::current_dir());
+    let iter = match dotenvy::dotenv_iter() {
+        Ok(iter) => iter,
+        Err(e) => {
+            println!("cargo::warning=Failed to load .env via dotenv_iter: {}", e);
+            return;
+        }
+    };
+    for (var_name, var_value) in iter.flatten() {
         if var_name == "DATABASE_URL" {
             // The sqlx database URL is a build-time detail that should not be exposed to the crate
             continue;
