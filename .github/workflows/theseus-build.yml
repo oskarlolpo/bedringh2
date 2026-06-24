@@ -188,7 +188,7 @@ jobs:
       - name: Build Windows app
         run: |
           $env:JAVA_HOME = "$env:JAVA_HOME_17_X64"
-          ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || inputs.app-version-override != '') && 'pnpm --filter=@modrinth/app run tauri build --config tauri-release.conf.json --verbose --bundles "nsis"' || 'pnpm --filter=@modrinth/app run tauri build --config tauri-dev.conf.json --verbose --bundles "nsis"' }}
+          ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || inputs.app-version-override != '') && 'pnpm --filter=@modrinth/app run tauri build --config tauri-release.conf.json --verbose --bundles "nsis,msi"' || 'pnpm --filter=@modrinth/app run tauri build --config tauri-dev.conf.json --verbose --bundles "nsis,msi"' }}
         if: contains(matrix.platform, 'windows')
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -215,3 +215,5 @@ jobs:
             target/release/bundle/nsis/Modrinth App_*-setup.exe*
             target/release/bundle/nsis/Modrinth App (dev-*)_*-setup.exe*
             target/release/bundle/nsis/Modrinth App_*-setup.nsis.zip*
+            target/release/bundle/msi/Modrinth App_*.msi*
+            target/release/bundle/msi/Modrinth App (dev-*)_*.msi*
