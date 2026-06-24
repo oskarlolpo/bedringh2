@@ -210,15 +210,27 @@ pub async fn resolve_minecraft_manifest(
 
     // Version not found in cache — force a manifest refresh in case it was
     // released after the cache was populated.
-    let refreshed = crate::state::CachedEntry::get_minecraft_manifest(
+    let refreshed = match crate::state::CachedEntry::get_minecraft_manifest(
         Some(crate::state::CacheBehaviour::MustRevalidate),
         &state.pool,
         &state.api_semaphore,
     )
-    .await?
-    .ok_or_else(|| {
-        crate::ErrorKind::NoValueFor("minecraft versions".to_string())
-    })?;
+    .await {
+        Ok(Some(res)) => res,
+        Ok(None) => return Err(crate::ErrorKind::NoValueFor("minecraft versions".to_string()).into()),
+        Err(e) => {
+            tracing::warn!("Failed to fetch minecraft manifest, falling back to offline cache: {}", e);
+            crate::state::CachedEntry::get_minecraft_manifest(
+                Some(crate::state::CacheBehaviour::StaleWhileRevalidateSkipOffline),
+                &state.pool,
+                &state.api_semaphore,
+            )
+            .await?
+            .ok_or_else(|| {
+                crate::ErrorKind::NoValueFor("minecraft versions".to_string())
+            })?
+        }
+    };
 
     let idx = refreshed
         .versions

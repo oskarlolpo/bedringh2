@@ -542,7 +542,6 @@ impl Credentials {
             };
 
             async move {
-                credentials.refresh(exec).await.ok();
                 acc.insert(uuid, credentials);
 
                 Ok(acc)

@@ -188,6 +188,9 @@ static GLOBAL_FETCH_FENCE: LazyLock<FetchFence> =
 fn reqwest_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .tcp_keepalive(Some(time::Duration::from_secs(10)))
+        .connect_timeout(time::Duration::from_secs(5))
+        .timeout(time::Duration::from_secs(15))
+        .trust_env(true)
         .user_agent(crate::launcher_user_agent())
 }
 
@@ -205,7 +208,7 @@ pub static REQWEST_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("client configuration should be valid")
 });
 
-const FETCH_ATTEMPTS: usize = 2;
+const FETCH_ATTEMPTS: usize = 3;
 
 #[tracing::instrument(skip(semaphore))]
 pub async fn fetch(
@@ -384,6 +387,7 @@ pub async fn fetch_advanced_with_client(
                     }
 
                     if attempt <= FETCH_ATTEMPTS {
+                        tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
                         continue;
                     }
                 }
@@ -430,6 +434,7 @@ pub async fn fetch_advanced_with_client(
                         let hash = sha1_async(bytes.clone()).await?;
                         if &*hash != sha1 {
                             if attempt <= FETCH_ATTEMPTS {
+                                tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
                                 continue;
                             } else {
                                 return Err(ErrorKind::HashError(
@@ -449,12 +454,16 @@ pub async fn fetch_advanced_with_client(
 
                     return Ok(bytes);
                 } else if attempt <= FETCH_ATTEMPTS {
+                    tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
                     continue;
                 } else if let Err(err) = bytes {
                     return Err(err.into());
                 }
             }
-            Err(_) if attempt <= FETCH_ATTEMPTS => continue,
+            Err(_) if attempt <= FETCH_ATTEMPTS => {
+                tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
+                continue;
+            }
             Err(err) => {
                 return Err(err.into());
             }
