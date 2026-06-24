@@ -143,6 +143,38 @@ watch(
 	<div class="mt-6 flex items-center justify-between">
 		<div>
 			<h2 class="m-0 text-lg font-semibold text-contrast">
+				Accent Color
+			</h2>
+			<p class="m-0 mt-1">Select your preferred accent color for the UI.</p>
+		</div>
+		<Combobox
+			id="accent-color"
+			:model-value="localStorage.getItem('accent_color') || 'green'"
+			name="Accent color dropdown"
+			class="max-w-40"
+			:options="[
+				{ value: 'green', label: 'Green' },
+				{ value: 'purple', label: 'Purple' },
+				{ value: 'blue', label: 'Blue' },
+				{ value: 'red', label: 'Red' },
+				{ value: 'orange', label: 'Orange' },
+			]"
+			:display-value="localStorage.getItem('accent_color') || 'green'"
+			@update:model-value="(val) => {
+				localStorage.setItem('accent_color', val);
+				document.documentElement.className = document.documentElement.className.replace(/theme-\w+/, 'theme-' + val);
+				if (!document.documentElement.className.includes('theme-' + val)) {
+					document.documentElement.classList.add('theme-' + val);
+				}
+				// Force vue reactivity refresh if needed
+				os = os + '';
+			}"
+		/>
+	</div>
+
+	<div class="mt-6 flex items-center justify-between">
+		<div>
+			<h2 class="m-0 text-lg font-semibold text-contrast">
 				{{ formatMessage(messages.advancedRenderingTitle) }}
 			</h2>
 			<p class="m-0 mt-1">

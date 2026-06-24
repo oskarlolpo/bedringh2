@@ -7,6 +7,7 @@ use theseus::prelude::*;
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     tauri::plugin::Builder::<R>::new("auth")
         .invoke_handler(tauri::generate_handler![
+            offline_login,
             check_reachable,
             login,
             remove_user,
@@ -15,6 +16,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             get_users,
         ])
         .build()
+}
+
+/// Create new offline user
+#[tauri::command]
+pub async fn offline_login(name: &str) -> Result<Credentials> {
+    let credentials = minecraft_auth::offline_auth(name).await?;
+    Ok(credentials)
 }
 
 /// Checks if the authentication servers are reachable.

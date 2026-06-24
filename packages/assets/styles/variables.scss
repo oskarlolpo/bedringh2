@@ -120,9 +120,12 @@
 	--color-blue-bg: rgba(31, 104, 192, 0.1);
 	--color-purple-bg: rgba(142, 50, 243, 0.1);
 
-	--color-brand: var(--color-green);
-	--color-brand-highlight: var(--color-green-highlight);
-	--color-brand-shadow: rgba(0, 175, 92, 0.7);
+	--brand-h: 153;
+	--brand-s: 100%;
+	--brand-l: 34%;
+	--color-brand: hsl(var(--brand-h) var(--brand-s) var(--brand-l));
+	--color-brand-highlight: hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.25);
+	--color-brand-shadow: hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.7);
 
 	--shadow-inset-lg: inset 0px -2px 2px hsla(221, 39%, 91%, 0.1);
 	--shadow-inset: inset 0px -2px 2px hsla(221, 39%, 91%, 0.05);
@@ -345,9 +348,12 @@ html {
 	--color-blue-bg: rgba(79, 156, 255, 0.2);
 	--color-purple-bg: rgba(199, 138, 255, 0.2);
 
-	--color-brand: var(--color-green);
-	--color-brand-highlight: rgba(27, 217, 106, 0.25);
-	--color-brand-shadow: rgba(27, 217, 106, 0.7);
+	--brand-h: 145;
+	--brand-s: 78%;
+	--brand-l: 48%;
+	--color-brand: hsl(var(--brand-h) var(--brand-s) var(--brand-l));
+	--color-brand-highlight: hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.25);
+	--color-brand-shadow: hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.7);
 
 	--shadow-inset-lg: inset 0px -2px 2px hsla(221, 39%, 11%, 0.1);
 	--shadow-inset: inset 0px -2px 2px hsla(221, 39%, 11%, 0.05);
@@ -424,4 +430,39 @@ html {
 .retro-mode {
 	--surface-2-5: #3a3c3e;
 	--brand-gradient-strong-bg: #3a3b38;
+}
+
+html.theme-green {
+	--brand-h: 153; --brand-s: 100%; --brand-l: 34%;
+}
+html.dark.theme-green, html.oled-mode.theme-green {
+	--brand-h: 145; --brand-s: 78%; --brand-l: 48%;
+}
+
+html.theme-purple {
+	--brand-h: 275; --brand-s: 89%; --brand-l: 57%;
+}
+html.dark.theme-purple, html.oled-mode.theme-purple {
+	--brand-h: 271; --brand-s: 91%; --brand-l: 65%;
+}
+
+html.theme-blue {
+	--brand-h: 211; --brand-s: 90%; --brand-l: 50%;
+}
+html.dark.theme-blue, html.oled-mode.theme-blue {
+	--brand-h: 214; --brand-s: 100%; --brand-l: 58%;
+}
+
+html.theme-red {
+	--brand-h: 349; --brand-s: 88%; --brand-l: 50%;
+}
+html.dark.theme-red, html.oled-mode.theme-red {
+	--brand-h: 346; --brand-s: 100%; --brand-l: 58%;
+}
+
+html.theme-orange {
+	--brand-h: 28; --brand-s: 100%; --brand-l: 50%;
+}
+html.dark.theme-orange, html.oled-mode.theme-orange {
+	--brand-h: 30; --brand-s: 99%; --brand-l: 55%;
 }

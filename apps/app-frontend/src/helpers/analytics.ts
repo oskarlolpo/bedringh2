@@ -1,4 +1,10 @@
-import { posthog } from 'posthog-js'
+const posthog = {
+	init: () => {},
+	debug: () => {},
+	opt_out_capturing: () => {},
+	opt_in_capturing: () => {},
+	capture: () => {}
+}
 
 interface InstanceProperties {
 	loader: string
@@ -46,12 +52,7 @@ export type AnalyticsEvent = keyof AnalyticsEventMap
 let initialized = false
 
 export const initAnalytics = () => {
-	if (initialized) return
-	posthog.init('phc_9Iqi6lFs9sr5BSqh9RRNRSJ0mATS9PSgirDiX3iOYJ', {
-		persistence: 'localStorage',
-		api_host: 'https://posthog.modrinth.com',
-	})
-	initialized = true
+	// PostHog init removed
 }
 
 export const debugAnalytics = () => {

@@ -11,6 +11,13 @@
 				{{ formatMessage(messages.signInToMinecraft) }}
 			</button>
 		</ButtonStyled>
+		<ButtonStyled color="green">
+			<button color="primary" :disabled="loginDisabled" @click="addOfflineAccount()">
+				<PlusIcon v-if="!loginDisabled" />
+				<SpinnerIcon v-else class="animate-spin" />
+				Создать оффлайн аккаунт
+			</button>
+		</ButtonStyled>
 	</div>
 	<Accordion
 		v-else
@@ -75,7 +82,13 @@
 				<ButtonStyled v-if="accounts.length > 0" class="w-full">
 					<button :disabled="loginDisabled" @click="login()">
 						<PlusIcon />
-						{{ formatMessage(messages.addAccount) }}
+						{{ formatMessage(messages.addAccount) }} (MS)
+					</button>
+				</ButtonStyled>
+				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="green">
+					<button :disabled="loginDisabled" @click="addOfflineAccount()">
+						<PlusIcon />
+						Создать оффлайн аккаунт
 					</button>
 				</ButtonStyled>
 			</div>
@@ -284,4 +297,29 @@ const messages = defineMessages({
 		defaultMessage: 'Sign in to Minecraft',
 	},
 })
+
+async function addOfflineAccount() {
+	const name = prompt('Введите имя для оффлайн аккаунта:')
+	if (!name) return
+
+	const trimmedName = name.trim()
+	if (trimmedName.length < 3 || trimmedName.length > 20) {
+		alert('Имя должно быть от 3 до 20 символов.')
+		return
+	}
+	
+	try {
+		loginDisabled.value = true
+		const result = await import('@/helpers/auth').then(m => m.offline_login(trimmedName))
+		if (result) {
+			await setAccount(result)
+			await refreshValues()
+		}
+	} catch (error) {
+		handleError(error)
+	} finally {
+		loginDisabled.value = false
+	}
+}
+
 </script>
