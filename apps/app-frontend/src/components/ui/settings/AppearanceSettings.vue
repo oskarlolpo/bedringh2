@@ -31,6 +31,26 @@ const messages = defineMessages({
 		id: 'app.appearance-settings.accent-color.description',
 		defaultMessage: 'Select your preferred accent color for the UI.',
 	},
+	accentColorGreen: {
+		id: 'app.appearance-settings.accent-color.green',
+		defaultMessage: 'Green',
+	},
+	accentColorPurple: {
+		id: 'app.appearance-settings.accent-color.purple',
+		defaultMessage: 'Purple',
+	},
+	accentColorBlue: {
+		id: 'app.appearance-settings.accent-color.blue',
+		defaultMessage: 'Blue',
+	},
+	accentColorRed: {
+		id: 'app.appearance-settings.accent-color.red',
+		defaultMessage: 'Red',
+	},
+	accentColorOrange: {
+		id: 'app.appearance-settings.accent-color.orange',
+		defaultMessage: 'Orange',
+	},
 	advancedRenderingTitle: {
 		id: 'app.appearance-settings.advanced-rendering.title',
 		defaultMessage: 'Advanced rendering',
@@ -121,7 +141,25 @@ const messages = defineMessages({
 
 const os = ref(await getOS())
 const settings = ref(await get())
+
+// Карта Hue-значений для каждого цвета акцента
+const accentHueMap: Record<string, number> = {
+	green: 145,
+	blue: 211,
+	purple: 270,
+	red: 350,
+	orange: 30,
+}
+
+function applyAccentColor(color: string) {
+	const hue = accentHueMap[color] ?? 145
+	document.documentElement.style.setProperty('--brand-h', String(hue))
+	window?.localStorage?.setItem('accent_color', color)
+}
+
 const accentColor = ref(window?.localStorage?.getItem('accent_color') || 'green')
+// Применяем сохранённый цвет при загрузке
+applyAccentColor(accentColor.value)
 
 watch(
 	settings,
@@ -162,20 +200,16 @@ watch(
 			name="Accent color dropdown"
 			class="max-w-40"
 			:options="[
-				{ value: 'green', label: 'Green' },
-				{ value: 'purple', label: 'Purple' },
-				{ value: 'blue', label: 'Blue' },
-				{ value: 'red', label: 'Red' },
-				{ value: 'orange', label: 'Orange' },
+				{ value: 'green', label: formatMessage(messages.accentColorGreen) },
+				{ value: 'purple', label: formatMessage(messages.accentColorPurple) },
+				{ value: 'blue', label: formatMessage(messages.accentColorBlue) },
+				{ value: 'red', label: formatMessage(messages.accentColorRed) },
+				{ value: 'orange', label: formatMessage(messages.accentColorOrange) },
 			]"
 			:display-value="accentColor"
 			@update:model-value="(val) => {
-				accentColor.value = val;
-				window?.localStorage?.setItem('accent_color', val);
-				document.documentElement.className = document.documentElement.className.replace(/theme-\w+/, 'theme-' + val);
-				if (!document.documentElement.className.includes('theme-' + val)) {
-					document.documentElement.classList.add('theme-' + val);
-				}
+				accentColor = val;
+				applyAccentColor(val);
 			}"
 		/>
 	</div>
