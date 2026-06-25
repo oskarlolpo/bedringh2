@@ -56,6 +56,12 @@
   "app.appearance-settings.color-theme.title": {
     "message": "Color theme"
   },
+  "app.appearance-settings.accent-color.description": {
+    "message": "Select your preferred accent color for the UI."
+  },
+  "app.appearance-settings.accent-color.title": {
+    "message": "Accent Color"
+  },
   "app.appearance-settings.default-landing-page.description": {
     "message": "Change the page to which the launcher opens on."
   },

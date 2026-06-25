@@ -23,6 +23,14 @@ const messages = defineMessages({
 		id: 'app.appearance-settings.color-theme.description',
 		defaultMessage: 'Select your preferred color theme for Modrinth App.',
 	},
+	accentColorTitle: {
+		id: 'app.appearance-settings.accent-color.title',
+		defaultMessage: 'Accent Color',
+	},
+	accentColorDescription: {
+		id: 'app.appearance-settings.accent-color.description',
+		defaultMessage: 'Select your preferred accent color for the UI.',
+	},
 	advancedRenderingTitle: {
 		id: 'app.appearance-settings.advanced-rendering.title',
 		defaultMessage: 'Advanced rendering',
@@ -143,15 +151,15 @@ watch(
 	<div class="mt-6 flex items-center justify-between">
 		<div>
 			<h2 class="m-0 text-lg font-semibold text-contrast">
-				Accent Color
+				{{ formatMessage(messages.accentColorTitle) }}
 			</h2>
-			<p class="m-0 mt-1">Select your preferred accent color for the UI.</p>
+			<p class="m-0 mt-1">{{ formatMessage(messages.accentColorDescription) }}</p>
 		</div>
 		<Combobox
 			id="accent-color"
 			:model-value="localStorage.getItem('accent_color') || 'green'"
 			name="Accent color dropdown"
-			class="max-w-40 shrink-0 min-w-32"
+			class="max-w-40"
 			:options="[
 				{ value: 'green', label: 'Green' },
 				{ value: 'purple', label: 'Purple' },

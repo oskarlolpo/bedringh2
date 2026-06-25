@@ -56,6 +56,12 @@
     "app.appearance-settings.color-theme.title": {
         "message": "Тема"
     },
+    "app.appearance-settings.accent-color.description": {
+        "message": "Выберите предпочтительный цвет акцента для интерфейса."
+    },
+    "app.appearance-settings.accent-color.title": {
+        "message": "Цвет акцента"
+    },
     "app.appearance-settings.default-landing-page.description": {
         "message": "Страница, которая открывается при запуске лаунчера."
     },

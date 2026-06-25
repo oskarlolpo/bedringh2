@@ -71,5 +71,8 @@
       "workerd"
     ]
   },
-  "prettier": "@modrinth/tooling-config/prettier.config.cjs"
+  "prettier": "@modrinth/tooling-config/prettier.config.cjs",
+  "dependencies": {
+    "cross-env": "^10.1.0"
+  }
 }
