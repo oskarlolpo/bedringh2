@@ -11,11 +11,11 @@
 				{{ formatMessage(messages.signInToMinecraft) }}
 			</button>
 		</ButtonStyled>
-		<ButtonStyled color="green">
+		<ButtonStyled color="brand" type="outlined">
 			<button color="primary" :disabled="loginDisabled" @click="addOfflineAccount()">
 				<PlusIcon v-if="!loginDisabled" />
 				<SpinnerIcon v-else class="animate-spin" />
-				Создать оффлайн аккаунт
+				{{ formatMessage(messages.createOfflineAccount) }}
 			</button>
 		</ButtonStyled>
 	</div>
@@ -79,16 +79,16 @@
 				</div>
 			</template>
 			<div class="flex flex-col gap-2 px-2 pt-2">
-				<ButtonStyled v-if="accounts.length > 0" class="w-full">
+				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="brand" type="outlined">
 					<button :disabled="loginDisabled" @click="login()">
 						<PlusIcon />
 						{{ formatMessage(messages.addAccount) }} (MS)
 					</button>
 				</ButtonStyled>
-				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="green">
+				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="brand" type="outlined">
 					<button :disabled="loginDisabled" @click="addOfflineAccount()">
 						<PlusIcon />
-						Создать оффлайн аккаунт
+						{{ formatMessage(messages.createOfflineAccount) }}
 					</button>
 				</ButtonStyled>
 			</div>
@@ -295,6 +295,10 @@ const messages = defineMessages({
 	addAccount: {
 		id: 'minecraft-account.add-account',
 		defaultMessage: 'Add account',
+	},
+	createOfflineAccount: {
+		id: 'minecraft-account.create-offline-account',
+		defaultMessage: 'Create offline account',
 	},
 	removeAccount: {
 		id: 'minecraft-account.remove-account',

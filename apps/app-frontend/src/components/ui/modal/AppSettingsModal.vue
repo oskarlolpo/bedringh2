@@ -147,7 +147,7 @@ const messages = defineMessages({
 })
 </script>
 <template>
-	<TabbedModal ref="modal" :tabs="tabs.filter((t) => !t.developerOnly || themeStore.devMode)">
+	<TabbedModal ref="modal" width="60rem" max-width="60rem" :tabs="tabs.filter((t) => !t.developerOnly || themeStore.devMode)">
 		<template #title>
 			<span class="flex items-center gap-2 text-lg font-extrabold text-contrast">
 				<SettingsIcon /> Settings
