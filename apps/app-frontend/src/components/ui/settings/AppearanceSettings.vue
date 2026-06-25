@@ -121,6 +121,7 @@ const messages = defineMessages({
 
 const os = ref(await getOS())
 const settings = ref(await get())
+const accentColor = ref(window?.localStorage?.getItem('accent_color') || 'green')
 
 watch(
 	settings,
@@ -157,7 +158,7 @@ watch(
 		</div>
 		<Combobox
 			id="accent-color"
-			:model-value="localStorage.getItem('accent_color') || 'green'"
+			:model-value="accentColor"
 			name="Accent color dropdown"
 			class="max-w-40"
 			:options="[
@@ -167,15 +168,14 @@ watch(
 				{ value: 'red', label: 'Red' },
 				{ value: 'orange', label: 'Orange' },
 			]"
-			:display-value="localStorage.getItem('accent_color') || 'green'"
+			:display-value="accentColor"
 			@update:model-value="(val) => {
-				localStorage.setItem('accent_color', val);
+				accentColor.value = val;
+				window?.localStorage?.setItem('accent_color', val);
 				document.documentElement.className = document.documentElement.className.replace(/theme-\w+/, 'theme-' + val);
 				if (!document.documentElement.className.includes('theme-' + val)) {
 					document.documentElement.classList.add('theme-' + val);
 				}
-				// Force vue reactivity refresh if needed
-				os = os + '';
 			}"
 		/>
 	</div>
