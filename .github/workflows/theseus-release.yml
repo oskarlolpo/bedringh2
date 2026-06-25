@@ -73,5 +73,5 @@ jobs:
           gh release create "$VERSION_TAG" \
             --title "Bedringh ${VERSION}" \
             --notes-file release-notes.md \
-            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/nsis/Bedringh_${VERSION}_x64-setup.exe" \
-            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/msi/Bedringh_${VERSION}_x64-setup.msi"
+            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/nsis/Bedringh_${VERSION}_x64-setup.exe" \
+            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/msi/Bedringh_${VERSION}_x64_en-US.msi"
