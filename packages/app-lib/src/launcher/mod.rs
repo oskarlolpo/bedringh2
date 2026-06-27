@@ -295,11 +295,20 @@ pub async fn install_minecraft(
             let versions_dir = state.directories.caches_dir().join("versions").join(format!("bedrock_{}", profile.game_version));
             crate::util::bedrock_extract::extract_bedrock_package(
                 downloaded_file,
-                versions_dir,
+                versions_dir.clone(),
                 &loading_bar,
                 &profile.name,
                 &profile.path,
             ).await?;
+            
+            crate::util::bedrock_patch::patch_and_register(
+                &versions_dir,
+                &loading_bar,
+                &profile.name,
+                &profile.path,
+            ).await?;
+            
+            crate::util::bedrock_patch::create_instance_skeleton(&profile.path).await?;
         } else {
             // "UWP" fallback, not downloaded via direct URL
         }
