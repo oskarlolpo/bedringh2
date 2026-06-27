@@ -31,6 +31,7 @@ mod args;
 
 pub mod download;
 pub mod quick_play_version;
+pub mod bedrock;
 
 // All nones -> disallowed
 // 1+ true -> allowed
@@ -273,6 +274,51 @@ pub async fn install_minecraft(
 
     let instance_path =
         crate::api::profile::get_full_path(&profile.path).await?;
+        
+    if profile.loader == ModLoader::Bedrock {
+        let versions = crate::api::bedrock::fetch_bedrock_versions().await?;
+        let bedrock_version = versions.into_iter().find(|v| v.version == profile.game_version)
+            .ok_or_else(|| crate::ErrorKind::LauncherError(format!("Bedrock version {} not found", profile.game_version)))?;
+            
+        if bedrock_version.identifier.starts_with("http") {
+            let extension = if bedrock_version.identifier.ends_with(".msixvc") { "msixvc" } else { "zip" };
+            let filename = format!("bedrock-{}.{}", profile.game_version, extension);
+            let downloaded_file = crate::util::bedrock_fetch::download_bedrock_package(
+                &bedrock_version.identifier,
+                &filename,
+                &profile.name,
+                &profile.path,
+                &loading_bar,
+                &reqwest::Client::new()
+            ).await?;
+            
+            let versions_dir = state.directories.caches_dir().join("versions").join(format!("bedrock_{}", profile.game_version));
+            crate::util::bedrock_extract::extract_bedrock_package(
+                downloaded_file,
+                versions_dir,
+                &loading_bar,
+                &profile.name,
+                &profile.path,
+            ).await?;
+        } else {
+            // "UWP" fallback, not downloaded via direct URL
+        }
+
+        crate::api::profile::edit(&profile.path, |prof| {
+            prof.install_stage = ProfileInstallStage::Installed;
+            async { Ok(()) }
+        })
+        .await?;
+
+        let _ = emit_loading(
+            &loading_bar,
+            100.0,
+            Some("Готово"),
+        );
+
+        return Ok(());
+    }
+
     let (minecraft, version_index) =
         resolve_minecraft_manifest(&profile.game_version, &state).await?;
     let version = &minecraft.versions[version_index];
@@ -516,6 +562,10 @@ pub async fn launch_minecraft(
             "Profile is still installing".to_string(),
         )
         .into());
+    }
+
+    if profile.loader == ModLoader::Bedrock {
+        return bedrock::launch_bedrock(profile).await;
     }
 
     if profile.install_stage != ProfileInstallStage::Installed {
