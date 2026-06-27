@@ -71,7 +71,7 @@ pub async fn init_loading_unsafe(
             message: title.to_string(),
             total,
             current: 0.0,
-            last_sent: 0.0,
+            last_sent: -1.0,
             bar_type,
             #[cfg(feature = "cli")]
             cli_progress_bar: {
@@ -124,7 +124,7 @@ pub async fn edit_loading(
         bar.total = total;
         bar.message = title.to_string();
         bar.current = 0.0;
-        bar.last_sent = 0.0;
+        bar.last_sent = -1.0;
         #[cfg(feature = "cli")]
         {
             bar.cli_progress_bar.reset(); // indicatif::ProgressBar::new(CLI_PROGRESS_BAR_TOTAL as u64);

@@ -144,12 +144,20 @@
 				</div>
 			</Collapsible>
 		</template>
+		
+		<!-- Bedrock info -->
+		<template v-if="selectedLoader === 'bedrock'">
+			<div class="mt-2 flex items-start gap-2 rounded-lg border border-divider bg-surface-1 p-3 text-sm text-secondary">
+				<InfoIcon class="mt-0.5 h-5 w-5 shrink-0 text-brand" />
+				<span>Bedrock instances use native NTFS junctions for automatic save data isolation. No additional setup is required.</span>
+			</div>
+		</template>
 	</div>
 </template>
 
 <script setup lang="ts">
 import type { Paper } from '@modrinth/api-client'
-import { EyeIcon, EyeOffIcon, UploadIcon, XIcon } from '@modrinth/assets'
+import { EyeIcon, EyeOffIcon, InfoIcon, UploadIcon, XIcon } from '@modrinth/assets'
 import { commonMessages, defineMessages, useVIntl } from '@modrinth/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 

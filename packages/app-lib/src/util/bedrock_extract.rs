@@ -13,7 +13,7 @@ pub async fn extract_bedrock_package(
     profile_name: &str,
     profile_path: &str,
 ) -> crate::Result<()> {
-    if target_dir.exists() {
+    if target_dir.join("AppxManifest.xml").exists() {
         return Ok(());
     }
 
@@ -105,6 +105,8 @@ async fn extract_msixvc(
 $ErrorActionPreference = 'Stop'
 $PackagePath = "{}"
 $TargetDir = "{}"
+
+Start-Transcript -Path "$TargetDir\extract.log" -Force
 
 [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType = WindowsRuntime] | Out-Null
 $pm = [Windows.Management.Deployment.PackageManager]::new()

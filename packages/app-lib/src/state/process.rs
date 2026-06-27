@@ -260,6 +260,15 @@ impl ProcessManager {
     pub async fn kill(&self, id: Uuid) -> crate::Result<()> {
         if let Some(mut process) = self.processes.get_mut(&id) {
             process.child.kill().await?;
+
+            if let Ok(Some(prof)) = crate::api::profile::get(&process.metadata.profile_path).await {
+                if prof.loader == crate::state::ModLoader::Bedrock {
+                    #[cfg(target_os = "windows")]
+                    let _ = std::process::Command::new("taskkill")
+                        .args(&["/IM", "Minecraft.Windows.exe", "/F"])
+                        .status();
+                }
+            }
         }
 
         Ok(())

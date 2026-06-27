@@ -79,48 +79,55 @@ watch(
 	{ immediate: true },
 )
 
-const tabs = computed<TabbedModalTab[]>(() => [
-	{
-		name: defineMessage({
-			id: 'instance.settings.tabs.general',
-			defaultMessage: 'General',
-		}),
-		icon: InfoIcon,
-		content: GeneralSettings,
-	},
-	{
-		name: defineMessage({
-			id: 'instance.settings.tabs.installation',
-			defaultMessage: 'Installation',
-		}),
-		icon: WrenchIcon,
-		content: InstallationSettings,
-	},
-	{
-		name: defineMessage({
-			id: 'instance.settings.tabs.window',
-			defaultMessage: 'Window',
-		}),
-		icon: MonitorIcon,
-		content: WindowSettings,
-	},
-	{
-		name: defineMessage({
-			id: 'instance.settings.tabs.java',
-			defaultMessage: 'Java and memory',
-		}),
-		icon: CoffeeIcon,
-		content: JavaSettings,
-	},
-	{
-		name: defineMessage({
-			id: 'instance.settings.tabs.hooks',
-			defaultMessage: 'Launch hooks',
-		}),
-		icon: CodeIcon,
-		content: HooksSettings,
-	},
-])
+const tabs = computed<TabbedModalTab[]>(() => {
+	const allTabs = [
+		{
+			name: defineMessage({
+				id: 'instance.settings.tabs.general',
+				defaultMessage: 'General',
+			}),
+			icon: InfoIcon,
+			content: GeneralSettings,
+		},
+		{
+			name: defineMessage({
+				id: 'instance.settings.tabs.installation',
+				defaultMessage: 'Installation',
+			}),
+			icon: WrenchIcon,
+			content: InstallationSettings,
+		},
+		{
+			name: defineMessage({
+				id: 'instance.settings.tabs.window',
+				defaultMessage: 'Window',
+			}),
+			icon: MonitorIcon,
+			content: WindowSettings,
+		},
+		{
+			name: defineMessage({
+				id: 'instance.settings.tabs.java',
+				defaultMessage: 'Java and memory',
+			}),
+			icon: CoffeeIcon,
+			content: JavaSettings,
+		},
+		{
+			name: defineMessage({
+				id: 'instance.settings.tabs.hooks',
+				defaultMessage: 'Launch hooks',
+			}),
+			icon: CodeIcon,
+			content: HooksSettings,
+		},
+	]
+
+	if (instanceRef.value?.loader === 'bedrock') {
+		return allTabs.filter((tab) => tab.content !== JavaSettings)
+	}
+	return allTabs
+})
 
 function getSupportedModpackLoaders() {
 	return get_loaders().then((value: PlatformTag[]) =>

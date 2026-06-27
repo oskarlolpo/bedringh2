@@ -24,31 +24,40 @@ pub async fn fetch_bedrock_versions() -> crate::error::Result<Vec<BedrockVersion
         .await
     {
         if let Ok(gdk_text) = gdk_req.text().await {
-            if let Ok(gdk_json) = serde_json::from_str::<GdkResponse>(&gdk_text) {
-                if let Some(release_map) = gdk_json.release {
-                    for (version, urls) in release_map {
-                        if let Some(first_url) = urls.first() {
-                            versions.push(BedrockVersion {
-                                version,
-                                is_preview: false,
-                                identifier: first_url.clone(),
-                            });
+            match serde_json::from_str::<GdkResponse>(&gdk_text) {
+                Ok(gdk_json) => {
+                    if let Some(release_map) = gdk_json.release {
+                        for (version, urls) in release_map {
+                            if let Some(first_url) = urls.first() {
+                                versions.push(BedrockVersion {
+                                    version,
+                                    is_preview: false,
+                                    identifier: first_url.clone(),
+                                });
+                            }
+                        }
+                    }
+                    if let Some(preview_map) = gdk_json.preview {
+                        for (version, urls) in preview_map {
+                            if let Some(first_url) = urls.first() {
+                                versions.push(BedrockVersion {
+                                    version,
+                                    is_preview: true,
+                                    identifier: first_url.clone(),
+                                });
+                            }
                         }
                     }
                 }
-                if let Some(preview_map) = gdk_json.preview {
-                    for (version, urls) in preview_map {
-                        if let Some(first_url) = urls.first() {
-                            versions.push(BedrockVersion {
-                                version,
-                                is_preview: true,
-                                identifier: first_url.clone(),
-                            });
-                        }
-                    }
+                Err(e) => {
+                    tracing::warn!("Failed to parse GdkLinks urls.min.json: {}", e);
                 }
             }
+        } else {
+            tracing::warn!("Failed to get text from GdkLinks");
         }
+    } else {
+        tracing::warn!("Failed to fetch GdkLinks urls.min.json");
     }
 
     // Fetch UWP (w10) release versions

@@ -32,6 +32,23 @@ pub async fn get_minecraft_versions() -> crate::Result<VersionManifest> {
 
 // #[tracing::instrument]
 pub async fn get_loader_versions(loader: &str) -> crate::Result<Manifest> {
+    if loader == "bedrock" {
+        let bedrock_versions = crate::api::bedrock::fetch_bedrock_versions().await?;
+        let mut game_versions = Vec::new();
+        for v in bedrock_versions {
+            game_versions.push(daedalus::modded::Version {
+                id: v.version,
+                stable: !v.is_preview,
+                loaders: vec![daedalus::modded::LoaderVersion {
+                    id: "bedrock".to_string(),
+                    url: v.identifier,
+                    stable: !v.is_preview,
+                }],
+            });
+        }
+        return Ok(Manifest { game_versions });
+    }
+
     let state = State::get().await?;
     let loaders = match CachedEntry::get_loader_manifest(
         loader,
