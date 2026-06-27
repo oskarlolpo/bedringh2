@@ -32,13 +32,13 @@ pub async fn patch_manifest(
     // 1. Патчинг AppxManifest.xml
     let mut content = tokio::fs::read_to_string(&manifest_path).await?;
     
-    // Удаляем блок <Extensions> ... </Extensions>
-    let re_extensions = regex::Regex::new(r"(?s)<Extensions.*?>.*?</Extensions>").unwrap();
-    content = re_extensions.replace_all(&content, "").to_string();
+    // Удаляем capability customInstallActions (вызывает ошибки при установке распакованного приложения)
+    let re_custom_install_cap = regex::Regex::new(r#"(?s)<[^>]*Capability[^>]*Name="customInstallActions"[^>]*>"#).unwrap();
+    content = re_custom_install_cap.replace_all(&content, "").to_string();
 
-    // Удаляем capability customInstallActions
-    let re_custom_install = regex::Regex::new(r#"(?s)<[^>]*Capability[^>]*Name="customInstallActions"[^>]*>"#).unwrap();
-    content = re_custom_install.replace_all(&content, "").to_string();
+    // Удаляем extension windows.customInstall, так как мы удалили capability
+    let re_custom_install_ext = regex::Regex::new(r#"(?s)<[^>]*Extension[^>]*Category="windows\.customInstall"[^>]*>.*?</[^>]*Extension>"#).unwrap();
+    content = re_custom_install_ext.replace_all(&content, "").to_string();
 
     // Меняем Identity Name, чтобы избежать конфликта 0x80073CFB
     // Создаем уникальное имя пакета на основе версии
