@@ -115,7 +115,7 @@ $op = $pm.StagePackageAsync($uri, $null)
 while ($op.Status -eq 1) {{ Start-Sleep -Milliseconds 500 }}
 
 if ($op.Status -ne 2 -and $op.Status -ne 0) {{
-    Write-Error "Failed to stage package. Status: $($op.Status) Error: $($op.ErrorCode)"
+    Write-Error "Failed to stage package. HRESULT: $((([int]$op.ErrorCode.HResult).ToString('X')))"
     exit 1
 }}
 
@@ -141,18 +141,29 @@ Invoke-CommandInDesktopPackage -AppId "App" -PackageFamilyName $packageFamilyNam
 # 4. Remove Package
 $opRemove = $pm.RemovePackageAsync($packageFullName)
 while ($opRemove.Status -eq 1) {{ Start-Sleep -Milliseconds 500 }}
+
+# 5. Cleanup self
+Remove-Item -Path $PSCommandPath -Force
 "#, package_path.to_string_lossy().replace("\"", "`\""), target_dir.to_string_lossy().replace("\"", "`\""));
 
         #[cfg(target_os = "windows")]
         {
+            let temp_ps1 = std::env::temp_dir().join("bedrock_extract.ps1");
+            std::fs::write(&temp_ps1, &script)?;
+
+            let run_script = format!(
+                "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{}\"' -Verb RunAs -Wait",
+                temp_ps1.to_string_lossy().replace("\"", "`\"")
+            );
+
             let mut cmd = std::process::Command::new("powershell");
-            cmd.args(&["-NoProfile", "-NonInteractive", "-Command", &script]);
+            cmd.args(&["-NoProfile", "-NonInteractive", "-Command", &run_script]);
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
             
             let status = cmd.status()?;
             if !status.success() {
                 return Err(crate::Error::from(ErrorKind::OtherError(
-                    "Не удалось расшифровать и скопировать MSIXVC пакет".to_string()
+                    "Не удалось расшифровать и скопировать MSIXVC пакет (возможно, отказано в доступе UAC)".to_string()
                 )));
             }
         }
