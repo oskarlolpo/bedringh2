@@ -1,39 +1,31 @@
-# ![Modrinth Monorepo Cover](/.github/assets/monorepo_cover.png)
+# Bedringh (Minecraft Bedrock Launcher)
 
-![Issues](https://img.shields.io/github/issues-raw/Modrinth/code?color=c78aff&label=issues&style=for-the-badge)
-![Pull Requests](https://img.shields.io/github/issues-pr-raw/Modrinth/code?color=c78aff&label=PRs&style=for-the-badge)
-![Contributors](https://img.shields.io/github/contributors/Modrinth/code?color=c78aff&label=contributors&style=for-the-badge)
-![Lines](https://img.shields.io/endpoint?url=https://ghloc.vercel.app/api/modrinth/code/badge?style=flat&logoColor=white&color=c78aff&style=for-the-badge)
-![Commit Activity](https://img.shields.io/github/commit-activity/m/Modrinth/code?color=c78aff&label=commits&style=for-the-badge)
-![Last Commit](https://img.shields.io/github/last-commit/Modrinth/code?color=c78aff&label=last%20commit&style=for-the-badge)
+Welcome to **Bedringh**, a custom launcher for Minecraft Bedrock Edition, modified from the Modrinth App (Theseus) monorepo.
 
-## Modrinth Monorepo
+## About This Project
 
-Welcome to the Modrinth Monorepo, the primary codebase for the Modrinth web interface and app. It contains ![Lines](https://img.shields.io/endpoint?url=https://ghloc.vercel.app/api/modrinth/olympus/badge?logoColor=white&color=black&label=) lines of code and has ![Contributors](https://img.shields.io/github/contributors/Modrinth/code?color=black&label=) contributors!
+Bedringh is designed to provide a clean, streamlined, and offline-first experience for launching Minecraft Bedrock Edition. Key modifications from the original Modrinth app include:
 
-If you're not a developer and you've stumbled upon this repository, you can access the web interface on the [Modrinth website](https://modrinth.com) and download the latest release of the app [here](https://modrinth.com/app).
+- **Bedrock Version Management:** Direct support for downloading and launching Minecraft Bedrock versions.
+- **Clean UI:** Removed unnecessary GDK/UWP loader tags for a simpler user experience. Preview/Beta versions are easily accessible via a "Show All Versions" toggle.
+- **Privacy First (No Telemetry & No Ads):** 
+  - Completely stripped out PostHog telemetry and analytics tracking.
+  - Removed Microsoft Edge ad injections and ad plugin initialization from the backend and frontend.
+  - Removed Modrinth news feed and telemetry promotion cards from the UI to ensure a distraction-free experience.
 
 ## Development
 
-This repository contains two primary packages. For detailed development information, please refer to their respective guides:
+To run the launcher locally in development mode:
 
-- [Website frontend](https://docs.modrinth.com/contributing/knossos/)
-- [Desktop app](https://docs.modrinth.com/contributing/theseus/)
-
-## Contributing
-
-We welcome contributions! Before submitting any contributions, please read our [contributing guidelines](https://docs.modrinth.com/contributing/getting-started/).
-
-If you plan to fork this repository for your own purposes, please review our [copying guidelines](COPYING.md).
-
-## Security
-
-If you discover a security vulnerability within our codebase, please follow our [responsible disclosure guidelines](https://modrinth.com/legal/security).
-
-## Support
-
-If you need help with the Modrinth web interface or app, please visit our [support page](https://support.modrinth.com). For general inquiries, you can also join our [Discord server](https://discord.modrinth.com).
+1. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+2. Start the development server for the app:
+   ```bash
+   pnpm app:dev
+   ```
 
 ## License
 
-All packages in this repository are licensed under their respective licenses. Refer to the LICENSE file in each package for more information.
+This project is a fork of the Modrinth Monorepo. Please refer to the `COPYING.md` and `LICENSE` files for copying guidelines and licensing information.

@@ -66,7 +66,7 @@
 					<button
 						class="flex w-full cursor-pointer items-center justify-center gap-1.5 border-0 border-t border-solid border-surface-5 bg-transparent py-3 text-center text-sm font-semibold text-secondary transition-colors hover:text-contrast"
 						@mousedown.prevent
-						@click="ctx.showSnapshots.value = !ctx.showSnapshots.value"
+						@click="toggleSnapshots"
 					>
 						<EyeOffIcon v-if="ctx.showSnapshots.value" class="size-4" />
 						<EyeIcon v-else class="size-4" />
@@ -81,7 +81,7 @@
 		</div>
 
 		<!-- Loader version -->
-		<template v-if="!hideLoaderVersion">
+		<template v-if="!hideLoaderVersion && selectedLoader !== 'bedrock'">
 			<Collapsible :collapsed="!selectedLoader || !selectedGameVersion" overflow-visible>
 				<div class="flex flex-col gap-2">
 					<span class="font-semibold text-contrast">{{
@@ -370,6 +370,12 @@ const gameVersionOptions = computed<ComboboxOption<string>[]>(() => {
 		const manifest = ctx.loaderVersionsCache.value[apiLoader]
 		if (!manifest) return []
 
+		if (selectedLoader.value === 'bedrock') {
+			const filtered = ctx.showSnapshots.value ? manifest : manifest.filter((x) => x.stable)
+			console.log("Bedrock versions computed. showSnapshots:", ctx.showSnapshots.value, "Manifest length:", manifest.length, "Filtered length:", filtered.length, "Manifest top:", manifest[0])
+			return filtered.map((x) => ({ value: x.id, label: x.id }))
+		}
+
 		const hasPlaceholder = manifest.some((x) => x.id === '${modrinth.gameVersion}')
 		const supportedVersions = new Set(
 			manifest
@@ -609,4 +615,9 @@ const loaderVersionOptions = computed<ComboboxOption<string>[]>(() => {
 		label: v.stable ? `${v.id} (stable)` : v.id,
 	}))
 })
+
+function toggleSnapshots() {
+	ctx.showSnapshots.value = !ctx.showSnapshots.value
+	console.log("Toggled showSnapshots to:", ctx.showSnapshots.value)
+}
 </script>

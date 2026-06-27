@@ -49,7 +49,7 @@ type LinkedData = {
 
 type ReleaseChannel = 'release' | 'beta' | 'alpha'
 
-export type InstanceLoader = 'vanilla' | 'forge' | 'fabric' | 'quilt' | 'neoforge'
+export type InstanceLoader = 'vanilla' | 'forge' | 'fabric' | 'quilt' | 'neoforge' | 'bedrock'
 
 type ContentFile = {
 	metadata?: {

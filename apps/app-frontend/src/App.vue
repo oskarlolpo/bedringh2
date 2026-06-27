@@ -245,7 +245,6 @@ const {
 	handleModpackDuplicateGoToInstance,
 } = setupProviders(notificationManager, popupNotificationManager)
 
-const news = ref([])
 const availableSurvey = ref(false)
 const displayedServerInviteNotifications = new Set()
 
@@ -381,11 +380,7 @@ async function setupApp() {
 		isMaximized.value = await getCurrentWindow().isMaximized()
 	})
 
-	if (telemetry) {
-		initAnalytics()
-		if (dev) debugAnalytics()
-		trackEvent('Launched', { version, dev, onboarded })
-	}
+
 
 	if (!dev) document.addEventListener('contextmenu', (event) => event.preventDefault())
 
@@ -417,21 +412,7 @@ async function setupApp() {
 			)
 		})
 
-	fetch(`https://modrinth.com/news/feed/articles.json`)
-		.then((response) => response.json())
-		.then((res) => {
-			if (res && res.articles) {
-				news.value = res.articles
-					.map((article) => ({
-						...article,
-						path: article.link,
-					}))
-					.slice(0, 4)
-			}
-		})
-		.catch((error) => {
-			console.error('Failed to fetch news articles', error)
-		})
+
 
 	get_opening_command().then(handleCommand)
 	fetchCredentials()
@@ -1631,21 +1612,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 							<FriendsList :credentials="credentials" :sign-in="() => signIn()" />
 						</suspense>
 					</div>
-					<div v-if="news && news.length > 0" class="p-4 flex flex-col items-center">
-						<h3 class="text-base mb-4 text-primary font-medium m-0 text-left w-full">News</h3>
-						<div class="space-y-4 flex flex-col items-center w-full">
-							<NewsArticleCard
-								v-for="(item, index) in news"
-								:key="`news-${index}`"
-								:article="item"
-							/>
-							<ButtonStyled color="brand" size="large">
-								<a href="https://modrinth.com/news" target="_blank" class="my-4">
-									<NewspaperIcon /> View all news
-								</a>
-							</ButtonStyled>
-						</div>
-					</div>
+
 				</div>
 			</div>
 		</div>
@@ -1779,7 +1746,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 .app-sidebar::after {
 	content: '';
 	position: absolute;
-	bottom: 250px;
+	bottom: 0;
 	left: 0;
 	right: 0;
 	height: 5rem;
@@ -1803,7 +1770,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 	*,
 	:deep(*) {
 		box-shadow: none !important;
-		--tw-drop-shadow:;
+		--tw-drop-shadow: /* empty */;
 	}
 }
 

@@ -345,7 +345,10 @@ export function createCreationFlowContext(
 
 	// hideLoaderVersion: hides the loader version section (vanilla world type OR vanilla selected as loader chip)
 	const hideLoaderVersion = computed(
-		() => setupType.value === 'vanilla' || selectedLoader.value === 'vanilla',
+		() =>
+			setupType.value === 'vanilla' ||
+			selectedLoader.value === 'vanilla' ||
+			selectedLoader.value === 'bedrock',
 	)
 
 	function toApiLoaderName(loader: string): string {

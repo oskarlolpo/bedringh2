@@ -317,6 +317,16 @@ fn main() {
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,
                     ),
+            )
+            .plugin(
+                "bedrock",
+                InlinedPlugin::new()
+                    .commands(&[
+                        "fetch_bedrock_versions",
+                    ])
+                    .default_permission(
+                        DefaultPermissionRule::AllowAllCommands,
+                    ),
             ),
     )
     .expect("Failed to run tauri-build");

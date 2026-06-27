@@ -43,7 +43,7 @@ const props = withDefaults(
 	}>(),
 	{
 		type: 'world',
-		availableLoaders: () => ['fabric', 'neoforge', 'forge', 'quilt'],
+		availableLoaders: () => ['fabric', 'neoforge', 'forge', 'quilt', 'bedrock'],
 		showSnapshotToggle: false,
 		disableClose: false,
 		isInitialSetup: false,
