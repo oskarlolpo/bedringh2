@@ -204,7 +204,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     command.args(&[
         "-WindowStyle", "Hidden",
         "-Command",
-        &format!("Start-Process 'shell:appsFolder\\{}!App'; Start-Sleep -Seconds 5; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
+        &format!("Start-Process 'shell:appsFolder\\{}!Game'; Start-Sleep -Seconds 5; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
     ]);
 
     let main_class_keep_alive = tempfile::tempdir()?;
