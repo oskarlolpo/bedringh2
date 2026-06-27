@@ -10636,6 +10636,7 @@ dependencies = [
  "futures",
  "futures-lite 2.6.1",
  "heck 0.5.0",
+ "hex",
  "hickory-resolver 0.25.2",
  "indicatif",
  "itertools 0.14.0",
