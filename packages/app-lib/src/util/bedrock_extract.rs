@@ -106,46 +106,35 @@ $ErrorActionPreference = 'Stop'
 $PackagePath = "{}"
 $TargetDir = "{}"
 
-Start-Transcript -Path "$TargetDir\extract.log" -Force
-
-[Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType = WindowsRuntime] | Out-Null
-$pm = [Windows.Management.Deployment.PackageManager]::new()
-$uri = [System.Uri]::new($PackagePath)
-
-# 1. Stage Package
-$op = $pm.StagePackageAsync($uri, $null)
-while ($op.Status -eq 1) {{ Start-Sleep -Milliseconds 500 }}
-
-if ($op.Status -ne 2 -and $op.Status -ne 0) {{
-    Write-Error "Failed to stage package. HRESULT: $((([int]$op.ErrorCode.HResult).ToString('X')))"
-    exit 1
+$existing = Get-AppxPackage -Name "Microsoft.MinecraftUWP"
+$restorePaths = @()
+if ($existing) {{
+    foreach ($pkg in $existing) {{
+        $restorePaths += $pkg.InstallLocation
+        Remove-AppxPackage -Package $pkg.PackageFullName
+    }}
 }}
 
-# 2. Find Staged Package
-$package = $pm.FindPackages() | Where-Object {{ $_.Id.Name -match "MinecraftUWP" }} | Sort-Object -Property {{ $_.Id.Version }} -Descending | Select-Object -First 1
-if (-not $package) {{
-    Write-Error "MinecraftUWP package not found after staging"
-    exit 1
+try {{
+    Add-AppxPackage -Path $PackagePath -Stage
+    $pkg = Get-AppxPackage -AllUsers -Name "Microsoft.MinecraftUWP" | Sort-Object -Property Version -Descending | Select-Object -First 1
+    
+    if (-not $pkg) {{
+        throw "Staged package not found."
+    }}
+
+    New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+    robocopy $pkg.InstallLocation $TargetDir /E /ZB /COPYALL /R:1 /W:1
+    
+    Remove-AppxPackage -AllUsers -Package $pkg.PackageFullName
+}} finally {{
+    foreach ($path in $restorePaths) {{
+        if (Test-Path "$path\AppxManifest.xml") {{
+            Add-AppxPackage -Register "$path\AppxManifest.xml"
+        }}
+    }}
+    Remove-Item -Path $PSCommandPath -Force
 }}
-
-$packageFullName = $package.Id.FullName
-$packageFamilyName = $package.Id.FamilyName
-$installLoc = $package.InstalledLocation.Path
-
-# 3. Copy files using Invoke-CommandInDesktopPackage to bypass EFS
-$scriptBlock = {{
-    param($src, $dst)
-    Copy-Item -Path "$src\*" -Destination $dst -Recurse -Force
-}}
-
-Invoke-CommandInDesktopPackage -AppId "App" -PackageFamilyName $packageFamilyName -Command $scriptBlock -ArgumentList $installLoc, $TargetDir
-
-# 4. Remove Package
-$opRemove = $pm.RemovePackageAsync($packageFullName)
-while ($opRemove.Status -eq 1) {{ Start-Sleep -Milliseconds 500 }}
-
-# 5. Cleanup self
-Remove-Item -Path $PSCommandPath -Force
 "#, package_path.to_string_lossy().replace("\"", "`\""), target_dir.to_string_lossy().replace("\"", "`\""));
 
         #[cfg(target_os = "windows")]

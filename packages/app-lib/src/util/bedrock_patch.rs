@@ -55,7 +55,7 @@ pub async fn patch_and_register(
             #[cfg(target_os = "windows")]
             {
                 let script = format!(
-                    "Add-AppxPackage -Register \"{}\" -DevelopmentMode",
+                    "Add-AppxPackage -Register \"{}\"",
                     manifest_path.to_string_lossy().replace("\"", "`\"")
                 );
 
