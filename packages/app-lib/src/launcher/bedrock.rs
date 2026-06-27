@@ -109,7 +109,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let manifest_path = versions_dir.join("AppxManifest.xml");
     let is_custom_unpacked = manifest_path.exists();
 
-    let safe_version = profile.name.replace(" ", "").replace(".", "_");
+    let safe_version = hex::encode(&profile.name);
     let custom_pfn = format!("Bedringh.MinecraftUWP.{}_8wekyb3d8bbwe", safe_version);
     let pfn_to_use = if is_custom_unpacked {
         custom_pfn.clone()

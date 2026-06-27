@@ -41,8 +41,8 @@ pub async fn patch_manifest(
     content = re_custom_install_ext.replace_all(&content, "").to_string();
 
     // Меняем Identity Name, чтобы избежать конфликта 0x80073CFB
-    // Создаем уникальное имя пакета на основе версии
-    let safe_version = profile_name.replace(" ", "").replace(".", "_");
+    // Создаем уникальное имя пакета на основе версии (используем hex для безопасных символов)
+    let safe_version = hex::encode(profile_name);
     let new_identity = format!("Bedringh.MinecraftUWP.{}", safe_version);
     
     let re_identity = regex::Regex::new(r#"(<Identity[^>]*\bName=")[^"]+(")"#).unwrap();
