@@ -45,8 +45,8 @@ pub async fn patch_manifest(
     let safe_version = profile_name.replace(" ", "").replace(".", "_");
     let new_identity = format!("Bedringh.MinecraftUWP.{}", safe_version);
     
-    let re_identity = regex::Regex::new(r#"<Identity[^>]*Name="([^"]+)"#).unwrap();
-    content = re_identity.replace(&content, format!("<Identity Name=\"{}\"", new_identity)).to_string();
+    let re_identity = regex::Regex::new(r#"(<Identity[^>]*\bName=")[^"]+(")"#).unwrap();
+    content = re_identity.replace(&content, format!("${{1}}{}${{2}}", new_identity)).to_string();
 
     tokio::fs::write(&manifest_path, content).await?;
 
