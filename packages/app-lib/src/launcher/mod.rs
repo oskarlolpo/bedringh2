@@ -301,7 +301,7 @@ pub async fn install_minecraft(
                 &profile.path,
             ).await?;
             
-            crate::util::bedrock_patch::patch_and_register(
+            crate::util::bedrock_patch::patch_manifest(
                 &versions_dir,
                 &loading_bar,
                 &profile.name,

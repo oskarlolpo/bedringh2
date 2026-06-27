@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-pub async fn patch_and_register(
+pub async fn patch_manifest(
     versions_dir: &Path,
     loading_bar: &LoadingBarId,
     profile_name: &str,
@@ -40,6 +40,14 @@ pub async fn patch_and_register(
     let re_custom_install = regex::Regex::new(r#"(?s)<[^>]*Capability[^>]*Name="customInstallActions"[^>]*>"#).unwrap();
     content = re_custom_install.replace_all(&content, "").to_string();
 
+    // Меняем Identity Name, чтобы избежать конфликта 0x80073CFB
+    // Создаем уникальное имя пакета на основе версии
+    let safe_version = profile_name.replace(" ", "").replace(".", "_");
+    let new_identity = format!("Bedringh.MinecraftUWP.{}", safe_version);
+    
+    let re_identity = regex::Regex::new(r#"<Identity[^>]*Name="([^"]+)"#).unwrap();
+    content = re_identity.replace(&content, format!("<Identity Name=\"{}\"", new_identity)).to_string();
+
     tokio::fs::write(&manifest_path, content).await?;
 
     let _ = emit_loading(
@@ -48,7 +56,7 @@ pub async fn patch_and_register(
         Some("Регистрация версии в системе..."),
     );
 
-    // 2. Регистрация в Development Mode
+    // 2. Регистрация
     tokio::task::spawn_blocking({
         let manifest_path = manifest_path.clone();
         move || -> crate::Result<()> {
@@ -66,13 +74,19 @@ pub async fn patch_and_register(
                 let status = cmd.status()?;
                 if !status.success() {
                     return Err(crate::Error::from(ErrorKind::OtherError(
-                        "Не удалось зарегистрировать Appx пакет в режиме разработчика".to_string()
+                        "Не удалось зарегистрировать Appx пакет. Конфликт версий?".to_string()
                     )));
                 }
             }
             Ok(())
         }
     }).await.unwrap()?;
+
+    let _ = emit_loading(
+        loading_bar,
+        100.0,
+        Some("Готово!"),
+    );
 
     Ok(())
 }

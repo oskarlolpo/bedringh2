@@ -105,25 +105,39 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         if profile.game_version.to_lowercase().contains("gdk") { BedrockInstallationType::Gdk } else { BedrockInstallationType::Uwp }
     };
 
-    let pkg_name = if install_type.is_preview() { "Microsoft.MinecraftWindowsBeta" } else { "Microsoft.MinecraftUWP" };
-    let output = std::process::Command::new("powershell")
-        .args(&[
-            "-NoProfile",
-            "-Command",
-            &format!("(Get-AppxPackage -Name {}).Version", pkg_name)
-        ])
-        .output()?;
-    let installed_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let versions_dir = state.directories.caches_dir().join("versions").join(format!("bedrock_{}", profile.game_version));
+    let manifest_path = versions_dir.join("AppxManifest.xml");
+    let is_custom_unpacked = manifest_path.exists();
 
-    let prof_prefix = profile.game_version.split('.').take(3).collect::<Vec<_>>().join(".");
-    let inst_prefix = installed_version.split('.').take(3).collect::<Vec<_>>().join(".");
-    
-    if installed_version.is_empty() || prof_prefix != inst_prefix {
-        return Err(ErrorKind::LauncherError(format!(
-            "Установленная версия Bedrock в системе ({}) не совпадает с версией профиля ({}). Автоматическая распаковка скачанных пакетов пока не поддерживается, поэтому лаунчер использует системный клиент.",
-            if installed_version.is_empty() { "Не найдена" } else { &installed_version },
-            profile.game_version
-        )).into());
+    let safe_version = profile.name.replace(" ", "").replace(".", "_");
+    let custom_pfn = format!("Bedringh.MinecraftUWP.{}_8wekyb3d8bbwe", safe_version);
+    let pfn_to_use = if is_custom_unpacked {
+        custom_pfn.clone()
+    } else {
+        install_type.package_family().to_string()
+    };
+
+    if !is_custom_unpacked {
+        let pkg_name = if install_type.is_preview() { "Microsoft.MinecraftWindowsBeta" } else { "Microsoft.MinecraftUWP" };
+        let output = std::process::Command::new("powershell")
+            .args(&[
+                "-NoProfile",
+                "-Command",
+                &format!("(Get-AppxPackage -Name {}).Version", pkg_name)
+            ])
+            .output()?;
+        let installed_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        let prof_prefix = profile.game_version.split('.').take(3).collect::<Vec<_>>().join(".");
+        let inst_prefix = installed_version.split('.').take(3).collect::<Vec<_>>().join(".");
+        
+        if installed_version.is_empty() || prof_prefix != inst_prefix {
+            return Err(ErrorKind::LauncherError(format!(
+                "Установленная версия Bedrock в системе ({}) не совпадает с версией профиля ({}). Автоматическая распаковка скачанных пакетов пока не поддерживается, поэтому лаунчер использует системный клиент.",
+                if installed_version.is_empty() { "Не найдена" } else { &installed_version },
+                profile.game_version
+            )).into());
+        }
     }
     let instance_mojang = instance_path.join("com.mojang");
 
@@ -131,7 +145,21 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         fs::create_dir_all(&instance_mojang).await?;
     }
 
-    let target_games_dir = get_bedrock_target_dir(install_type).await?;
+    let target_games_dir = if is_custom_unpacked {
+        let local_appdata = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
+            let mut path = dirs::home_dir().unwrap();
+            path.push("AppData");
+            path.push("Local");
+            path.to_string_lossy().into_owned()
+        });
+        let dir = PathBuf::from(local_appdata).join("Packages").join(&pfn_to_use).join("LocalState").join("games");
+        if !dir.exists() {
+            fs::create_dir_all(&dir).await?;
+        }
+        dir
+    } else {
+        get_bedrock_target_dir(install_type).await?
+    };
     let mojang_dir = target_games_dir.join("com.mojang");
 
     if mojang_dir.exists() {
@@ -176,7 +204,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     command.args(&[
         "-WindowStyle", "Hidden",
         "-Command",
-        &format!("Start-Process 'shell:appsFolder\\{}!App'; Start-Sleep -Seconds 5; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", install_type.package_family())
+        &format!("Start-Process 'shell:appsFolder\\{}!App'; Start-Sleep -Seconds 5; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
     ]);
 
     let main_class_keep_alive = tempfile::tempdir()?;
