@@ -158,11 +158,11 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     let mut exe_path_to_inject = None;
 
-    if is_custom_unpacked {
+    if is_custom_unpacked && install_type.is_gdk() {
         exe_path_to_inject = Some(exe_path.clone());
     }
 
-    if exe_path_to_inject.is_none() && !is_custom_unpacked {
+    if exe_path_to_inject.is_none() {
         let pkg_name = if install_type.is_preview() {
             "Microsoft.MinecraftWindowsBeta"
         } else {
