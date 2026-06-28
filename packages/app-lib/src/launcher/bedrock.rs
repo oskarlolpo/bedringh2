@@ -239,6 +239,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         fs::create_dir_all(&instance_mojang).await?;
     }
 
+    emit_legacy_log(&profile.path, "Granting application package access permissions to profile data...");
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang).await;
+
     let target_games_dir = if let Some(ref exe_path) = exe_path_to_inject {
         let exe_dir = exe_path.parent().unwrap();
         let local_data_root = exe_dir.join("Minecraft Bedrock");
