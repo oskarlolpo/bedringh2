@@ -63,51 +63,21 @@ pub async fn auto_install_java(java_version: u32) -> crate::Result<PathBuf> {
     )
     .await?;
 
-    #[derive(Deserialize)]
-    #[allow(non_snake_case)]
-    struct LibericaRelease {
-        pub downloadUrl: String,
-        pub filename: String,
-    }
-
-    emit_loading(&loading_bar, 0.0, Some("Fetching java version"))?;
-    let mut download_url = String::new();
-    let mut download_name = PathBuf::new();
-
-    let liberica_arch = match std::env::consts::ARCH {
-        "x86_64" => "x86",
-        "aarch64" => "arm",
-        _ => std::env::consts::ARCH,
-    };
-    let liberica_bitness = match std::env::consts::ARCH {
-        "x86_64" | "aarch64" => "64",
-        "x86" => "32",
-        _ => "64",
-    };
-    let liberica_os = match std::env::consts::OS {
-        "macos" => "macos",
-        _ => std::env::consts::OS,
+    let download_url = match java_version {
+        8 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu8.94.0.17-ca-jre8.0.492-win_x64.zip".to_string(),
+        17 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu17.66.19-ca-jre17.0.19-win_x64.zip".to_string(),
+        21 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu21.50.19-ca-jre21.0.11-win_x64.zip".to_string(),
+        25 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu25.34.17-ca-jre25.0.3-win_x64.zip".to_string(),
+        _ => return Err(crate::ErrorKind::LauncherError(format!("Unsupported Java version: {}", java_version)).into()),
     };
 
-    if let Ok(releases) = fetch_json::<Vec<LibericaRelease>>(
-        Method::GET,
-        &format!(
-            "https://api.bell-sw.com/v1/liberica/releases?version-feature={}&os={}&arch={}&bitness={}&bundle-type=jre&package-type=zip",
-            java_version, liberica_os, liberica_arch, liberica_bitness
-        ),
-        None, None, None, &state.fetch_semaphore, &state.pool,
-    ).await {
-        if let Some(release) = releases.into_iter().next() {
-            download_url = release.downloadUrl;
-            download_name = PathBuf::from(release.filename);
-        }
-    }
-
-    if download_url.is_empty() {
-        return Err(crate::Error::from(crate::ErrorKind::InputError(
-            "Failed to find java download link from any source".to_string(),
-        )));
-    }
+    let base_name = match java_version {
+        8 => "zulu8.94.0.17-ca-jre8.0.492-win_x64",
+        17 => "zulu17.66.19-ca-jre17.0.19-win_x64",
+        21 => "zulu21.50.19-ca-jre21.0.11-win_x64",
+        25 => "zulu25.34.17-ca-jre25.0.3-win_x64",
+        _ => "",
+    };
 
     emit_loading(&loading_bar, 10.0, Some("Downloading java version"))?;
 
@@ -152,13 +122,7 @@ pub async fn auto_install_java(java_version: u32) -> crate::Result<PathBuf> {
         ))
     })?;
     emit_loading(&loading_bar, 10.0, Some("Done extracting java"))?;
-    let mut base_path = path.join(
-        download_name
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-    );
+    let mut base_path = path.join(base_name);
 
     #[cfg(target_os = "macos")]
     {
