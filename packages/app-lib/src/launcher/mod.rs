@@ -29,9 +29,12 @@ use tokio::process::Command;
 
 mod args;
 
-pub mod download;
-pub mod quick_play_version;
 pub mod bedrock;
+pub mod download;
+pub mod inject;
+pub mod job;
+pub mod pe;
+pub mod quick_play_version;
 
 // All nones -> disallowed
 // 1+ true -> allowed
@@ -216,11 +219,20 @@ pub async fn resolve_minecraft_manifest(
         &state.pool,
         &state.api_semaphore,
     )
-    .await {
+    .await
+    {
         Ok(Some(res)) => res,
-        Ok(None) => return Err(crate::ErrorKind::NoValueFor("minecraft versions".to_string()).into()),
+        Ok(None) => {
+            return Err(crate::ErrorKind::NoValueFor(
+                "minecraft versions".to_string(),
+            )
+            .into());
+        }
         Err(e) => {
-            tracing::warn!("Failed to fetch minecraft manifest, falling back to offline cache: {}", e);
+            tracing::warn!(
+                "Failed to fetch minecraft manifest, falling back to offline cache: {}",
+                e
+            );
             crate::state::CachedEntry::get_minecraft_manifest(
                 Some(crate::state::CacheBehaviour::StaleWhileRevalidateSkipOffline),
                 &state.pool,
@@ -274,43 +286,73 @@ pub async fn install_minecraft(
 
     let instance_path =
         crate::api::profile::get_full_path(&profile.path).await?;
-        
+
     if profile.loader == ModLoader::Bedrock {
         let versions = crate::api::bedrock::fetch_bedrock_versions().await?;
-        let bedrock_version = versions.into_iter().find(|v| v.version == profile.game_version)
-            .ok_or_else(|| crate::ErrorKind::LauncherError(format!("Bedrock version {} not found", profile.game_version)))?;
-            
+        let bedrock_version = versions
+            .into_iter()
+            .find(|v| v.version == profile.game_version)
+            .ok_or_else(|| {
+                crate::ErrorKind::LauncherError(format!(
+                    "Bedrock version {} not found",
+                    profile.game_version
+                ))
+            })?;
+
         if bedrock_version.identifier.starts_with("http") {
-            let extension = if bedrock_version.identifier.ends_with(".msixvc") { "msixvc" } else { "zip" };
+            let lower_id = bedrock_version.identifier.to_lowercase();
+            let extension = if lower_id.ends_with(".msixvc") {
+                "msixvc"
+            } else if lower_id.ends_with(".appx") {
+                "Appx"
+            } else {
+                "zip"
+            };
+
             let filename = format!("bedrock-{}.{}", profile.game_version, extension);
-            let downloaded_file = crate::util::bedrock_fetch::download_bedrock_package(
-                &bedrock_version.identifier,
-                &filename,
-                &profile.name,
-                &profile.path,
-                &loading_bar,
-                &reqwest::Client::new()
-            ).await?;
+            let downloaded_file =
+                crate::util::bedrock_fetch::download_bedrock_package(
+                    &bedrock_version.identifier,
+                    &filename,
+                    &profile.name,
+                    &profile.path,
+                    &loading_bar,
+                    &reqwest::Client::new(),
+                )
+                .await?;
+
+            let versions_dir = state
+                .directories
+                .caches_dir()
+                .join("versions")
+                .join(format!("bedrock_{}", profile.game_version));
             
-            let versions_dir = state.directories.caches_dir().join("versions").join(format!("bedrock_{}", profile.game_version));
-            crate::util::bedrock_extract::extract_bedrock_package(
-                downloaded_file,
-                versions_dir.clone(),
-                &loading_bar,
-                &profile.name,
-                &profile.path,
-            ).await?;
-            
-            crate::util::bedrock_patch::patch_manifest(
-                &versions_dir,
-                &loading_bar,
-                &profile.name,
-                &profile.path,
-            ).await?;
-            
-            crate::util::bedrock_patch::create_instance_skeleton(&profile.path).await?;
+            if extension == "zip" || extension == "msixvc" {
+                crate::util::bedrock_extract::extract_bedrock_package(
+                    downloaded_file,
+                    versions_dir.clone(),
+                    &loading_bar,
+                    &profile.name,
+                    &profile.path,
+                )
+                .await?;
+
+                crate::util::bedrock_patch::patch_manifest(
+                    &versions_dir,
+                    &loading_bar,
+                    &profile.name,
+                    &profile.path,
+                )
+                .await?;
+            }
+
+            crate::util::bedrock_patch::create_instance_skeleton(&profile.path)
+                .await?;
         } else {
-            // "UWP" fallback, not downloaded via direct URL
+            return Err(crate::ErrorKind::LauncherError(format!(
+                "Cannot download UWP version: no UpdateId or URL found for {}",
+                profile.game_version
+            )).into());
         }
 
         crate::api::profile::edit(&profile.path, |prof| {
@@ -319,11 +361,7 @@ pub async fn install_minecraft(
         })
         .await?;
 
-        let _ = emit_loading(
-            &loading_bar,
-            100.0,
-            Some("Готово"),
-        );
+        let _ = emit_loading(&loading_bar, 100.0, Some("Готово"));
 
         return Ok(());
     }
@@ -573,12 +611,12 @@ pub async fn launch_minecraft(
         .into());
     }
 
-    if profile.loader == ModLoader::Bedrock {
-        return bedrock::launch_bedrock(profile).await;
-    }
-
     if profile.install_stage != ProfileInstallStage::Installed {
         install_minecraft(profile, None, false).await?;
+    }
+
+    if profile.loader == ModLoader::Bedrock {
+        return bedrock::launch_bedrock(profile).await;
     }
 
     let state = State::get().await?;
@@ -904,7 +942,7 @@ pub async fn launch_minecraft(
             post_exit_hook,
             state.directories.profile_logs_dir(&profile.path),
             version_info.logging.is_some(),
-            main_class_keep_alive,
+            vec![Box::new(main_class_keep_alive)],
             rpc_server,
             async |process: &ProcessMetadata, rpc_server| {
                 let process_start_time = process.start_time.to_rfc3339();

@@ -1,9 +1,9 @@
-use crate::event::emit::emit_loading;
-use crate::event::LoadingBarType;
-use crate::state::DirectoryInfo;
 use crate::ErrorKind;
-use reqwest::header::RANGE;
+use crate::event::LoadingBarType;
+use crate::event::emit::emit_loading;
+use crate::state::DirectoryInfo;
 use reqwest::Client;
+use reqwest::header::RANGE;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,13 +28,16 @@ pub async fn download_bedrock_package(
     loading_bar: &crate::event::LoadingBarId,
     client: &Client,
 ) -> crate::Result<PathBuf> {
-    let dirs = DirectoryInfo::global_handle_if_ready()
-        .ok_or_else(|| ErrorKind::FSError("App directories not initialized".to_string()))?;
+    let dirs = DirectoryInfo::global_handle_if_ready().ok_or_else(|| {
+        ErrorKind::FSError("App directories not initialized".to_string())
+    })?;
 
     let cache_dir = dirs.caches_dir().join("bedrock_packages");
     if !cache_dir.exists() {
         fs::create_dir_all(&cache_dir).await.map_err(|e| {
-            crate::Error::from(ErrorKind::FSError(format!("Failed to create bedrock cache dir: {e}")))
+            crate::Error::from(ErrorKind::FSError(format!(
+                "Failed to create bedrock cache dir: {e}"
+            )))
         })?;
     }
 
@@ -52,16 +55,20 @@ pub async fn download_bedrock_package(
         .send()
         .await
         .map_err(|e| ErrorKind::FetchError(e))?;
-    
+
     let parsed_len = head_resp
         .headers()
         .get(reqwest::header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
 
-    let total_size = parsed_len.or_else(|| head_resp.content_length()).ok_or_else(|| {
-        ErrorKind::OtherError("No content-length for Bedrock package".to_string())
-    })?;
+    let total_size = parsed_len
+        .or_else(|| head_resp.content_length())
+        .ok_or_else(|| {
+            ErrorKind::OtherError(
+                "No content-length for Bedrock package".to_string(),
+            )
+        })?;
 
     if total_size == 0 {
         return Err(crate::Error::from(ErrorKind::OtherError(
@@ -77,11 +84,13 @@ pub async fn download_bedrock_package(
         },
         total_size as f64,
         "Скачивание Bedrock...",
-    ).await;
+    )
+    .await;
 
     // 3. Load State
     let mut state: DownloadState = if state_path.exists() {
-        let content: String = fs::read_to_string(&state_path).await.unwrap_or_default();
+        let content: String =
+            fs::read_to_string(&state_path).await.unwrap_or_default();
         serde_json::from_str(&content).unwrap_or_default()
     } else {
         DownloadState::default()
@@ -95,10 +104,11 @@ pub async fn download_bedrock_package(
         file.set_len(total_size).await?;
     }
 
-    let downloaded_bytes: u64 = state.chunks_completed.len() as u64 * CHUNK_SIZE;
+    let downloaded_bytes: u64 =
+        state.chunks_completed.len() as u64 * CHUNK_SIZE;
     let _ = emit_loading(
         &loading_bar,
-        downloaded_bytes as f64, // Wait, emit_loading takes increment, not total downloaded! 
+        downloaded_bytes as f64, // Wait, emit_loading takes increment, not total downloaded!
         Some("Загрузка пакета..."),
     ); // ACTUALLY, for initial tick it's safe to just increment by what's already done.
 
@@ -138,11 +148,17 @@ pub async fn download_bedrock_package(
                     Ok(mut resp) => {
                         if !resp.status().is_success() {
                             if attempts >= 3 {
-                                return Err(crate::Error::from(ErrorKind::OtherError(
-                                    format!("HTTP {}", resp.status()),
-                                )));
+                                return Err(crate::Error::from(
+                                    ErrorKind::OtherError(format!(
+                                        "HTTP {}",
+                                        resp.status()
+                                    )),
+                                ));
                             }
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            tokio::time::sleep(std::time::Duration::from_secs(
+                                1,
+                            ))
+                            .await;
                             continue;
                         }
 
@@ -153,14 +169,17 @@ pub async fn download_bedrock_package(
                             use std::os::windows::fs::OpenOptionsExt;
                             std_opts.share_mode(3); // FILE_SHARE_READ | FILE_SHARE_WRITE
                         }
-                        let mut file: File = tokio::fs::OpenOptions::from(std_opts)
-                            .open(path.as_ref())
-                            .await?;
+                        let mut file: File =
+                            tokio::fs::OpenOptions::from(std_opts)
+                                .open(path.as_ref())
+                                .await?;
                         file.seek(SeekFrom::Start(start)).await?;
 
-                        while let Some(chunk) = resp.chunk().await.map_err(|e| {
-                            crate::Error::from(ErrorKind::FetchError(e))
-                        })? {
+                        while let Some(chunk) =
+                            resp.chunk().await.map_err(|e| {
+                                crate::Error::from(ErrorKind::FetchError(e))
+                            })?
+                        {
                             file.write_all(&chunk).await?;
                             let _ = tx.send(chunk.len() as f64).await;
                         }
@@ -168,9 +187,12 @@ pub async fn download_bedrock_package(
                     }
                     Err(e) => {
                         if attempts >= 3 {
-                            return Err(crate::Error::from(ErrorKind::FetchError(e)));
+                            return Err(crate::Error::from(
+                                ErrorKind::FetchError(e),
+                            ));
                         }
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(1))
+                            .await;
                     }
                 }
             }

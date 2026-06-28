@@ -1,10 +1,7 @@
-use crate::event::emit::{emit_loading, edit_loading};
-use crate::event::{LoadingBarId, LoadingBarType};
 use crate::ErrorKind;
-use std::path::{Path, PathBuf};
-
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
+use crate::event::emit::{edit_loading, emit_loading};
+use crate::event::{LoadingBarId, LoadingBarType};
+use std::path::Path;
 
 pub async fn patch_manifest(
     versions_dir: &Path,
@@ -15,7 +12,7 @@ pub async fn patch_manifest(
     let manifest_path = versions_dir.join("AppxManifest.xml");
     if !manifest_path.exists() {
         return Err(crate::Error::from(ErrorKind::OtherError(
-            "AppxManifest.xml не найден в папке с версией".to_string()
+            "AppxManifest.xml не найден в папке с версией".to_string(),
         )));
     }
 
@@ -27,79 +24,42 @@ pub async fn patch_manifest(
         },
         100.0,
         "Патчинг манифеста...",
-    ).await;
+    )
+    .await;
 
     // 1. Патчинг AppxManifest.xml
     let mut content = tokio::fs::read_to_string(&manifest_path).await?;
-    
+
     // Удаляем capability customInstallActions (вызывает ошибки при установке распакованного приложения)
-    let re_custom_install_cap = regex::Regex::new(r#"(?s)<[^>]*Capability[^>]*Name="customInstallActions"[^>]*>"#).unwrap();
+    let re_custom_install_cap = regex::Regex::new(
+        r#"(?s)<[^>]*Capability[^>]*Name="customInstallActions"[^>]*>"#,
+    )
+    .unwrap();
     content = re_custom_install_cap.replace_all(&content, "").to_string();
 
     // Удаляем extension windows.customInstall, так как мы удалили capability
     let re_custom_install_ext = regex::Regex::new(r#"(?s)<[^>]*Extension[^>]*Category="windows\.customInstall"[^>]*>.*?</[^>]*Extension>"#).unwrap();
     content = re_custom_install_ext.replace_all(&content, "").to_string();
 
-    // Меняем Identity Name, чтобы избежать конфликта 0x80073CFB
-    // Создаем уникальное имя пакета на основе версии (используем hex для безопасных символов)
-    let safe_version = hex::encode(profile_name);
-    let new_identity = format!("Bedringh.MinecraftUWP.{}", safe_version);
-    
-    let re_identity = regex::Regex::new(r#"(<Identity[^>]*\bName=")[^"]+(")"#).unwrap();
-    content = re_identity.replace(&content, format!("${{1}}{}${{2}}", new_identity)).to_string();
-
+    // Мы НЕ меняем Identity Name, так как это ломает Xbox Live (gamingservicesui.exe crash).
+    // Оригинальный Identity Name (Microsoft.MinecraftUWP) необходим для работы интеграции со Store и Xbox.
     tokio::fs::write(&manifest_path, content).await?;
 
-    let _ = emit_loading(
-        loading_bar,
-        50.0,
-        Some("Регистрация версии в системе..."),
-    );
-
-    // 2. Регистрация
-    tokio::task::spawn_blocking({
-        let manifest_path = manifest_path.clone();
-        move || -> crate::Result<()> {
-            #[cfg(target_os = "windows")]
-            {
-                let script = format!(
-                    "Add-AppxPackage -Register \"{}\"",
-                    manifest_path.to_string_lossy().replace("\"", "`\"")
-                );
-
-                let mut cmd = std::process::Command::new("powershell");
-                cmd.args(&["-NoProfile", "-NonInteractive", "-Command", &script]);
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-                
-                let status = cmd.status()?;
-                if !status.success() {
-                    return Err(crate::Error::from(ErrorKind::OtherError(
-                        "Не удалось зарегистрировать Appx пакет. Конфликт версий?".to_string()
-                    )));
-                }
-            }
-            Ok(())
-        }
-    }).await.unwrap()?;
-
-    let _ = emit_loading(
-        loading_bar,
-        100.0,
-        Some("Готово!"),
-    );
+    let _ = emit_loading(loading_bar, 100.0, Some("Готово!"));
 
     Ok(())
 }
 
 pub async fn create_instance_skeleton(profile_path: &str) -> crate::Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
-    
+    let instance_path =
+        crate::api::profile::get_full_path(profile_path).await?;
+
     let base_dir = instance_path.join("com.mojang");
     tokio::fs::create_dir_all(&base_dir).await?;
     tokio::fs::create_dir_all(base_dir.join("minecraftWorlds")).await?;
     tokio::fs::create_dir_all(base_dir.join("resource_packs")).await?;
     tokio::fs::create_dir_all(base_dir.join("behavior_packs")).await?;
     tokio::fs::create_dir_all(base_dir.join("minecraftpe")).await?;
-    
+
     Ok(())
 }

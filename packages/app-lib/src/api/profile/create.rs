@@ -62,16 +62,17 @@ pub async fn profile_create(
         "Creating profile at path {}",
         &canonicalize(&full_path)?.display()
     );
-    let loader = if modloader != ModLoader::Vanilla && modloader != ModLoader::Bedrock {
-        get_loader_version_from_profile(
-            &game_version,
-            modloader,
-            loader_version.as_deref(),
-        )
-        .await?
-    } else {
-        None
-    };
+    let loader =
+        if modloader != ModLoader::Vanilla && modloader != ModLoader::Bedrock {
+            get_loader_version_from_profile(
+                &game_version,
+                modloader,
+                loader_version.as_deref(),
+            )
+            .await?
+        } else {
+            None
+        };
 
     let mut profile = Profile {
         path: path.clone(),
@@ -136,14 +137,14 @@ pub async fn profile_create(
                 .await?;
         }
 
+        profile.upsert(&state.pool).await?;
+
         crate::state::fs_watcher::watch_profile(
             &profile.path,
             &state.file_watcher,
             &state.directories,
         )
         .await;
-
-        profile.upsert(&state.pool).await?;
 
         emit_profile(&profile.path, ProfilePayloadType::Created).await?;
 

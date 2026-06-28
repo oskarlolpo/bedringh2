@@ -276,6 +276,10 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let mojang_dir = target_games_dir.join("com.mojang");
     let mut actual_backup_dir = target_games_dir.join("com.mojang.backup");
 
+    if !target_games_dir.exists() {
+        fs::create_dir_all(&target_games_dir).await?;
+    }
+
     if mojang_dir.exists() {
         let meta = fs::symlink_metadata(&mojang_dir).await?;
         let is_reparse_point = (meta.file_attributes() & 0x00000400) != 0;
@@ -426,7 +430,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         command.args(&[
             "-WindowStyle", "Hidden",
             "-Command",
-            &format!("Start-Process 'shell:appsFolder\\{}!App'; $timeout = 30; while (!(Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) -and $timeout -gt 0) {{ Start-Sleep -Seconds 1; $timeout-- }}; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
+            &format!("$manifest = (Get-AppxPackage -Name {0} | Get-AppxPackageManifest); $appId = $manifest.Package.Applications.Application.Id; if ($appId -is [array]) {{ $appId = $appId[0] }}; Start-Process \"shell:appsFolder\\{0}!$appId\"; $timeout = 30; while (!(Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) -and $timeout -gt 0) {{ Start-Sleep -Seconds 1; $timeout-- }}; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
         ]);
         emit_legacy_log(&profile.path, &format!("Launching system UWP application: {}", pfn_to_use));
 

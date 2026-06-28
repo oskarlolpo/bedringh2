@@ -16,11 +16,17 @@ fn main() {
 }
 
 fn set_env() {
-    println!("cargo::warning=Current directory for build.rs is {:?}", std::env::current_dir());
+    println!(
+        "cargo::warning=Current directory for build.rs is {:?}",
+        std::env::current_dir()
+    );
     let iter = match dotenvy::dotenv_iter() {
         Ok(iter) => iter,
         Err(e) => {
-            println!("cargo::warning=Failed to load .env via dotenv_iter: {}", e);
+            println!(
+                "cargo::warning=Failed to load .env via dotenv_iter: {}",
+                e
+            );
             return;
         }
     };

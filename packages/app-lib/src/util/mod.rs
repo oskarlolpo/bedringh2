@@ -3,6 +3,7 @@ pub mod bedrock_extract;
 pub mod bedrock_fetch;
 pub mod bedrock_patch;
 pub mod fetch;
+pub mod gdk;
 pub mod io;
 pub mod jre;
 pub mod network;

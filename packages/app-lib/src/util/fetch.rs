@@ -386,7 +386,10 @@ pub async fn fetch_advanced_with_client(
                     }
 
                     if attempt <= FETCH_ATTEMPTS {
-                        tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
+                        tokio::time::sleep(time::Duration::from_millis(
+                            500 * attempt as u64,
+                        ))
+                        .await;
                         continue;
                     }
                 }
@@ -433,7 +436,12 @@ pub async fn fetch_advanced_with_client(
                         let hash = sha1_async(bytes.clone()).await?;
                         if &*hash != sha1 {
                             if attempt <= FETCH_ATTEMPTS {
-                                tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
+                                tokio::time::sleep(
+                                    time::Duration::from_millis(
+                                        500 * attempt as u64,
+                                    ),
+                                )
+                                .await;
                                 continue;
                             } else {
                                 return Err(ErrorKind::HashError(
@@ -453,14 +461,20 @@ pub async fn fetch_advanced_with_client(
 
                     return Ok(bytes);
                 } else if attempt <= FETCH_ATTEMPTS {
-                    tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
+                    tokio::time::sleep(time::Duration::from_millis(
+                        500 * attempt as u64,
+                    ))
+                    .await;
                     continue;
                 } else if let Err(err) = bytes {
                     return Err(err.into());
                 }
             }
             Err(_) if attempt <= FETCH_ATTEMPTS => {
-                tokio::time::sleep(time::Duration::from_millis(500 * attempt as u64)).await;
+                tokio::time::sleep(time::Duration::from_millis(
+                    500 * attempt as u64,
+                ))
+                .await;
                 continue;
             }
             Err(err) => {

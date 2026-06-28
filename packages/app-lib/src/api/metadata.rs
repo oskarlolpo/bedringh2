@@ -11,11 +11,20 @@ pub async fn get_minecraft_versions() -> crate::Result<VersionManifest> {
         &state.pool,
         &state.api_semaphore,
     )
-    .await {
+    .await
+    {
         Ok(Some(res)) => res,
-        Ok(None) => return Err(crate::ErrorKind::NoValueFor("minecraft versions".to_string()).into()),
+        Ok(None) => {
+            return Err(crate::ErrorKind::NoValueFor(
+                "minecraft versions".to_string(),
+            )
+            .into());
+        }
         Err(e) => {
-            tracing::warn!("Fallback to offline cache for minecraft versions: {}", e);
+            tracing::warn!(
+                "Fallback to offline cache for minecraft versions: {}",
+                e
+            );
             CachedEntry::get_minecraft_manifest(
                 Some(crate::state::CacheBehaviour::StaleWhileRevalidateSkipOffline),
                 &state.pool,
@@ -33,7 +42,8 @@ pub async fn get_minecraft_versions() -> crate::Result<VersionManifest> {
 // #[tracing::instrument]
 pub async fn get_loader_versions(loader: &str) -> crate::Result<Manifest> {
     if loader == "bedrock" {
-        let bedrock_versions = crate::api::bedrock::fetch_bedrock_versions().await?;
+        let bedrock_versions =
+            crate::api::bedrock::fetch_bedrock_versions().await?;
         let mut game_versions = Vec::new();
         for v in bedrock_versions {
             game_versions.push(daedalus::modded::Version {
@@ -56,11 +66,20 @@ pub async fn get_loader_versions(loader: &str) -> crate::Result<Manifest> {
         &state.pool,
         &state.api_semaphore,
     )
-    .await {
+    .await
+    {
         Ok(Some(res)) => res,
-        Ok(None) => return Err(crate::ErrorKind::NoValueFor(format!("{loader} loader versions")).into()),
+        Ok(None) => {
+            return Err(crate::ErrorKind::NoValueFor(format!(
+                "{loader} loader versions"
+            ))
+            .into());
+        }
         Err(e) => {
-            tracing::warn!("Fallback to offline cache for loader versions: {}", e);
+            tracing::warn!(
+                "Fallback to offline cache for loader versions: {}",
+                e
+            );
             CachedEntry::get_loader_manifest(
                 loader,
                 Some(crate::state::CacheBehaviour::StaleWhileRevalidateSkipOffline),

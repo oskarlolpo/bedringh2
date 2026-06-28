@@ -5,6 +5,7 @@ version = "1.0.0-local"
 edition.workspace = true
 
 [dependencies]
+aes = "0.8.4"
 ariadne = { workspace = true }
 async-compression = { workspace = true, features = ["gzip", "tokio"] }
 async-minecraft-ping = { workspace = true, features = ["srv"] }
@@ -24,6 +25,7 @@ async_zip = { workspace = true, features = [
 ] }
 base64 = { workspace = true }
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
+byteorder = "1.5.0"
 bytes = { workspace = true, features = ["serde"] }
 chardetng = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
@@ -49,15 +51,18 @@ indicatif = { workspace = true, optional = true }
 itertools = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-mini = { workspace = true }
+once_cell = "1.21.4"
 p256 = { workspace = true, features = ["ecdsa"] }
 parking_lot = { workspace = true }
 paste = { workspace = true }
 path-util = { workspace = true }
+pelite = "0.10.0"
 phf = { workspace = true }
 png = { workspace = true }
 quartz_nbt = { workspace = true, features = ["serde"] }
 quick-xml = { workspace = true, features = ["async-tokio"] }
 rand = { workspace = true }
+rayon = "1.11.0"
 regex = { workspace = true }
 reqwest = { workspace = true, features = [
   "brotli",
@@ -107,6 +112,7 @@ tracing-subscriber = { workspace = true, features = ["chrono", "env-filter"] }
 url = { workspace = true, features = ["serde"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
 whoami = { workspace = true }
+xmltree = "0.12.0"
 zbus = { workspace = true }
 zip = { workspace = true }
 
@@ -118,7 +124,15 @@ dunce = { workspace = true }
 cidre = { workspace = true, features = ["blocks", "nw"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { workspace = true, features = ["Networking_Connectivity"] }
+windows = { workspace = true, features = [
+  "Networking_Connectivity",
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Threading",
+  "Win32_System_JobObjects"
+] }
 windows-core = { workspace = true }
 winreg = { workspace = true }
 

@@ -665,8 +665,12 @@ const unlistenProfiles = await profile_listener(
 
 const unlistenProcesses = await process_listener(
 	(e: { event: string; profile_path_id: string }) => {
-		if (e.event === 'finished' && e.profile_path_id === route.params.id) {
-			playing.value = false
+		if (e.profile_path_id === route.params.id) {
+			if (e.event === 'finished' || e.event === 'Finished') {
+				playing.value = false
+			} else if (e.event === 'launched' || e.event === 'Launched') {
+				playing.value = true
+			}
 		}
 	},
 )

@@ -1,4 +1,5 @@
 //! API for interacting with Theseus
+pub mod bedrock;
 pub mod cache;
 pub mod friends;
 pub mod handler;
@@ -15,7 +16,6 @@ pub mod server_address;
 pub mod settings;
 pub mod tags;
 pub mod worlds;
-pub mod bedrock;
 
 pub mod data {
     pub use crate::state::{

@@ -64,70 +64,42 @@ pub async fn auto_install_java(java_version: u32) -> crate::Result<PathBuf> {
     .await?;
 
     #[derive(Deserialize)]
-    struct Package {
-        pub download_url: String,
-        pub name: PathBuf,
+    #[allow(non_snake_case)]
+    struct LibericaRelease {
+        pub downloadUrl: String,
+        pub filename: String,
     }
 
     emit_loading(&loading_bar, 0.0, Some("Fetching java version"))?;
     let mut download_url = String::new();
     let mut download_name = PathBuf::new();
 
-    let packages_result = fetch_json::<Vec<Package>>(
+    let liberica_arch = match std::env::consts::ARCH {
+        "x86_64" => "x86",
+        "aarch64" => "arm",
+        _ => std::env::consts::ARCH,
+    };
+    let liberica_bitness = match std::env::consts::ARCH {
+        "x86_64" | "aarch64" => "64",
+        "x86" => "32",
+        _ => "64",
+    };
+    let liberica_os = match std::env::consts::OS {
+        "macos" => "macos",
+        _ => std::env::consts::OS,
+    };
+
+    if let Ok(releases) = fetch_json::<Vec<LibericaRelease>>(
         Method::GET,
         &format!(
-            "https://api.azul.com/metadata/v1/zulu/packages?arch={}&java_version={}&os={}&archive_type=zip&javafx_bundled=false&java_package_type=jre&page_size=1",
-            std::env::consts::ARCH, java_version, std::env::consts::OS
+            "https://api.bell-sw.com/v1/liberica/releases?version-feature={}&os={}&arch={}&bitness={}&bundle-type=jre&package-type=zip",
+            java_version, liberica_os, liberica_arch, liberica_bitness
         ),
         None, None, None, &state.fetch_semaphore, &state.pool,
-    ).await;
-
-    if let Ok(packages) = packages_result {
-        if let Some(download) = packages.into_iter().next() {
-            download_url = download.download_url;
-            download_name = download.name;
-        }
-    }
-
-    if download_url.is_empty() {
-        tracing::warn!("Failed to fetch Java from Azul, falling back to Adoptium");
-        #[derive(Deserialize)]
-        struct AdoptiumBinary {
-            pub package: AdoptiumPackage,
-        }
-        #[derive(Deserialize)]
-        struct AdoptiumPackage {
-            pub link: String,
-            pub name: String,
-        }
-        #[derive(Deserialize)]
-        struct AdoptiumRelease {
-            pub binary: AdoptiumBinary,
-        }
-        
-        let adoptium_arch = match std::env::consts::ARCH {
-            "x86_64" => "x64",
-            "aarch64" => "aarch64",
-            "x86" => "x86",
-            _ => std::env::consts::ARCH,
-        };
-        let adoptium_os = match std::env::consts::OS {
-            "macos" => "mac",
-            _ => std::env::consts::OS,
-        };
-
-        if let Ok(releases) = fetch_json::<Vec<AdoptiumRelease>>(
-            Method::GET,
-            &format!(
-                "https://api.adoptium.net/v3/assets/latest/{}/hotspot?architecture={}&image_type=jre&os={}",
-                java_version, adoptium_arch, adoptium_os
-            ),
-            None, None, None, &state.fetch_semaphore, &state.pool,
-        ).await {
-            if let Some(release) = releases.into_iter().next() {
-                download_url = release.binary.package.link;
-                download_name = PathBuf::from(release.binary.package.name);
-            }
+    ).await {
+        if let Some(release) = releases.into_iter().next() {
+            download_url = release.downloadUrl;
+            download_name = PathBuf::from(release.filename);
         }
     }
 
@@ -153,56 +125,56 @@ pub async fn auto_install_java(java_version: u32) -> crate::Result<PathBuf> {
     )
     .await?;
 
-        let path = state.directories.java_versions_dir();
+    let path = state.directories.java_versions_dir();
 
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(file))
-            .map_err(|_| {
-                crate::Error::from(crate::ErrorKind::InputError(
-                    "Failed to read java zip".to_string(),
-                ))
-            })?;
-
-        // removes the old installation of java
-        if let Some(file) = archive.file_names().next()
-            && let Some(dir) = file.split('/').next()
-        {
-            let path = path.join(dir);
-
-            if path.exists() {
-                io::remove_dir_all(path).await?;
-            }
-        }
-
-        emit_loading(&loading_bar, 0.0, Some("Extracting java"))?;
-        archive.extract(&path).map_err(|_| {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(file))
+        .map_err(|_| {
             crate::Error::from(crate::ErrorKind::InputError(
-                "Failed to extract java zip".to_string(),
+                "Failed to read java zip".to_string(),
             ))
         })?;
-        emit_loading(&loading_bar, 10.0, Some("Done extracting java"))?;
-        let mut base_path = path.join(
-            download_name
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        );
 
-        #[cfg(target_os = "macos")]
-        {
-            base_path = base_path
-                .join("Contents")
-                .join("Home")
-                .join("bin")
-                .join("java")
+    // removes the old installation of java
+    if let Some(file) = archive.file_names().next()
+        && let Some(dir) = file.split('/').next()
+    {
+        let path = path.join(dir);
+
+        if path.exists() {
+            io::remove_dir_all(path).await?;
         }
+    }
 
-        #[cfg(not(target_os = "macos"))]
-        {
-            base_path = base_path.join("bin").join(jre::JAVA_BIN)
-        }
+    emit_loading(&loading_bar, 0.0, Some("Extracting java"))?;
+    archive.extract(&path).map_err(|_| {
+        crate::Error::from(crate::ErrorKind::InputError(
+            "Failed to extract java zip".to_string(),
+        ))
+    })?;
+    emit_loading(&loading_bar, 10.0, Some("Done extracting java"))?;
+    let mut base_path = path.join(
+        download_name
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+    );
 
-        Ok(base_path)
+    #[cfg(target_os = "macos")]
+    {
+        base_path = base_path
+            .join("Contents")
+            .join("Home")
+            .join("bin")
+            .join("java")
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        base_path = base_path.join("bin").join(jre::JAVA_BIN)
+    }
+
+    Ok(base_path)
 }
 
 // Validates JRE at a given at a given path

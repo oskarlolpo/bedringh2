@@ -256,7 +256,13 @@ async fn get_all_worlds_in_profile(
     profile_dir: &Path,
 ) -> Result<Vec<World>> {
     let mut worlds = vec![];
-    get_singleplayer_worlds_in_profile(profile_dir, &mut worlds).await?;
+    let is_bedrock = crate::api::profile::get(profile_path).await?.map_or(false, |p| p.loader == ModLoader::Bedrock);
+
+    if is_bedrock {
+        get_bedrock_worlds_in_profile(profile_dir, &mut worlds).await?;
+    } else {
+        get_singleplayer_worlds_in_profile(profile_dir, &mut worlds).await?;
+    }
     get_server_worlds_in_profile(profile_path, profile_dir, &mut worlds)
         .await?;
 
@@ -275,6 +281,37 @@ async fn get_all_worlds_in_profile(
     }
 
     Ok(worlds)
+}
+
+async fn get_bedrock_worlds_in_profile(
+    instance_dir: &Path,
+    worlds: &mut Vec<World>,
+) -> Result<()> {
+    let saves_dir = instance_dir.join("com.mojang").join("minecraftWorlds");
+    if !saves_dir.exists() {
+        return Ok(());
+    }
+    let mut entries = io::read_dir(&saves_dir).await?;
+    let mut tasks = JoinSet::new();
+    while let Some(world_dir) = entries.next_entry().await? {
+        let world_path = world_dir.path();
+        if !world_path.join("level.dat").exists() {
+            continue;
+        }
+        tasks.spawn(read_bedrock_world(world_path));
+    }
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok(Ok(world)) => worlds.push(world),
+            Ok(Err(e)) => {
+                tracing::warn!("Skipping unreadable bedrock world: {e}");
+            }
+            Err(e) => {
+                tracing::warn!("Bedrock world read task panicked: {e}");
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn get_singleplayer_worlds_in_profile(
@@ -315,8 +352,12 @@ pub async fn get_singleplayer_world(
 ) -> Result<World> {
     let state = State::get().await?;
     let profile_path = state.directories.profiles_dir().join(instance);
-    let mut world =
-        read_singleplayer_world(get_world_dir(&profile_path, world)).await?;
+    let world_dir = get_world_dir(&profile_path, world);
+    let mut world = if world_dir.join("levelname.txt").exists() || world_dir.join("world_icon.jpeg").exists() {
+        read_bedrock_world(world_dir).await?
+    } else {
+        read_singleplayer_world(world_dir).await?
+    };
 
     if let Some(data) = AttachedWorldData::get_for_world(
         instance,
@@ -483,12 +524,18 @@ pub async fn rename_world(
     world: &str,
     new_name: &str,
 ) -> Result<()> {
-    let world = get_world_dir(instance, world);
-    let level_dat_path = world.join("level.dat");
+    let world_dir = get_world_dir(instance, world);
+    let levelname_txt = world_dir.join("levelname.txt");
+    if levelname_txt.exists() {
+        tokio::fs::write(&levelname_txt, new_name).await?;
+        return Ok(());
+    }
+
+    let level_dat_path = world_dir.join("level.dat");
     if !level_dat_path.exists() {
         return Ok(());
     }
-    let _lock = get_world_session_lock(&world).await?;
+    let _lock = get_world_session_lock(&world_dir).await?;
 
     let level_data = io::read(&level_dat_path).await?;
     let (mut root_data, _) = quartz_nbt::io::read_nbt(
@@ -515,9 +562,11 @@ pub async fn rename_world(
 
 pub async fn reset_world_icon(instance: &Path, world: &str) -> Result<()> {
     let world = get_world_dir(instance, world);
-    let icon = world.join("icon.png");
+    let icon_png = world.join("icon.png");
+    let icon_jpeg = world.join("world_icon.jpeg");
     if let Some(_lock) = try_get_world_session_lock(&world).await? {
-        let _ = io::remove_file(icon).await;
+        let _ = io::remove_file(icon_png).await;
+        let _ = io::remove_file(icon_jpeg).await;
     }
     Ok(())
 }
@@ -668,7 +717,50 @@ pub async fn delete_world(instance: &Path, world: &str) -> Result<()> {
 }
 
 fn get_world_dir(instance: &Path, world: &str) -> PathBuf {
-    instance.join("saves").join(world)
+    let bedrock_path = instance.join("com.mojang").join("minecraftWorlds").join(world);
+    if bedrock_path.exists() {
+        bedrock_path
+    } else {
+        instance.join("saves").join(world)
+    }
+}
+
+async fn read_bedrock_world(world_path: PathBuf) -> Result<World> {
+    let levelname_txt = world_path.join("levelname.txt");
+    let name = if levelname_txt.exists() {
+        tokio::fs::read_to_string(&levelname_txt).await.unwrap_or_else(|_| "Unknown World".to_string())
+    } else {
+        world_path.file_name().unwrap().to_string_lossy().into_owned()
+    };
+
+    let icon = if tokio::fs::try_exists(world_path.join("world_icon.jpeg"))
+        .await
+        .unwrap_or(false)
+    {
+        Some(Either::Left(world_path.join("world_icon.jpeg")))
+    } else {
+        None
+    };
+
+    let metadata = tokio::fs::metadata(world_path.join("level.dat")).await.map_err(|e| Error::from(e))?;
+    let modified = metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+    Ok(World {
+        name,
+        last_played: Some(chrono::DateTime::from(modified)),
+        icon,
+        display_status: DisplayStatus::Normal,
+        details: WorldDetails::Singleplayer {
+            path: world_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            game_mode: SingleplayerGameMode::Survival,
+            hardcore: false,
+            locked: false,
+        },
+    })
 }
 
 async fn get_world_session_lock(world: &Path) -> Result<tokio::fs::File> {
