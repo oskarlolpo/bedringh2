@@ -165,9 +165,9 @@ pub(crate) async fn watch_profile(
     watcher: &FileWatcher,
     dirs: &DirectoryInfo,
 ) {
-    let profile_path = dirs.profiles_dir().join(profile_path);
+    let profile_dir = dirs.profiles_dir().join(profile_path);
 
-    let Ok(metadata) = tokio::fs::metadata(&profile_path).await else {
+    let Ok(metadata) = tokio::fs::metadata(&profile_dir).await else {
         return;
     };
 
@@ -175,29 +175,47 @@ pub(crate) async fn watch_profile(
         return;
     }
 
-    let mut to_watch = Vec::new();
-    for sub_path in ProjectType::iterator()
-        .map(|x| x.get_folder())
-        .chain(["crash-reports", "saves"])
-    {
-        let full_path = profile_path.join(sub_path);
-
-        let meta = tokio::fs::symlink_metadata(&full_path).await;
-        let exists = meta.is_ok();
-        let is_symlink = meta.ok().is_some_and(|m| m.file_type().is_symlink());
-
-        if !exists
-            && !is_symlink
-            && !sub_path.contains(".")
-            && let Err(e) = crate::util::io::create_dir_all(&full_path).await
-        {
-            tracing::error!(
-                "Failed to create directory for watcher {full_path:?}: {e}"
-            );
-            return;
+    let mut is_bedrock = false;
+    if let Ok(_state) = State::get().await {
+        if let Ok(Some(profile)) = crate::api::profile::get(profile_path).await {
+            if profile.loader == crate::prelude::ModLoader::Bedrock {
+                is_bedrock = true;
+            }
         }
+    }
 
-        to_watch.push(full_path);
+    let mut to_watch = Vec::new();
+    
+    if is_bedrock {
+        // Only watch Bedrock specific folders (we don't create them here, create_instance_skeleton handles that)
+        let mojang_dir = profile_dir.join("com.mojang");
+        to_watch.push(mojang_dir.join("minecraftWorlds"));
+        to_watch.push(mojang_dir.join("resource_packs"));
+        to_watch.push(mojang_dir.join("behavior_packs"));
+    } else {
+        for sub_path in ProjectType::iterator()
+            .map(|x| x.get_folder())
+            .chain(["crash-reports", "saves"])
+        {
+            let full_path = profile_dir.join(sub_path);
+
+            let meta = tokio::fs::symlink_metadata(&full_path).await;
+            let exists = meta.is_ok();
+            let is_symlink = meta.ok().is_some_and(|m| m.file_type().is_symlink());
+
+            if !exists
+                && !is_symlink
+                && !sub_path.contains(".")
+                && let Err(e) = crate::util::io::create_dir_all(&full_path).await
+            {
+                tracing::error!(
+                    "Failed to create directory for watcher {full_path:?}: {e}"
+                );
+                continue;
+            }
+
+            to_watch.push(full_path);
+        }
     }
 
     let mut watcher = watcher.write().await;
@@ -214,10 +232,10 @@ pub(crate) async fn watch_profile(
 
     if let Err(e) = watcher
         .watcher()
-        .watch(&profile_path, RecursiveMode::NonRecursive)
+        .watch(&profile_dir, RecursiveMode::NonRecursive)
     {
         tracing::error!(
-            "Failed to watch root profile directory for watcher {profile_path:?}: {e}"
+            "Failed to watch root profile directory for watcher {profile_dir:?}: {e}"
         );
     }
 }

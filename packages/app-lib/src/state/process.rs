@@ -20,7 +20,7 @@ use std::process::ExitStatus;
 use std::sync::LazyLock;
 #[cfg(feature = "tauri")]
 use tauri::Emitter;
-use tempfile::TempDir;
+
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use uuid::Uuid;
@@ -107,7 +107,7 @@ impl ProcessManager {
         post_exit_command: Option<String>,
         logs_folder: PathBuf,
         xml_logging: bool,
-        main_class_keep_alive: TempDir,
+        keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>>,
         rpc_server: RpcServer,
         post_process_init: impl AsyncFnOnce(
             &ProcessMetadata,
@@ -131,7 +131,7 @@ impl ProcessManager {
             },
             child: mc_proc,
             rpc_server,
-            _main_class_keep_alive: main_class_keep_alive,
+            _keep_alive: keep_alive,
         };
 
         if let Err(e) =
@@ -261,7 +261,9 @@ impl ProcessManager {
         if let Some(mut process) = self.processes.get_mut(&id) {
             process.child.kill().await?;
 
-            if let Ok(Some(prof)) = crate::api::profile::get(&process.metadata.profile_path).await {
+            if let Ok(Some(prof)) =
+                crate::api::profile::get(&process.metadata.profile_path).await
+            {
                 if prof.loader == crate::state::ModLoader::Bedrock {
                     #[cfg(target_os = "windows")]
                     let _ = std::process::Command::new("taskkill")
@@ -290,7 +292,7 @@ pub struct ProcessMetadata {
 struct Process {
     metadata: ProcessMetadata,
     child: Child,
-    _main_class_keep_alive: TempDir,
+    _keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>>,
     rpc_server: RpcServer,
 }
 
@@ -503,7 +505,7 @@ impl Process {
                                     e
                                 );
                             }
-                            Self::emit_legacy_log(profile_path, &text);
+                            emit_legacy_log(profile_path, &text);
                         }
                     }
                     Ok(Event::CData(e)) => {
@@ -530,7 +532,7 @@ impl Process {
                     if let Err(e) = Self::append_to_log_file(&log_path, &line) {
                         tracing::warn!("Failed to write to log file: {}", e);
                     }
-                    Self::emit_legacy_log(profile_path, line.trim_ascii_end());
+                    emit_legacy_log(profile_path, line.trim_ascii_end());
                     if let Err(e) = Self::maybe_handle_old_server_join_logging(
                         profile_path,
                         line.trim_ascii_end(),
@@ -617,29 +619,62 @@ impl Process {
         }
     }
 
-    fn emit_legacy_log(profile_path: &str, message: &str) {
-        push_log_line(profile_path, message.to_string());
+}
 
-        #[cfg(feature = "tauri")]
-        {
-            if let Ok(event_state) = crate::EventState::get() {
-                let _ = event_state.app.emit(
-                    "log",
-                    LogPayload {
-                        profile_path_id: profile_path.to_string(),
-                        event: LogEvent::Legacy {
-                            message: message.to_string(),
-                        },
+fn translate_chinese_logs(msg: &str) -> String {
+    if msg.chars().any(|c| c >= '\u{4e00}' && c <= '\u{9fa5}') {
+        let translated = msg
+            .replace("未通过校验", "Failed verification")
+            .replace("（未解密", "(Not decrypted")
+            .replace("解析）。", "Parsed).")
+            .replace("已安装（保留", "Installed (Retained")
+            .replace("明文", "Plaintext")
+            .replace("校验通过", "Verification passed")
+            .replace("网络", "Network")
+            .replace("初始化", "Initializing")
+            .replace("成功", "Success")
+            .replace("失败", "Failed")
+            .replace("错误", "Error")
+            .replace("加载", "Loading")
+            .replace("完成", "Complete")
+            .replace("注入", "Injecting")
+            .replace("启动", "Starting")
+            .replace("寻找", "Finding")
+            .replace("地址", "Address")
+            .replace("补丁", "Patch")
+            .replace("版本", "Version");
+        return translated;
+    }
+    msg.to_string()
+}
+
+pub fn emit_legacy_log(profile_path: &str, message: &str) {
+    let message_str = translate_chinese_logs(message);
+    let message = &message_str;
+    push_log_line(profile_path, message.to_string());
+
+    #[cfg(feature = "tauri")]
+    {
+        if let Ok(event_state) = crate::EventState::get() {
+            use tauri::Emitter;
+            let _ = event_state.app.emit(
+                "log",
+                crate::event::LogPayload {
+                    profile_path_id: profile_path.to_string(),
+                    event: crate::event::LogEvent::Legacy {
+                        message: message.to_string(),
                     },
-                );
-            }
-        }
-        #[cfg(not(feature = "tauri"))]
-        {
-            let _ = (profile_path, message);
+                },
+            );
         }
     }
+    #[cfg(not(feature = "tauri"))]
+    {
+        let _ = (profile_path, message);
+    }
+}
 
+impl Process {
     fn append_to_log_file(
         path: impl AsRef<Path>,
         line: &str,
