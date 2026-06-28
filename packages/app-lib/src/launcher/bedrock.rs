@@ -395,7 +395,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             command.current_dir(parent);
         }
 
-        let mut keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>> = vec![
+        let keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>> = vec![
             Box::new(main_class_keep_alive),
             Box::new(junction_guard),
         ];
@@ -423,7 +423,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         command.args(&[
             "-WindowStyle", "Hidden",
             "-Command",
-            &format!("Start-Process 'shell:appsFolder\\{}!Game'; $timeout = 30; while (!(Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) -and $timeout -gt 0) {{ Start-Sleep -Seconds 1; $timeout-- }}; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
+            &format!("Start-Process 'shell:appsFolder\\{}!App'; $timeout = 30; while (!(Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) -and $timeout -gt 0) {{ Start-Sleep -Seconds 1; $timeout-- }}; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
         ]);
         emit_legacy_log(&profile.path, &format!("Launching system UWP application: {}", pfn_to_use));
 
