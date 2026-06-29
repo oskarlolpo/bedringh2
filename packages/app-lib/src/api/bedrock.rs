@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BedrockVersion {
@@ -8,22 +9,17 @@ pub struct BedrockVersion {
 }
 
 #[derive(Debug, Deserialize)]
-struct GdkResponse {
-    release: Option<std::collections::HashMap<String, Vec<String>>>,
-    preview: Option<std::collections::HashMap<String, Vec<String>>>,
+struct GithubVersionsJson {
+    release: Option<HashMap<String, GithubVersionEntry>>,
+    preview: Option<HashMap<String, GithubVersionEntry>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct GhAsset {
-    name: String,
-    browser_download_url: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GhRelease {
-    tag_name: String,
-    prerelease: bool,
-    assets: Vec<GhAsset>,
+struct GithubVersionEntry {
+    url: Option<String>,
+    urls: Option<Vec<String>>,
+    is_gdk: Option<bool>,
+    published_at: Option<String>,
 }
 
 pub async fn fetch_bedrock_versions() -> crate::error::Result<Vec<BedrockVersion>> {
@@ -34,80 +30,46 @@ pub async fn fetch_bedrock_versions() -> crate::error::Result<Vec<BedrockVersion
 
     let mut versions: Vec<BedrockVersion> = Vec::new();
 
-    // 1. Извлекаем GDK версии
-    let gdk_url = "https://raw.githubusercontent.com/MinecraftBedrockArchiver/GdkLinks/refs/heads/master/urls.min.json";
-    if let Ok(resp) = client.get(gdk_url).send().await {
-        if let Ok(gdk) = resp.json::<GdkResponse>().await {
-            if let Some(releases) = gdk.release {
-                for (ver, urls) in releases {
-                    if let Some(url) = urls.first() {
-                        versions.push(BedrockVersion {
-                            version: format!("{}-gdk", ver),
-                            is_preview: false,
-                            identifier: url.clone(),
-                        });
+    // Fetch versions from the bedrock-repacker repository
+    let url = "https://raw.githubusercontent.com/oskarlolpo/bedrock-repacker/refs/heads/main/versions.json";
+    
+    if let Ok(resp) = client.get(url).send().await {
+        if let Ok(data) = resp.json::<GithubVersionsJson>().await {
+            let process_entry = |ver: &String, is_preview: bool, entry: &GithubVersionEntry| -> Option<BedrockVersion> {
+                let identifier = if let Some(urls) = &entry.urls {
+                    urls.join(",")
+                } else if let Some(url) = &entry.url {
+                    url.clone()
+                } else {
+                    return None;
+                };
+
+                Some(BedrockVersion {
+                    version: ver.clone(),
+                    is_preview,
+                    identifier,
+                })
+            };
+
+            if let Some(releases) = data.release {
+                for (ver, entry) in &releases {
+                    if let Some(v) = process_entry(ver, false, entry) {
+                        versions.push(v);
                     }
                 }
             }
-            if let Some(previews) = gdk.preview {
-                for (ver, urls) in previews {
-                    if let Some(url) = urls.first() {
-                        versions.push(BedrockVersion {
-                            version: format!("{}-gdk", ver),
-                            is_preview: true,
-                            identifier: url.clone(),
-                        });
+            if let Some(previews) = data.preview {
+                for (ver, entry) in &previews {
+                    if let Some(v) = process_entry(ver, true, entry) {
+                        versions.push(v);
                     }
                 }
             }
+        } else {
+            tracing::warn!("Failed to parse Bedrock versions.json from GitHub");
         }
-    }
-
-    // 2. Извлекаем UWP (.Appx) версии из OnixClient
-    let mut page = 1u32;
-    loop {
-        let url = format!(
-            "https://api.github.com/repos/OnixClient/onix_compatible_appx/releases?per_page=100&page={}",
-            page
-        );
-
-        let resp = match client.get(&url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("Failed to fetch OnixClient releases page {}: {}", page, e);
-                break;
-            }
-        };
-
-        let releases: Vec<GhRelease> = match resp.json().await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("Failed to parse OnixClient releases page {}: {}", page, e);
-                break;
-            }
-        };
-
-        if releases.is_empty() {
-            break;
-        }
-
-        for release in &releases {
-            for asset in &release.assets {
-                let lower = asset.name.to_lowercase();
-                if lower.ends_with(".appx") && !lower.ends_with(".msixvc") {
-                    let version = release.tag_name.trim_start_matches('v').to_string();
-                    if !versions.iter().any(|v| v.version == version && v.is_preview == release.prerelease) {
-                        versions.push(BedrockVersion {
-                            version,
-                            is_preview: release.prerelease,
-                            identifier: asset.browser_download_url.clone(),
-                        });
-                    }
-                    break;
-                }
-            }
-        }
-        page += 1;
+    } else {
+        tracing::warn!("Failed to fetch Bedrock versions.json from GitHub");
     }
 
     versions.sort_by(|a, b| {

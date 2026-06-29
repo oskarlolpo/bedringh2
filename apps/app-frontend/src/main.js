@@ -14,12 +14,6 @@ import i18nPlugin from '@/plugins/i18n'
 import i18nDebugPlugin from '@/plugins/i18n-debug'
 import router from '@/routes'
 
-const vueScan = new VueScanPlugin({
-	enabled: false, // Enable or disable the tracker
-	showOverlay: true, // Show overlay to visualize renders
-	log: false, // Log render events to the console
-	playSound: false, // Play sound on each render
-})
 
 const pinia = createPinia()
 
@@ -31,7 +25,6 @@ let app = createApp(App)
 // Sentry init removed
 
 app.use(VueQueryPlugin)
-app.use(vueScan)
 app.use(router)
 app.use(pinia)
 app.use(FloatingVue, {

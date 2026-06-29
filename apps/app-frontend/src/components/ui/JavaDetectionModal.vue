@@ -39,7 +39,7 @@
 <script setup>
 import { CheckIcon, PlusIcon, XIcon } from '@modrinth/assets'
 import { ButtonStyled, injectNotificationManager, Table } from '@modrinth/ui'
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 
 import ModalWrapper from '@/components/ui/modal/ModalWrapper.vue'
 import { trackEvent } from '@/helpers/analytics'
@@ -65,7 +65,8 @@ defineExpose({
 			currentSelected.value = { path: '', version: '' }
 		}
 
-		detectJavaModal.value.show()
+		await nextTick()
+		detectJavaModal.value?.show()
 	},
 })
 

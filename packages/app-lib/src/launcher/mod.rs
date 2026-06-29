@@ -305,6 +305,8 @@ pub async fn install_minecraft(
                 "msixvc"
             } else if lower_id.ends_with(".appx") {
                 "Appx"
+            } else if lower_id.contains(".001") || lower_id.contains(".7z") {
+                "7z"
             } else {
                 "zip"
             };
@@ -327,7 +329,7 @@ pub async fn install_minecraft(
                 .join("versions")
                 .join(format!("bedrock_{}", profile.game_version));
             
-            if extension == "zip" || extension == "msixvc" {
+            if extension == "zip" || extension == "msixvc" || extension == "7z" || extension == "Appx" {
                 crate::util::bedrock_extract::extract_bedrock_package(
                     downloaded_file,
                     versions_dir.clone(),

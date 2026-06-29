@@ -81,6 +81,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_ini = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+sevenz-rust = "0.6.1"
 sha1_smol = { workspace = true }
 sha2 = { workspace = true }
 shlex = { workspace = true }

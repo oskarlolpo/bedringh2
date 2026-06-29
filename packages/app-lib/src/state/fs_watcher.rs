@@ -187,11 +187,23 @@ pub(crate) async fn watch_profile(
     let mut to_watch = Vec::new();
     
     if is_bedrock {
-        // Only watch Bedrock specific folders (we don't create them here, create_instance_skeleton handles that)
+        // Create Bedrock specific folders if they do not exist before watching
         let mojang_dir = profile_dir.join("com.mojang");
-        to_watch.push(mojang_dir.join("minecraftWorlds"));
-        to_watch.push(mojang_dir.join("resource_packs"));
-        to_watch.push(mojang_dir.join("behavior_packs"));
+        let dirs_to_watch = vec![
+            mojang_dir.join("minecraftWorlds"),
+            mojang_dir.join("resource_packs"),
+            mojang_dir.join("behavior_packs"),
+        ];
+
+        for dir in &dirs_to_watch {
+            if !dir.exists() {
+                if let Err(e) = crate::util::io::create_dir_all(dir).await {
+                    tracing::error!("Failed to create bedrock directory for watcher {dir:?}: {e}");
+                    continue;
+                }
+            }
+            to_watch.push(dir.clone());
+        }
     } else {
         for sub_path in ProjectType::iterator()
             .map(|x| x.get_folder())

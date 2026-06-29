@@ -1,4 +1,4 @@
-use crate::ErrorKind;
+
 use crate::event::emit::{edit_loading, emit_loading};
 use crate::event::{LoadingBarId, LoadingBarType};
 use std::path::Path;
@@ -11,9 +11,8 @@ pub async fn patch_manifest(
 ) -> crate::Result<()> {
     let manifest_path = versions_dir.join("AppxManifest.xml");
     if !manifest_path.exists() {
-        return Err(crate::Error::from(ErrorKind::OtherError(
-            "AppxManifest.xml не найден в папке с версией".to_string(),
-        )));
+        tracing::warn!("AppxManifest.xml не найден в папке с версией. Пропускаем патчинг манифеста.");
+        return Ok(());
     }
 
     let _ = edit_loading(

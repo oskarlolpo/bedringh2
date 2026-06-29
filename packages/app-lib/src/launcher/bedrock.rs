@@ -119,120 +119,100 @@ impl Drop for BedrockJunctionGuard {
 pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let state = State::get().await?;
     let instance_path = get_full_path(&profile.path).await?;
+    let versions_dir = state
+        .directories
+        .caches_dir()
+        .join("versions")
+        .join(format!("bedrock_{}", profile.game_version));
+
+    let is_gdk_unpacked = versions_dir.join("MicrosoftGame.config").exists();
 
     let install_type =
         if profile.game_version.to_lowercase().contains("preview")
             || profile.game_version.to_lowercase().contains("beta")
         {
-            if profile.game_version.to_lowercase().contains("gdk") {
+            if is_gdk_unpacked || profile.game_version.to_lowercase().contains("gdk") {
                 BedrockInstallationType::GdkPreview
             } else {
                 BedrockInstallationType::UwpPreview
             }
         } else {
-            if profile.game_version.to_lowercase().contains("gdk") {
+            if is_gdk_unpacked || profile.game_version.to_lowercase().contains("gdk") {
                 BedrockInstallationType::Gdk
             } else {
                 BedrockInstallationType::Uwp
             }
         };
 
-    let versions_dir = state
-        .directories
-        .caches_dir()
-        .join("versions")
-        .join(format!("bedrock_{}", profile.game_version));
-    
-    let exe_path = versions_dir.join("Minecraft.Windows.exe");
-    let is_custom_unpacked = exe_path.exists();
+    let pfn_to_use = install_type.package_family().to_string();
 
-    let pfn_to_use = match install_type {
-        BedrockInstallationType::Uwp | BedrockInstallationType::Gdk => {
-            "Microsoft.MinecraftUWP_8wekyb3d8bbwe".to_string()
-        }
-        BedrockInstallationType::UwpPreview
-        | BedrockInstallationType::GdkPreview => {
-            "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe".to_string()
-        }
-    };
+    let _exe_path = versions_dir.join("Minecraft.Windows.exe");
 
-    let mut exe_path_to_inject = None;
+    let is_custom_unpacked = std::fs::read_dir(&versions_dir)
+        .map(|mut dir| dir.any(|entry| {
+            if let Ok(entry) = entry {
+                entry.file_name() == "AppxManifest.xml"
+            } else {
+                false
+            }
+        }))
+        .unwrap_or(false);
 
-    if is_custom_unpacked && install_type.is_gdk() {
-        exe_path_to_inject = Some(exe_path.clone());
-    }
+    let exe_path_to_inject: Option<PathBuf> = None;
 
-    if exe_path_to_inject.is_none() {
+    if is_custom_unpacked {
+        emit_legacy_log(&profile.path, "Проверка установленной версии UWP (Hot-Swap)...");
+        let manifest_path = versions_dir.join("AppxManifest.xml");
+        
         let pkg_name = if install_type.is_preview() {
             "Microsoft.MinecraftWindowsBeta"
         } else {
             "Microsoft.MinecraftUWP"
         };
+
         let output = std::process::Command::new("powershell")
+            .creation_flags(0x08000000)
             .args(&[
                 "-NoProfile",
                 "-Command",
-                &format!("(Get-AppxPackage -Name {}).Version", pkg_name),
+                &format!("$pkg = Get-AppxPackage -Name {}; if ($pkg) {{ $pkg.InstallLocation }} else {{ 'None' }}", pkg_name)
             ])
             .output()?;
-        let installed_version =
-            String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let install_location = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let expected_location = versions_dir.to_str().unwrap_or("").to_string();
 
-        let prof_prefix = profile
-            .game_version
-            .split('.')
-            .take(3)
-            .collect::<Vec<_>>()
-            .join(".");
-        let inst_prefix = installed_version
-            .split('.')
-            .take(3)
-            .collect::<Vec<_>>()
-            .join(".");
-
-        if installed_version.is_empty() || prof_prefix != inst_prefix {
-            emit_legacy_log(&profile.path, "Смена системной версии UWP. Удаление старой версии...");
-            
-            if !installed_version.is_empty() {
+        if install_location.to_lowercase().trim_end_matches('\\') != expected_location.to_lowercase().trim_end_matches('\\') {
+            if install_location != "None" {
+                emit_legacy_log(&profile.path, "Удаление предыдущего UWP пакета (Hot-Swap)...");
                 let _ = std::process::Command::new("powershell")
-                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .creation_flags(0x08000000)
                     .args(&[
                         "-NoProfile",
                         "-Command",
-                        &format!("Remove-AppxPackage -Package (Get-AppxPackage -Name {}).PackageFullName", pkg_name),
+                        &format!("Get-AppxPackage -Name {} | Remove-AppxPackage", pkg_name)
                     ])
                     .output();
             }
 
-            let cache_appx_path = state.directories.caches_dir()
-                .join("bedrock_packages")
-                .join(format!("bedrock-{}.Appx", profile.game_version));
-            
-            if !cache_appx_path.exists() {
-                return Err(ErrorKind::LauncherError(format!(
-                    "Требуется версия {}, но её кэшированный установочный пакет (.Appx) не найден. Попробуйте нажать 'Починить сборку' на странице сборки.",
-                    profile.game_version
-                )).into());
-            }
-
-            emit_legacy_log(&profile.path, "Установка нужной версии из кэша...");
+            emit_legacy_log(&profile.path, "Регистрация распакованного UWP пакета (Hot-Swap)...");
             let install_output = std::process::Command::new("powershell")
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .creation_flags(0x08000000)
                 .args(&[
                     "-NoProfile",
                     "-Command",
-                    &format!("Add-AppxPackage -ForceUpdateFromAnyVersion -ForceApplicationShutdown -Path '{}'", cache_appx_path.display()),
+                    &format!("Add-AppxPackage -Register '{}' -ForceApplicationShutdown", manifest_path.display()),
                 ])
                 .output()?;
-                
+
             if !install_output.status.success() {
                 let err_msg = String::from_utf8_lossy(&install_output.stderr);
-                return Err(ErrorKind::LauncherError(format!(
-                    "Не удалось установить пакет Appx перед запуском: {}", err_msg
-                )).into());
+                emit_legacy_log(&profile.path, &format!("Ошибка регистрации: {}", err_msg));
             }
+        } else {
+            emit_legacy_log(&profile.path, "UWP пакет уже зарегистрирован на текущую сборку.");
         }
     }
+
     let instance_mojang = instance_path.join("com.mojang");
 
     if !instance_mojang.exists() {
@@ -281,7 +261,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     }
 
     if mojang_dir.exists() {
-        let meta = fs::symlink_metadata(&mojang_dir).await?;
+        let meta: std::fs::Metadata = fs::symlink_metadata(&mojang_dir).await?;
         let is_reparse_point = (meta.file_attributes() & 0x00000400) != 0;
 
         if is_reparse_point {
@@ -426,12 +406,48 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         Ok(process)
     } else {
+        // Read the AppId from AppxManifest.xml in the versions_dir
+        let manifest_path = versions_dir.join("AppxManifest.xml");
+        let app_id = if manifest_path.exists() {
+            let content = std::fs::read_to_string(&manifest_path).unwrap_or_default();
+            // Extract Id="..." from first <Application ...> tag
+            content
+                .lines()
+                .find_map(|line| {
+                    if line.contains("<Application ") {
+                        let start = line.find("Id=\"")? + 4;
+                        let rest = &line[start..];
+                        let end = rest.find('"')?;
+                        Some(rest[..end].to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "App".to_string())
+        } else {
+            "App".to_string()
+        };
+
+        let launch_target = format!("{}!{}", pfn_to_use, app_id);
+        emit_legacy_log(&profile.path, &format!("Launching UWP via shell:appsFolder\\{}", launch_target));
+
+        // PowerShell script: launch via shell:appsFolder, then wait for GameLaunchHelper or Minecraft.Windows,
+        // then keep alive while Minecraft.Windows is running
+        let ps_script = format!(
+            "Start-Process 'shell:appsFolder\\{0}'; \
+            $timeout = 60; \
+            while ($timeout -gt 0) {{ \
+                if (Get-Process -Name 'GameLaunchHelper','Minecraft.Windows' -ErrorAction SilentlyContinue) {{ break }}; \
+                Start-Sleep -Seconds 1; $timeout-- \
+            }}; \
+            while (Get-Process -Name 'GameLaunchHelper','Minecraft.Windows' -ErrorAction SilentlyContinue) {{ \
+                Start-Sleep -Seconds 2 \
+            }}",
+            launch_target
+        );
+
         let mut command = Command::new("powershell");
-        command.args(&[
-            "-WindowStyle", "Hidden",
-            "-Command",
-            &format!("$manifest = (Get-AppxPackage -Name {0} | Get-AppxPackageManifest); $appId = $manifest.Package.Applications.Application.Id; if ($appId -is [array]) {{ $appId = $appId[0] }}; Start-Process \"shell:appsFolder\\{0}!$appId\"; $timeout = 30; while (!(Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) -and $timeout -gt 0) {{ Start-Sleep -Seconds 1; $timeout-- }}; while (Get-Process Minecraft.Windows -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 2 }}", pfn_to_use)
-        ]);
+        command.args(&["-WindowStyle", "Hidden", "-Command", &ps_script]);
         emit_legacy_log(&profile.path, &format!("Launching system UWP application: {}", pfn_to_use));
 
         let process = state

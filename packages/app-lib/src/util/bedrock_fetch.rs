@@ -19,8 +19,75 @@ struct DownloadState {
     chunks_completed: Vec<u64>,
 }
 
-#[tracing::instrument(skip(client))]
 pub async fn download_bedrock_package(
+    url: &str,
+    filename: &str,
+    profile_name: &str,
+    profile_path: &str,
+    loading_bar: &crate::event::LoadingBarId,
+    client: &Client,
+) -> crate::Result<PathBuf> {
+    let urls: Vec<&str> = url.split(',').collect();
+    if urls.len() == 1 {
+        return download_single_file(url, filename, profile_name, profile_path, loading_bar, client).await;
+    }
+
+    let dirs = DirectoryInfo::global_handle_if_ready().ok_or_else(|| {
+        ErrorKind::FSError("App directories not initialized".to_string())
+    })?;
+    let cache_dir = dirs.caches_dir().join("bedrock_packages");
+    let merged_path = cache_dir.join(filename);
+
+    if merged_path.exists() {
+        return Ok(merged_path);
+    }
+
+    let mut downloaded_parts = vec![];
+
+    for (i, part_url) in urls.iter().enumerate() {
+        let part_filename = format!("{filename}.{:03}", i + 1);
+        let part_profile_name = format!("{profile_name} (Part {})", i + 1);
+        
+        let path = download_single_file(
+            part_url,
+            &part_filename,
+            &part_profile_name,
+            profile_path,
+            loading_bar,
+            client,
+        )
+        .await?;
+
+        downloaded_parts.push(path);
+    }
+
+    if downloaded_parts.is_empty() {
+        return Err(crate::Error::from(ErrorKind::OtherError("No files downloaded".to_string())));
+    }
+
+    let _ = emit_loading(
+        loading_bar,
+        0.0,
+        Some("Объединение томов архива..."),
+    );
+
+    let merged_path_clone = merged_path.clone();
+    tokio::task::spawn_blocking(move || -> crate::Result<()> {
+        let mut out = std::fs::File::create(&merged_path_clone)?;
+        for part in downloaded_parts {
+            let mut in_file = std::fs::File::open(part)?;
+            std::io::copy(&mut in_file, &mut out)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| crate::Error::from(ErrorKind::OtherError(e.to_string())))??;
+
+    Ok(merged_path)
+}
+
+#[tracing::instrument(skip(client))]
+pub async fn download_single_file(
     url: &str,
     filename: &str,
     profile_name: &str,

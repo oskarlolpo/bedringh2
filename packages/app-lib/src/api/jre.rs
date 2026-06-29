@@ -1,7 +1,7 @@
 //! Authentication flow interface
 use crate::event::emit::{emit_loading, init_loading};
 use crate::state::JavaVersion;
-use crate::util::fetch::{fetch_advanced, fetch_json};
+use crate::util::fetch::fetch_advanced;
 use dashmap::DashMap;
 use reqwest::Method;
 use serde::Deserialize;
