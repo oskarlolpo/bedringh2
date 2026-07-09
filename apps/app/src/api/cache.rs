@@ -60,6 +60,10 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             get_search_results_v3_many,
             purge_cache_types,
             get_project_versions,
+            get_cache_sizes,
+            get_bedrock_packages,
+            remove_directory,
+            get_profile_storage,
         ])
         .build()
 }
@@ -78,4 +82,24 @@ pub async fn get_project_versions(
         theseus::cache::get_project_versions(project_id, cache_behaviour)
             .await?,
     )
+}
+
+#[tauri::command]
+pub async fn get_cache_sizes() -> Result<theseus::cache::CacheSizes> {
+    Ok(theseus::cache::get_cache_sizes().await?)
+}
+
+#[tauri::command]
+pub async fn get_bedrock_packages() -> Result<Vec<theseus::cache::BedrockPackageInfo>> {
+    Ok(theseus::cache::get_bedrock_packages().await?)
+}
+
+#[tauri::command]
+pub async fn remove_directory(path: String) -> Result<()> {
+    Ok(theseus::cache::remove_directory(path).await?)
+}
+
+#[tauri::command]
+pub async fn get_profile_storage() -> Result<Vec<theseus::cache::ProfileStorageInfo>> {
+    Ok(theseus::cache::get_profile_storage().await?)
 }

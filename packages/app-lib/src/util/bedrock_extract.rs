@@ -117,7 +117,7 @@ async fn extract_zip(
         Ok(())
     })
     .await
-    .unwrap()
+    .map_err(|e| crate::Error::from(ErrorKind::OtherError(format!("Task joined error: {}", e))))?
 }
 
 async fn extract_msixvc(
@@ -155,7 +155,7 @@ async fn extract_msixvc(
         Ok(())
     })
     .await
-    .unwrap()
+    .map_err(|e| crate::Error::from(ErrorKind::OtherError(format!("Task joined error: {}", e))))?
 }
 
 
@@ -180,6 +180,6 @@ async fn extract_7z(
         Ok(())
     })
     .await
-    .unwrap()
+    .map_err(|e| crate::Error::from(ErrorKind::OtherError(format!("Task joined error: {}", e))))?
 }
 

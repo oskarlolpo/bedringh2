@@ -4,7 +4,7 @@ use crate::state::JavaVersion;
 use crate::util::fetch::fetch_advanced;
 use dashmap::DashMap;
 use reqwest::Method;
-use serde::Deserialize;
+
 use std::path::PathBuf;
 use sysinfo::{MemoryRefreshKind, RefreshKind};
 
@@ -104,15 +104,21 @@ pub async fn auto_install_java(java_version: u32) -> crate::Result<PathBuf> {
             ))
         })?;
 
-    // removes the old installation of java
-    if let Some(file) = archive.file_names().next()
-        && let Some(dir) = file.split('/').next()
-    {
-        let path = path.join(dir);
-
-        if path.exists() {
-            io::remove_dir_all(path).await?;
+    let mut root_dir = base_name.to_string();
+    for i in 0..archive.len() {
+        if let Ok(file) = archive.by_index(i) {
+            if let Some(dir) = file.name().split('/').next() {
+                if !dir.is_empty() {
+                    root_dir = dir.to_string();
+                    break;
+                }
+            }
         }
+    }
+
+    let old_path = path.join(&root_dir);
+    if old_path.exists() {
+        io::remove_dir_all(&old_path).await?;
     }
 
     emit_loading(&loading_bar, 0.0, Some("Extracting java"))?;
@@ -122,7 +128,7 @@ pub async fn auto_install_java(java_version: u32) -> crate::Result<PathBuf> {
         ))
     })?;
     emit_loading(&loading_bar, 10.0, Some("Done extracting java"))?;
-    let mut base_path = path.join(base_name);
+    let mut base_path = path.join(&root_dir);
 
     #[cfg(target_os = "macos")]
     {

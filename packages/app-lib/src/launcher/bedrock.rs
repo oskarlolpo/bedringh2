@@ -146,7 +146,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     let pfn_to_use = install_type.package_family().to_string();
 
-    let _exe_path = versions_dir.join("Minecraft.Windows.exe");
+    let exe_path = versions_dir.join("Minecraft.Windows.exe");
 
     let is_custom_unpacked = std::fs::read_dir(&versions_dir)
         .map(|mut dir| dir.any(|entry| {
@@ -158,7 +158,11 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         }))
         .unwrap_or(false);
 
-    let exe_path_to_inject: Option<PathBuf> = None;
+    let exe_path_to_inject: Option<PathBuf> = if is_gdk_unpacked && !is_custom_unpacked && exe_path.exists() {
+        Some(exe_path.clone())
+    } else {
+        None
+    };
 
     if is_custom_unpacked {
         emit_legacy_log(&profile.path, "Проверка установленной версии UWP (Hot-Swap)...");

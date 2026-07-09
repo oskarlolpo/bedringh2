@@ -51,6 +51,22 @@ const messages = defineMessages({
 		id: 'app.appearance-settings.accent-color.orange',
 		defaultMessage: 'Orange',
 	},
+	accentColorPink: {
+		id: 'app.appearance-settings.accent-color.pink',
+		defaultMessage: 'Pink',
+	},
+	accentColorTeal: {
+		id: 'app.appearance-settings.accent-color.teal',
+		defaultMessage: 'Teal',
+	},
+	accentColorCyan: {
+		id: 'app.appearance-settings.accent-color.cyan',
+		defaultMessage: 'Cyan',
+	},
+	accentColorYellow: {
+		id: 'app.appearance-settings.accent-color.yellow',
+		defaultMessage: 'Yellow',
+	},
 	advancedRenderingTitle: {
 		id: 'app.appearance-settings.advanced-rendering.title',
 		defaultMessage: 'Advanced rendering',
@@ -149,6 +165,10 @@ const accentHueMap: Record<string, number> = {
 	purple: 270,
 	red: 350,
 	orange: 30,
+	pink: 330,
+	teal: 173,
+	cyan: 188,
+	yellow: 45,
 }
 
 function applyAccentColor(color: string) {
@@ -205,6 +225,10 @@ watch(
 				{ value: 'blue', label: formatMessage(messages.accentColorBlue) },
 				{ value: 'red', label: formatMessage(messages.accentColorRed) },
 				{ value: 'orange', label: formatMessage(messages.accentColorOrange) },
+				{ value: 'pink', label: formatMessage(messages.accentColorPink) },
+				{ value: 'teal', label: formatMessage(messages.accentColorTeal) },
+				{ value: 'cyan', label: formatMessage(messages.accentColorCyan) },
+				{ value: 'yellow', label: formatMessage(messages.accentColorYellow) },
 			]"
 			:display-value="accentColor"
 			@update:model-value="(val) => {

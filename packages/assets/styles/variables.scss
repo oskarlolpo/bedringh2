@@ -466,3 +466,32 @@ html.theme-orange {
 html.dark.theme-orange, html.oled-mode.theme-orange {
 	--brand-h: 30; --brand-s: 99%; --brand-l: 55%;
 }
+
+html.theme-pink {
+	--brand-h: 330; --brand-s: 100%; --brand-l: 55%;
+}
+html.dark.theme-pink, html.oled-mode.theme-pink {
+	--brand-h: 330; --brand-s: 100%; --brand-l: 65%;
+}
+
+html.theme-teal {
+	--brand-h: 173; --brand-s: 80%; --brand-l: 40%;
+}
+html.dark.theme-teal, html.oled-mode.theme-teal {
+	--brand-h: 173; --brand-s: 70%; --brand-l: 50%;
+}
+
+html.theme-cyan {
+	--brand-h: 188; --brand-s: 90%; --brand-l: 45%;
+}
+html.dark.theme-cyan, html.oled-mode.theme-cyan {
+	--brand-h: 188; --brand-s: 80%; --brand-l: 55%;
+}
+
+html.theme-yellow {
+	--brand-h: 45; --brand-s: 100%; --brand-l: 45%;
+}
+html.dark.theme-yellow, html.oled-mode.theme-yellow {
+	--brand-h: 45; --brand-s: 95%; --brand-l: 55%;
+}
+

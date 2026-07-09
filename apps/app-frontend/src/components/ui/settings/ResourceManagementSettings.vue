@@ -1,8 +1,9 @@
 <script setup>
 import { BoxIcon, FolderSearchIcon, TrashIcon } from '@modrinth/assets'
 import { ButtonStyled, injectNotificationManager, Slider, StyledInput } from '@modrinth/ui'
+import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 
 import ConfirmModalWrapper from '@/components/ui/modal/ConfirmModalWrapper.vue'
 import { purge_cache_types } from '@/helpers/cache.js'
@@ -10,6 +11,38 @@ import { get, set } from '@/helpers/settings.ts'
 
 const { handleError } = injectNotificationManager()
 const settings = ref(await get())
+
+const cacheSizes = ref(null)
+const bedrockPackages = ref([])
+const profiles = ref([])
+
+async function fetchCacheInfo() {
+	cacheSizes.value = await invoke('plugin:cache|get_cache_sizes').catch(handleError)
+	bedrockPackages.value = await invoke('plugin:cache|get_bedrock_packages').catch(handleError)
+	
+	const fetchedProfiles = await invoke('plugin:cache|get_profile_storage').catch(handleError)
+	if (fetchedProfiles) {
+		fetchedProfiles.sort((a, b) => b.size - a.size) // sort by size descending
+		profiles.value = fetchedProfiles
+	}
+}
+
+onMounted(() => {
+	fetchCacheInfo()
+})
+
+function formatBytes(bytes) {
+	if (bytes === 0) return '0 B'
+	const k = 1024
+	const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+	const i = Math.floor(Math.log(bytes) / Math.log(k))
+	return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+async function removeBedrockPackage(path) {
+	await invoke('plugin:cache|remove_directory', { path }).catch(handleError)
+	await fetchCacheInfo()
+}
 
 watch(
 	settings,
@@ -105,6 +138,62 @@ async function findLauncherDir() {
 				The Modrinth app stores a cache of data to speed up loading. This can be purged to force the
 				app to reload data. This may slow down the app temporarily.
 			</p>
+		</div>
+
+		<div class="flex flex-col gap-2.5 mt-4">
+			<h2 class="m-0 text-lg font-semibold text-contrast">Менеджер Памяти и Кеша</h2>
+			<div v-if="cacheSizes" class="flex flex-col gap-2 bg-black/5 dark:bg-white/5 p-4 rounded-lg">
+				<div class="flex justify-between items-center border-b border-black/10 dark:border-white/10 pb-2 mb-1">
+					<span class="font-medium">Общий размер кеша</span>
+					<span class="font-bold text-brand">{{ formatBytes(cacheSizes.total) }}</span>
+				</div>
+				<div class="flex justify-between text-sm text-secondary">
+					<span>Сборки Bedrock</span>
+					<span>{{ formatBytes(cacheSizes.bedrock_packages) }}</span>
+				</div>
+				<div class="flex justify-between text-sm text-secondary">
+					<span>Среды Java</span>
+					<span>{{ formatBytes(cacheSizes.java_runtimes) }}</span>
+				</div>
+				<div class="flex justify-between text-sm text-secondary">
+					<span>Кеш данных</span>
+					<span>{{ formatBytes(cacheSizes.http_cache) }}</span>
+				</div>
+			</div>
+
+			<h3 class="m-0 mt-4 text-md font-semibold text-contrast" v-if="profiles && profiles.length > 0">Установленные Сборки (Профили)</h3>
+			<div v-if="profiles && profiles.length > 0" class="flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+				<div v-for="pkg in profiles" :key="pkg.path" class="flex items-center justify-between bg-black/5 dark:bg-white/5 p-3 rounded-lg border border-transparent transition-colors hover:bg-black/10 dark:hover:bg-white/10">
+					<div class="flex flex-col overflow-hidden">
+						<span class="font-medium flex items-center gap-2 truncate">
+							{{ pkg.name }}
+						</span>
+						<span class="text-xs text-secondary truncate mt-0.5" :title="pkg.path">{{ pkg.path }}</span>
+					</div>
+					<div class="flex items-center gap-4 shrink-0 pl-4">
+						<span class="text-sm font-medium">{{ formatBytes(pkg.size) }}</span>
+					</div>
+				</div>
+			</div>
+
+			<h3 class="m-0 mt-4 text-md font-semibold text-contrast" v-if="bedrockPackages && bedrockPackages.length > 0">Загруженные версии Bedrock</h3>
+			<div v-if="bedrockPackages && bedrockPackages.length > 0" class="flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+				<div v-for="pkg in bedrockPackages" :key="pkg.path" class="flex items-center justify-between bg-black/5 dark:bg-white/5 p-3 rounded-lg border border-transparent transition-colors hover:bg-black/10 dark:hover:bg-white/10" :class="{ 'border-red-500/50 bg-red-500/5 dark:bg-red-500/10': !pkg.is_valid }">
+					<div class="flex flex-col overflow-hidden">
+						<span class="font-medium flex items-center gap-2 truncate">
+							{{ pkg.name }}
+							<span v-if="!pkg.is_valid" class="text-[10px] uppercase font-bold bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full whitespace-nowrap">Битый / Недокачанный</span>
+						</span>
+						<span class="text-xs text-secondary truncate mt-0.5" :title="pkg.path">{{ pkg.path }}</span>
+					</div>
+					<div class="flex items-center gap-4 shrink-0 pl-4">
+						<span class="text-sm font-medium">{{ formatBytes(pkg.size) }}</span>
+						<ButtonStyled @click="removeBedrockPackage(pkg.path)" color="red" class="p-2" aria-label="Удалить пакет">
+							<TrashIcon class="w-4 h-4" />
+						</ButtonStyled>
+					</div>
+				</div>
+			</div>
 		</div>
 
 		<div class="flex flex-col gap-2.5">

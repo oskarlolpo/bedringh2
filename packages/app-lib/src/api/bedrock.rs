@@ -6,6 +6,7 @@ pub struct BedrockVersion {
     pub version: String,
     pub is_preview: bool,
     pub identifier: String,
+    pub is_gdk: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,7 +48,11 @@ pub async fn fetch_bedrock_versions() -> crate::error::Result<Vec<BedrockVersion
                 Some(BedrockVersion {
                     version: ver.clone(),
                     is_preview,
-                    identifier,
+                    identifier: identifier.clone(),
+                    is_gdk: entry.is_gdk.unwrap_or_else(|| {
+                        let id_lower = identifier.to_lowercase();
+                        id_lower.contains("msixvc") || id_lower.contains("bedrock_app") || id_lower.contains("gdk")
+                    }),
                 })
             };
 

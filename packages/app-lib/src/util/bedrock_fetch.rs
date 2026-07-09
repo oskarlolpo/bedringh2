@@ -26,10 +26,11 @@ pub async fn download_bedrock_package(
     profile_path: &str,
     loading_bar: &crate::event::LoadingBarId,
     client: &Client,
+    repairing: bool,
 ) -> crate::Result<PathBuf> {
     let urls: Vec<&str> = url.split(',').collect();
     if urls.len() == 1 {
-        return download_single_file(url, filename, profile_name, profile_path, loading_bar, client).await;
+        return download_single_file(url, filename, profile_name, profile_path, loading_bar, client, repairing).await;
     }
 
     let dirs = DirectoryInfo::global_handle_if_ready().ok_or_else(|| {
@@ -38,11 +39,16 @@ pub async fn download_bedrock_package(
     let cache_dir = dirs.caches_dir().join("bedrock_packages");
     let merged_path = cache_dir.join(filename);
 
+    if repairing && merged_path.exists() {
+        let _ = fs::remove_file(&merged_path).await;
+    }
+
     if merged_path.exists() {
         return Ok(merged_path);
     }
 
     let mut downloaded_parts = vec![];
+    let mut expected_total_size = 0;
 
     for (i, part_url) in urls.iter().enumerate() {
         let part_filename = format!("{filename}.{:03}", i + 1);
@@ -55,9 +61,12 @@ pub async fn download_bedrock_package(
             profile_path,
             loading_bar,
             client,
+            repairing,
         )
         .await?;
 
+        let meta = std::fs::metadata(&path).map_err(|e| crate::Error::from(ErrorKind::OtherError(e.to_string())))?;
+        expected_total_size += meta.len();
         downloaded_parts.push(path);
     }
 
@@ -83,6 +92,12 @@ pub async fn download_bedrock_package(
     .await
     .map_err(|e| crate::Error::from(ErrorKind::OtherError(e.to_string())))??;
 
+    let merged_meta = std::fs::metadata(&merged_path).map_err(|e| crate::Error::from(ErrorKind::OtherError(e.to_string())))?;
+    if merged_meta.len() != expected_total_size {
+        let _ = fs::remove_file(&merged_path).await;
+        return Err(crate::Error::from(ErrorKind::OtherError("Размер объединенного архива не совпадает с ожидаемым".to_string())));
+    }
+
     Ok(merged_path)
 }
 
@@ -94,6 +109,7 @@ pub async fn download_single_file(
     profile_path: &str,
     loading_bar: &crate::event::LoadingBarId,
     client: &Client,
+    repairing: bool,
 ) -> crate::Result<PathBuf> {
     let dirs = DirectoryInfo::global_handle_if_ready().ok_or_else(|| {
         ErrorKind::FSError("App directories not initialized".to_string())
@@ -109,6 +125,11 @@ pub async fn download_single_file(
     }
 
     let target_path = cache_dir.join(filename);
+
+    if repairing && target_path.exists() {
+        let _ = fs::remove_file(&target_path).await;
+    }
+
     if target_path.exists() {
         return Ok(target_path);
     }
@@ -171,13 +192,10 @@ pub async fn download_single_file(
         file.set_len(total_size).await?;
     }
 
-    let downloaded_bytes: u64 =
+    let _downloaded_bytes: u64 =
         state.chunks_completed.len() as u64 * CHUNK_SIZE;
-    let _ = emit_loading(
-        &loading_bar,
-        downloaded_bytes as f64, // Wait, emit_loading takes increment, not total downloaded!
-        Some("Загрузка пакета..."),
-    ); // ACTUALLY, for initial tick it's safe to just increment by what's already done.
+    // Don't emit accumulated progress to avoid jumping behavior when resuming, 
+    // since emit_loading is increment-based and starts at 0.
 
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
     let mut tasks = vec![];
@@ -201,7 +219,9 @@ pub async fn download_single_file(
         let tx = tx.clone();
 
         tasks.push(tokio::spawn(async move {
-            let permit = semaphore.acquire_owned().await.unwrap();
+            let permit = semaphore.acquire_owned().await.map_err(|e| crate::Error::from(
+                ErrorKind::OtherError(format!("Semaphore error: {}", e))
+            ))?;
             let mut attempts = 0;
             loop {
                 attempts += 1;
@@ -277,7 +297,7 @@ pub async fn download_single_file(
     }
 
     for task in tasks {
-        match task.await.unwrap() {
+        match task.await.map_err(|e| crate::Error::from(ErrorKind::OtherError(format!("Task failed: {}", e))))? {
             Ok(idx) => {
                 state.chunks_completed.push(idx);
                 if let Ok(state_str) = serde_json::to_string(&state) {

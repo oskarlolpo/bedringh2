@@ -46,6 +46,10 @@ fn main() {
                         "get_search_results_v3_many",
                         "purge_cache_types",
                         "get_project_versions",
+                        "get_cache_sizes",
+                        "get_bedrock_packages",
+                        "remove_directory",
+                        "get_profile_storage",
                     ])
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,

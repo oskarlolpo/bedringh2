@@ -320,6 +320,7 @@ pub async fn install_minecraft(
                     &profile.path,
                     &loading_bar,
                     &reqwest::Client::new(),
+                    repairing,
                 )
                 .await?;
 
