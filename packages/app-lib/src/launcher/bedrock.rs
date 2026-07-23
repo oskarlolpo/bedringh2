@@ -166,7 +166,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     let exe_path = versions_dir.join("Minecraft.Windows.exe");
 
-    let is_custom_unpacked = std::fs::read_dir(&versions_dir)
+    let is_custom_unpacked = !is_gdk_unpacked && std::fs::read_dir(&versions_dir)
         .map(|mut dir| dir.any(|entry| {
             if let Ok(entry) = entry {
                 entry.file_name() == "AppxManifest.xml"
@@ -401,71 +401,41 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let has_all_gdk = gdk_files.iter().all(|(n, _)| exe_dir.join(n).exists());
         if gdk_unlocker_enabled != has_all_gdk {
             let action = if gdk_unlocker_enabled { "Enable" } else { "Disable" };
-            emit_legacy_log(&profile.path, &format!("GDK Unlocker mismatch, running {} script...", action));
+            emit_legacy_log(&profile.path, &format!("Applying GDK Unlocker file changes ({})...", action));
             
-            let temp_dir = std::env::temp_dir().join("bedrin_gdk_unlocker");
-            let _ = std::fs::create_dir_all(&temp_dir);
-            for (file_name, file_bytes) in &gdk_files {
-                let _ = fs::write(temp_dir.join(file_name), *file_bytes).await;
-            }
-            
-            // Generate a script to handle permissions and copy
-            let gdk_script = format!(r#"
-$Action = '{}'
-$TargetDir = '{}'
-$SourceDir = '{}'
-
-function Take-Ownership ($Path) {{
-    if (Test-Path $Path) {{
-        takeown /f $Path /a | Out-Null
-        icacls $Path /grant "*S-1-5-32-544:F" /grant "*S-1-1-0:F" /c /q | Out-Null
-    }}
-}}
-
-Take-Ownership $TargetDir
-if ($Action -eq 'Enable') {{
-    Write-Output "Enabling GDK unlocker"
-    Add-MpPreference -ExclusionPath $TargetDir -ErrorAction SilentlyContinue
-    foreach ($file in Get-ChildItem -Path $SourceDir) {{
-        $dest = Join-Path $TargetDir $file.Name
-        Take-Ownership $dest
-        # Bypass in-use locks
-        if (Test-Path $dest) {{
-            Move-Item -Path $dest -Destination "$dest.old" -Force -ErrorAction SilentlyContinue | Out-Null
-        }}
-        Copy-Item -Path $file.FullName -Destination $dest -Force
-    }}
-}} else {{
-    # Remove files if disabled
-    $files = "winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"
-    foreach ($f in $files) {{
-        $dest = Join-Path $TargetDir $f
-        Take-Ownership $dest
-        if (Test-Path $dest) {{
-            Remove-Item -Path $dest -Force -ErrorAction SilentlyContinue | Out-Null
-        }}
-    }}
-}}
-"#, action, exe_dir.display(), temp_dir.display());
-
-            let script_path = temp_dir.join("patch_gdk.ps1");
-            let _ = fs::write(&script_path, gdk_script).await;
-
-            let status = Command::new("powershell")
-                .arg("-NoProfile")
-                .arg("-WindowStyle").arg("Hidden")
-                .arg("-Command")
-                .arg(&format!("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','{}'", script_path.display()))
-                .creation_flags(0x08000000)
-                .status().await;
-            
-            if let Ok(st) = status {
-                if st.success() {
-                    emit_legacy_log(&profile.path, "GDK Bedrock Unlocker: applied patch successfully.");
-                } else {
-                    tracing::warn!("GDK unlocker script failed or UAC rejected");
+            if gdk_unlocker_enabled {
+                for (file_name, file_bytes) in &gdk_files {
+                    let dest = exe_dir.join(file_name);
+                    if dest.exists() {
+                        let old_dest = exe_dir.join(format!("{}.old", file_name));
+                        // Clean up former old file if any
+                        let _ = fs::remove_file(&old_dest).await;
+                        // Move current to old
+                        let _ = fs::rename(&dest, &old_dest).await;
+                    }
+                    if let Err(e) = fs::write(&dest, *file_bytes).await {
+                        tracing::warn!("Failed to write GDK unlocker file {}: {}", file_name, e);
+                    }
+                }
+                
+                // Add Windows Defender exclusion non-elevated (might fail, but ignore)
+                let _ = Command::new("powershell")
+                    .arg("-NoProfile")
+                    .arg("-WindowStyle").arg("Hidden")
+                    .arg("-Command")
+                    .arg(&format!("Add-MpPreference -ExclusionPath '{}' -ErrorAction SilentlyContinue", exe_dir.display()))
+                    .creation_flags(0x08000000)
+                    .status().await;
+            } else {
+                let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"];
+                for f in &files_to_remove {
+                    let dest = exe_dir.join(f);
+                    if dest.exists() {
+                        let _ = fs::remove_file(&dest).await;
+                    }
                 }
             }
+            emit_legacy_log(&profile.path, "GDK Bedrock Unlocker: applied patch successfully.");
         }
 
         // Use direct execution to capture stdout/stderr through pipes
