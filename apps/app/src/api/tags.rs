@@ -16,7 +16,9 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 /// Gets cached category tags from the database
 #[tauri::command]
 pub async fn tags_get_categories() -> Result<Vec<Category>> {
-    Ok(theseus::tags::get_category_tags().await?)
+    let res = theseus::tags::get_category_tags().await;
+    std::fs::write("C:\\Users\\oskar\\Desktop\\bedr\\bedringh2\\frontend_tags_res.log", format!("{:?}", res)).ok();
+    Ok(res?)
 }
 
 /// Gets cached report type tags from the database

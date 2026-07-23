@@ -31,6 +31,7 @@ import { get_game_versions, get_loaders } from '@/helpers/tags'
 import { injectInstanceSettings } from '@/providers/instance-settings'
 
 import type { Manifest } from '../../../helpers/types'
+import BedrockInstallationSettings from './BedrockInstallationSettings.vue'
 
 const { handleError } = injectNotificationManager()
 const { formatMessage } = useVIntl()
@@ -373,5 +374,6 @@ provideInstallationSettings({
 </script>
 
 <template>
-	<InstallationSettingsLayout />
+	<BedrockInstallationSettings v-if="instance.loader === 'bedrock'" />
+	<InstallationSettingsLayout v-else />
 </template>

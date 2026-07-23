@@ -144,7 +144,25 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             }
         };
 
-    let pfn_to_use = install_type.package_family().to_string();
+    let manifest_path = versions_dir.join("AppxManifest.xml");
+    let mut pkg_name = if install_type.is_preview() {
+        "Microsoft.MinecraftWindowsBeta".to_string()
+    } else {
+        "Microsoft.MinecraftUWP".to_string()
+    };
+
+    if manifest_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+            if let Some(start) = content.find("<Identity Name=\"") {
+                let rest = &content[start + 16..];
+                if let Some(end) = rest.find('"') {
+                    pkg_name = rest[..end].to_string();
+                }
+            }
+        }
+    }
+
+    let pfn_to_use = format!("{}_8wekyb3d8bbwe", pkg_name);
 
     let exe_path = versions_dir.join("Minecraft.Windows.exe");
 
@@ -166,13 +184,6 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     if is_custom_unpacked {
         emit_legacy_log(&profile.path, "Проверка установленной версии UWP (Hot-Swap)...");
-        let manifest_path = versions_dir.join("AppxManifest.xml");
-        
-        let pkg_name = if install_type.is_preview() {
-            "Microsoft.MinecraftWindowsBeta"
-        } else {
-            "Microsoft.MinecraftUWP"
-        };
 
         let output = std::process::Command::new("powershell")
             .creation_flags(0x08000000)
@@ -289,22 +300,18 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     emit_legacy_log(&profile.path, "Монтирование изолированной файловой системы профиля...");
     use std::os::windows::process::CommandExt;
-    let status = std::process::Command::new("cmd")
+    let output = std::process::Command::new("cmd")
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .args(&[
-            "/c",
-            "mklink",
-            "/J",
-            mojang_dir.to_str().unwrap(),
-            instance_mojang.to_str().unwrap(),
-        ])
-        .status()?;
+        .arg("/c")
+        .raw_arg(format!("mklink /J \"{}\" \"{}\"", mojang_dir.display(), instance_mojang.display()))
+        .output()?;
 
-    if !status.success() {
-        return Err(ErrorKind::LauncherError(
-            "Не удалось примонтировать файловую систему профиля (ошибка создания Junction).".into(),
-        )
-        .into());
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let out_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Err(
+            ErrorKind::LauncherError(format!("Не удалось примонтировать файловую систему профиля: {} {}", err_msg, out_msg)).into()
+        );
     }
 
     let junction_guard = BedrockJunctionGuard {
@@ -325,8 +332,8 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     emit_legacy_log(&profile.path, "Starting Minecraft Bedrock launch sequence...");
 
     if let Some(exe_path) = exe_path_to_inject {
-        // Deploy BLoader.dll
         let exe_dir = exe_path.parent().unwrap();
+        // BLoader is required for all launches unconditionally
         let injector_name = "BLoader.dll";
         let injector_target_path = exe_dir.join(injector_name);
 
@@ -337,7 +344,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         }
 
         let config_json = serde_json::json!({
-            "disable_mod_loading": true,
+            "disable_mod_loading": false,
             "mods": []
         });
         fs::write(
@@ -375,6 +382,90 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             crate::launcher::pe::inject_dll_import(&exe_path, injector_name, None)
                 .map_err(|e| ErrorKind::LauncherError(format!("PE modification failed: {}", e)))?;
             emit_legacy_log(&profile.path, "PE patching successful.");
+        }
+
+        // Check if Bedrock Unlocker for GDK is enabled in settings
+        let settings = crate::state::Settings::get(&state.pool).await?;
+        let gdk_unlocker_enabled = settings.feature_flags
+            .get(&crate::state::FeatureFlag::BedrockUnlockerGdk)
+            .copied()
+            .unwrap_or(false);
+
+        let gdk_files = vec![
+            ("winmm.dll", include_bytes!("../../assets/unlocker/gdk/winmm.dll").as_slice()),
+            ("OnlineFix64.dll", include_bytes!("../../assets/unlocker/gdk/OnlineFix64.dll").as_slice()),
+            ("dlllist.txt", include_bytes!("../../assets/unlocker/gdk/dlllist.txt").as_slice()),
+            ("OnlineFix.ini", include_bytes!("../../assets/unlocker/gdk/OnlineFix.ini").as_slice()),
+        ];
+
+        let has_all_gdk = gdk_files.iter().all(|(n, _)| exe_dir.join(n).exists());
+        if gdk_unlocker_enabled != has_all_gdk {
+            let action = if gdk_unlocker_enabled { "Enable" } else { "Disable" };
+            emit_legacy_log(&profile.path, &format!("GDK Unlocker mismatch, running {} script...", action));
+            
+            let temp_dir = std::env::temp_dir().join("bedrin_gdk_unlocker");
+            let _ = std::fs::create_dir_all(&temp_dir);
+            for (file_name, file_bytes) in &gdk_files {
+                let _ = fs::write(temp_dir.join(file_name), *file_bytes).await;
+            }
+            
+            // Generate a script to handle permissions and copy
+            let gdk_script = format!(r#"
+$Action = '{}'
+$TargetDir = '{}'
+$SourceDir = '{}'
+
+function Take-Ownership ($Path) {{
+    if (Test-Path $Path) {{
+        takeown /f $Path /a | Out-Null
+        icacls $Path /grant "*S-1-5-32-544:F" /grant "*S-1-1-0:F" /c /q | Out-Null
+    }}
+}}
+
+Take-Ownership $TargetDir
+if ($Action -eq 'Enable') {{
+    Write-Output "Enabling GDK unlocker"
+    Add-MpPreference -ExclusionPath $TargetDir -ErrorAction SilentlyContinue
+    foreach ($file in Get-ChildItem -Path $SourceDir) {{
+        $dest = Join-Path $TargetDir $file.Name
+        Take-Ownership $dest
+        # Bypass in-use locks
+        if (Test-Path $dest) {{
+            Move-Item -Path $dest -Destination "$dest.old" -Force -ErrorAction SilentlyContinue | Out-Null
+        }}
+        Copy-Item -Path $file.FullName -Destination $dest -Force
+    }}
+}} else {{
+    # Remove files if disabled
+    $files = "winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"
+    foreach ($f in $files) {{
+        $dest = Join-Path $TargetDir $f
+        Take-Ownership $dest
+        if (Test-Path $dest) {{
+            Remove-Item -Path $dest -Force -ErrorAction SilentlyContinue | Out-Null
+        }}
+    }}
+}}
+"#, action, exe_dir.display(), temp_dir.display());
+
+            let script_path = temp_dir.join("patch_gdk.ps1");
+            let _ = fs::write(&script_path, gdk_script).await;
+
+            let status = Command::new("powershell")
+                .arg("-NoProfile")
+                .arg("-WindowStyle").arg("Hidden")
+                .arg("-Command")
+                .arg(&format!("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','{}'", script_path.display()))
+                .creation_flags(0x08000000)
+                .status().await;
+            
+            if let Ok(st) = status {
+                if st.success() {
+                    emit_legacy_log(&profile.path, "GDK Bedrock Unlocker: applied patch successfully.");
+                } else {
+                    tracing::warn!("GDK unlocker script failed or UAC rejected");
+                }
+            }
         }
 
         // Use direct execution to capture stdout/stderr through pipes
@@ -432,21 +523,69 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             "App".to_string()
         };
 
+        // Check UWP Unlocker feature flag
+        let settings = crate::state::Settings::get(&state.pool).await?;
+        let uwp_unlocker_enabled = settings.feature_flags
+            .get(&crate::state::FeatureFlag::BedrockUnlockerUwp)
+            .copied()
+            .unwrap_or(false);
+
+        let system32_dll = "C:\\Windows\\System32\\Windows.ApplicationModel.Store.dll";
+        let cracked_size: u64 = 2260832;
+        let current_size = std::fs::metadata(system32_dll).map(|m| m.len()).unwrap_or(0);
+        let is_patched = current_size == cracked_size;
+
+        if is_patched != uwp_unlocker_enabled {
+            emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: patch state mismatch, requesting elevation...");
+
+            let temp_dir = std::env::temp_dir().join("bedrin_uwp_unlocker");
+            let _ = std::fs::create_dir_all(temp_dir.join("System32"));
+            let _ = std::fs::create_dir_all(temp_dir.join("SysWOW64"));
+            
+            let _ = std::fs::write(temp_dir.join("patch.ps1"), include_bytes!("../../assets/unlocker/uwp/patch.ps1"));
+            let _ = std::fs::write(temp_dir.join("System32/Windows.ApplicationModel.Store.dll"), include_bytes!("../../assets/unlocker/uwp/System32/Windows.ApplicationModel.Store.dll"));
+            let _ = std::fs::write(temp_dir.join("SysWOW64/Windows.ApplicationModel.Store.dll"), include_bytes!("../../assets/unlocker/uwp/SysWOW64/Windows.ApplicationModel.Store.dll"));
+            
+            let script_path = temp_dir.join("patch.ps1");
+            let work_dir = temp_dir.to_str().unwrap();
+            let action = if uwp_unlocker_enabled { "Enable" } else { "Disable" };
+
+            let status = Command::new("powershell")
+                .arg("-NoProfile")
+                .arg("-WindowStyle").arg("Hidden")
+                .arg("-Command")
+                .arg(&format!("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','{}','-Action','{}','-WorkDir','{}'", script_path.display(), action, work_dir))
+                .creation_flags(0x08000000)
+                .status().await;
+
+            if let Ok(st) = status {
+                if st.success() {
+                    emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: successfully applied patch.");
+                } else {
+                    tracing::warn!("UWP unlocker script failed or UAC rejected");
+                }
+            }
+        }
+
         let launch_target = format!("{}!{}", pfn_to_use, app_id);
         emit_legacy_log(&profile.path, &format!("Launching UWP via shell:appsFolder\\{}", launch_target));
 
-        // PowerShell script: launch via shell:appsFolder, then wait for GameLaunchHelper or Minecraft.Windows,
-        // then keep alive while Minecraft.Windows is running
         let ps_script = format!(
-            "Start-Process 'shell:appsFolder\\{0}'; \
+            "Write-Output 'Starting Bedrock UWP via shell:appsFolder\\{0}'; \
+            Start-Process 'shell:appsFolder\\{0}'; \
             $timeout = 60; \
             while ($timeout -gt 0) {{ \
-                if (Get-Process -Name 'GameLaunchHelper','Minecraft.Windows' -ErrorAction SilentlyContinue) {{ break }}; \
+                $p = Get-Process -Name 'GameLaunchHelper','Minecraft.Windows','Minecraft.UWP','MinecraftUWP','Minecraft' -ErrorAction SilentlyContinue; \
+                if ($p) {{ Write-Output ('Found Bedrock process(es) with PID(s): ' + ($p.Id -join ', ')); break }}; \
+                Write-Output 'Waiting for Bedrock to launch... (' + $timeout + 's left)'; \
                 Start-Sleep -Seconds 1; $timeout-- \
             }}; \
-            while (Get-Process -Name 'GameLaunchHelper','Minecraft.Windows' -ErrorAction SilentlyContinue) {{ \
+            if ($timeout -eq 0) {{ Write-Output 'ERROR: Bedrock process did not start within 60 seconds!' }}; \
+            Write-Output 'Monitoring Bedrock process...'; \
+            while (Get-Process -Name 'GameLaunchHelper','Minecraft.Windows','Minecraft.UWP','MinecraftUWP','Minecraft' -ErrorAction SilentlyContinue) {{ \
                 Start-Sleep -Seconds 2 \
-            }}",
+            }}; \
+            Write-Output 'Bedrock process exited.'",
             launch_target
         );
 

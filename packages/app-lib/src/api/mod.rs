@@ -1,5 +1,9 @@
-//! API for interacting with Theseus
 pub mod bedrock;
+pub mod bedrock_addons;
+pub mod bedrock_curseforge;
+pub mod bedrock_preflight;
+pub mod bedrock_servers;
+pub mod bedrock_worlds;
 pub mod cache;
 pub mod friends;
 pub mod handler;

@@ -331,6 +331,42 @@ fn main() {
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,
                     ),
+            )
+            .plugin(
+                "bedrock-addons",
+                InlinedPlugin::new()
+                    .commands(&[
+                        "fetch_bedrock_addons",
+                        "download_bedrock_addon",
+                    ])
+                    .default_permission(
+                        DefaultPermissionRule::AllowAllCommands,
+                    ),
+            )
+            .plugin(
+                "bedrock-servers",
+                InlinedPlugin::new()
+                    .commands(&[
+                        "list_favorite_servers",
+                        "add_favorite_server",
+                        "remove_favorite_server",
+                    ])
+                    .default_permission(
+                        DefaultPermissionRule::AllowAllCommands,
+                    ),
+            )
+            .plugin(
+                "bedrock-worlds",
+                InlinedPlugin::new()
+                    .commands(&[
+                        "fetch_bedrock_worlds",
+                        "delete_bedrock_world",
+                        "export_bedrock_world",
+                        "import_bedrock_world",
+                    ])
+                    .default_permission(
+                        DefaultPermissionRule::AllowAllCommands,
+                    ),
             ),
     )
     .expect("Failed to run tauri-build");

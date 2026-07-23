@@ -44,6 +44,13 @@ pub async fn patch_manifest(
     // Оригинальный Identity Name (Microsoft.MinecraftUWP) необходим для работы интеграции со Store и Xbox.
     tokio::fs::write(&manifest_path, content).await?;
 
+    // Удаляем AppxSignature.p7x, чтобы Windows не ругалась на несовпадение сертификатов 
+    // при регистрации (HRESULT: 0x80073CFF) в режиме разработчика.
+    let signature_path = versions_dir.join("AppxSignature.p7x");
+    if signature_path.exists() {
+        let _ = tokio::fs::remove_file(signature_path).await;
+    }
+
     let _ = emit_loading(loading_bar, 100.0, Some("Готово!"));
 
     Ok(())

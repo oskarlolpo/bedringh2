@@ -93,6 +93,15 @@ export default new createRouter({
 			},
 		},
 		{
+			path: '/browse/bedrock/:projectType',
+			name: 'Discover Bedrock content',
+			component: Pages.BrowseBedrock,
+			meta: {
+				useContext: true,
+				breadcrumb: [{ name: '?BrowseTitle' }],
+			},
+		},
+		{
 			path: '/skins',
 			name: 'Skin selector',
 			component: Pages.Skins,
@@ -216,6 +225,15 @@ export default new createRouter({
 					},
 				},
 				{
+					path: 'servers',
+					name: 'InstanceBedrockServers',
+					component: Instance.BedrockServers,
+					meta: {
+						useRootContext: true,
+						breadcrumb: [{ name: '?Instance', link: '/instance/{id}/' }, { name: 'Servers' }],
+					},
+				},
+				{
 					path: '',
 					name: 'Mods',
 					component: Instance.Mods,
@@ -249,6 +267,15 @@ export default new createRouter({
 					meta: {
 						useRootContext: true,
 						breadcrumb: [{ name: '?Instance', link: '/instance/{id}/' }, { name: 'Logs' }],
+					},
+				},
+				{
+					path: 'content',
+					name: 'BedrockContent',
+					component: Instance.BedrockContent,
+					meta: {
+						useRootContext: true,
+						breadcrumb: [{ name: '?Instance', link: '/instance/{id}/' }, { name: 'Content' }],
 					},
 				},
 			],

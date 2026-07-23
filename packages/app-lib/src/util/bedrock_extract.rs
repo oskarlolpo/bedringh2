@@ -27,7 +27,8 @@ pub async fn extract_bedrock_package(
     )
     .await;
 
-    let ext = package_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    let ext = package_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let is_msixvc = ext == "msixvc";
     let is_7z = ext == "7z" || ext == "001" || package_path.to_string_lossy().contains(".7z");
 
@@ -83,6 +84,7 @@ async fn extract_zip(
         })?;
 
         let total_files = archive.len();
+        let mut previous_pct = 0.0;
         for i in 0..total_files {
             let mut file = archive.by_index(i).map_err(|e| {
                 crate::Error::from(ErrorKind::OtherError(e.to_string()))
@@ -106,9 +108,12 @@ async fn extract_zip(
             }
 
             if i % 100 == 0 {
+                let pct = (i as f64 / total_files as f64) * 100.0;
+                let inc = pct - previous_pct;
+                previous_pct = pct;
                 let _ = emit_loading(
                     &loading_bar,
-                    100.0 / total_files as f64 * 100.0,
+                    inc,
                     Some("Распаковка архива..."),
                 );
             }
@@ -173,7 +178,29 @@ async fn extract_7z(
             Some("Распаковка 7z архива..."),
         );
 
-        sevenz_rust::decompress_file(&package_path, &target_dir).map_err(|e| {
+        let mut extracted_size = 0u64;
+        let mut emit_counter = 0;
+        let mut previous_pct = 0.0;
+        let assumed_total_size = 1_500_000_000u64; // ~1.5 GB uncompressed
+
+        sevenz_rust::decompress_file_with_extract_fn(&package_path, &target_dir, |entry, reader, dest| {
+            extracted_size += entry.size();
+            emit_counter += 1;
+            
+            if emit_counter % 50 == 0 {
+                let mut pct = (extracted_size as f64 / assumed_total_size as f64) * 100.0;
+                if pct > 99.0 { pct = 99.0; }
+                let inc = pct - previous_pct;
+                previous_pct = pct;
+                
+                let _ = emit_loading(
+                    &loading_bar,
+                    inc,
+                    Some("Распаковка 7z архива..."),
+                );
+            }
+            sevenz_rust::default_entry_extract_fn(entry, reader, dest)
+        }).map_err(|e| {
             crate::Error::from(ErrorKind::OtherError(format!("Failed to extract 7z archive: {}", e)))
         })?;
 

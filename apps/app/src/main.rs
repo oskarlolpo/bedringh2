@@ -248,6 +248,10 @@ fn main() {
         .plugin(api::friends::init())
         .plugin(api::worlds::init())
         .plugin(api::bedrock::init())
+        .plugin(api::bedrock_addons::init())
+
+        .plugin(api::bedrock_servers::init())
+        .plugin(api::bedrock_worlds::init())
         .manage(PendingUpdateData::default())
         .invoke_handler(tauri::generate_handler![
             initialize_state,

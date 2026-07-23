@@ -487,28 +487,41 @@ const contentSubpageProps = computed(() =>
 	isContentSubpageRoute() ? { preloadedContent: preloadedContent.value } : {},
 )
 
-const tabs = computed(() => [
-	{
-		label: 'Content',
-		href: `${basePath.value}`,
-		icon: BoxesIcon,
-	},
-	{
-		label: 'Files',
-		href: `${basePath.value}/files`,
-		icon: FolderOpenIcon,
-	},
-	{
-		label: 'Worlds',
-		href: `${basePath.value}/worlds`,
-		icon: GlobeIcon,
-	},
-	{
+const tabs = computed(() => {
+	const base = [
+		{
+			label: 'Content',
+			href: `${basePath.value}`,
+			icon: BoxesIcon,
+		},
+		{
+			label: 'Files',
+			href: `${basePath.value}/files`,
+			icon: FolderOpenIcon,
+		},
+		{
+			label: 'Worlds',
+			href: `${basePath.value}/worlds`,
+			icon: GlobeIcon,
+		},
+	];
+
+	if (instance.value?.loader === 'bedrock') {
+		base.push({
+			label: 'Servers',
+			href: `${basePath.value}/servers`,
+			icon: ServerIcon,
+		});
+	}
+
+	base.push({
 		label: 'Logs',
 		href: `${basePath.value}/logs`,
 		icon: TerminalSquareIcon,
-	},
-])
+	});
+
+	return base;
+})
 
 if (instance.value) {
 	breadcrumbs.setName(
@@ -617,10 +630,16 @@ const handleOptionsClick = async (args: { option: string; item: unknown }) => {
 			await stopInstance('InstancePageContextMenu')
 			break
 		case 'add_content':
-			await router.push({
-				path: `/browse/${instance.value?.loader === 'vanilla' ? 'datapack' : 'mod'}`,
-				query: { i: route.params.id },
-			})
+			if (instance.value?.loader === 'bedrock') {
+				await router.push({
+					path: `/instance/${encodeURIComponent(route.params.id as string)}/content`,
+				})
+			} else {
+				await router.push({
+					path: `/browse/${instance.value?.loader === 'vanilla' ? 'datapack' : 'mod'}`,
+					query: { i: route.params.id },
+				})
+			}
 			break
 		case 'edit':
 			await router.push({

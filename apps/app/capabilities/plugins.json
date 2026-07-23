@@ -112,6 +112,9 @@
 		"ads:default",
 		"friends:default",
 		"worlds:default",
-		"bedrock:default"
+		"bedrock:default",
+		"bedrock-addons:default",
+		"bedrock-servers:default",
+		"bedrock-worlds:default"
 	]
 }

@@ -299,6 +299,16 @@ pub async fn install_minecraft(
                 ))
             })?;
 
+        #[cfg(windows)]
+        {
+            if bedrock_version.is_gdk {
+                crate::api::bedrock_preflight::check_and_install_gameinput(&loading_bar).await?;
+            } else {
+                crate::api::bedrock_preflight::check_developer_mode()?;
+                crate::api::bedrock_preflight::check_and_install_vclibs(&loading_bar).await?;
+            }
+        }
+
         if bedrock_version.identifier.starts_with("http") {
             let lower_id = bedrock_version.identifier.to_lowercase();
             let extension = if lower_id.ends_with(".msixvc") {
@@ -348,6 +358,17 @@ pub async fn install_minecraft(
                 )
                 .await?;
             }
+            
+            // Part 7: Integrity Checks
+            let has_manifest = versions_dir.join("AppxManifest.xml").exists();
+            let has_exe = versions_dir.join("Minecraft.Windows.exe").exists();
+            if !has_manifest && !has_exe {
+                let _ = tokio::fs::remove_dir_all(&versions_dir).await;
+                return Err(crate::ErrorKind::LauncherError(
+                    "Интегритет не пройден: отсутствует AppxManifest.xml и Minecraft.Windows.exe. Архив возможно поврежден.".to_string()
+                ).into());
+            }
+
 
             crate::util::bedrock_patch::create_instance_skeleton(&profile.path)
                 .await?;
@@ -614,15 +635,29 @@ pub async fn launch_minecraft(
         .into());
     }
 
-    if profile.install_stage != ProfileInstallStage::Installed {
+    let state = State::get().await?;
+
+    let mut needs_install = profile.install_stage != ProfileInstallStage::Installed;
+    
+    if profile.loader == ModLoader::Bedrock {
+        let versions_dir = state
+            .directories
+            .caches_dir()
+            .join("versions")
+            .join(format!("bedrock_{}", profile.game_version));
+            
+        if !versions_dir.exists() {
+            needs_install = true;
+        }
+    }
+
+    if needs_install {
         install_minecraft(profile, None, false).await?;
     }
 
     if profile.loader == ModLoader::Bedrock {
         return bedrock::launch_bedrock(profile).await;
     }
-
-    let state = State::get().await?;
 
     let instance_path =
         crate::api::profile::get_full_path(&profile.path).await?;

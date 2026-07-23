@@ -1,5 +1,6 @@
 <template>
-	<ReadyTransition :pending="loading">
+	<BedrockContent v-if="props.instance?.loader === 'bedrock'" :instance="props.instance" />
+	<ReadyTransition v-else :pending="loading">
 		<ContentPageLayout>
 			<template #modals>
 				<ShareModalWrapper
@@ -97,6 +98,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import BedrockContent from './BedrockContent.vue'
 import ExportModal from '@/components/ui/ExportModal.vue'
 import ShareModalWrapper from '@/components/ui/modal/ShareModalWrapper.vue'
 import { trackEvent } from '@/helpers/analytics'
@@ -360,8 +362,12 @@ async function getUpdaterProjectVersions(projectId: string, pinnedVersionId?: st
 
 async function handleBrowseContent() {
 	if (!props.instance) return
+	let path = `/browse/${props.instance.loader === 'vanilla' ? 'resourcepack' : 'mod'}`
+	if (props.instance.loader === 'bedrock') {
+		path = '/browse/bedrock/addon'
+	}
 	await router.push({
-		path: `/browse/${props.instance.loader === 'vanilla' ? 'resourcepack' : 'mod'}`,
+		path,
 		query: { i: props.instance.path },
 	})
 }

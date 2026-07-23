@@ -87,6 +87,7 @@ pub struct BedrockPackageInfo {
     pub name: String,
     pub path: String,
     pub size: u64,
+    pub created: i64,
     pub is_valid: bool,
 }
 
@@ -95,6 +96,7 @@ pub struct ProfileStorageInfo {
     pub name: String,
     pub path: String,
     pub size: u64,
+    pub created: i64,
 }
 
 fn dir_size(path: impl AsRef<Path>) -> u64 {
@@ -117,7 +119,7 @@ pub async fn get_cache_sizes() -> crate::Result<CacheSizes> {
     let state = crate::State::get().await?;
     let dirs = &state.directories;
     
-    let bedrock_packages = dir_size(dirs.versions_dir());
+    let bedrock_packages = dir_size(dirs.caches_dir().join("versions"));
     let java_runtimes = dir_size(dirs.java_versions_dir());
     let http_cache = dir_size(dirs.caches_dir());
     
@@ -131,7 +133,7 @@ pub async fn get_cache_sizes() -> crate::Result<CacheSizes> {
 
 pub async fn get_bedrock_packages() -> crate::Result<Vec<BedrockPackageInfo>> {
     let state = crate::State::get().await?;
-    let versions_dir = state.directories.versions_dir();
+    let versions_dir = state.directories.caches_dir().join("versions");
     
     let mut packages = Vec::new();
     if let Ok(mut dir) = tokio::fs::read_dir(&versions_dir).await {
@@ -141,13 +143,20 @@ pub async fn get_bedrock_packages() -> crate::Result<Vec<BedrockPackageInfo>> {
                 let name = entry.file_name().to_string_lossy().to_string();
                 let path = entry.path();
                 
-                // Check if directory has valid contents (e.g. at least one non-empty file or AppxManifest)
-                let is_valid = path.join("AppxManifest.xml").exists() || path.join("bedrock_app.7z").exists() || path.join("AppxBlockMap.xml").exists();
+                let is_valid = path.join("AppxManifest.xml").exists() || path.join("Minecraft.Windows.exe").exists();
+
+                let created = metadata.created()
+                    .or_else(|_| metadata.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
 
                 packages.push(BedrockPackageInfo {
                     name,
                     path: path.to_string_lossy().to_string(),
                     size: dir_size(&path),
+                    created,
                     is_valid,
                 });
             }
@@ -162,9 +171,10 @@ pub async fn remove_directory(path_str: String) -> crate::Result<()> {
     let state = crate::State::get().await?;
     
     let versions_dir = state.directories.versions_dir();
+    let bedrock_versions_dir = state.directories.caches_dir().join("versions");
     let java_versions_dir = state.directories.java_versions_dir();
     
-    if path.starts_with(&versions_dir) || path.starts_with(&java_versions_dir) {
+    if path.starts_with(&versions_dir) || path.starts_with(&java_versions_dir) || path.starts_with(&bedrock_versions_dir) {
         tokio::fs::remove_dir_all(path).await?;
     }
     
@@ -178,10 +188,18 @@ pub async fn get_profile_storage() -> crate::Result<Vec<ProfileStorageInfo>> {
     let mut storage_info = Vec::new();
     for profile in profiles {
         let path = state.directories.profiles_dir().join(&profile.path);
+        let metadata = std::fs::metadata(&path);
+        let created = metadata.and_then(|m| m.created().or_else(|_| m.modified()))
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
         storage_info.push(ProfileStorageInfo {
             name: profile.name.clone(),
             path: profile.path.clone(),
             size: dir_size(&path),
+            created,
         });
     }
     

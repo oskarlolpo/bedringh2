@@ -1,4 +1,25 @@
 {
+  "app.settings.bedrock.gdk-unlocker": {
+    "message": "GDK Unlocker (Xbox App)"
+  },
+  "app.settings.bedrock.gdk-unlocker.desc": {
+    "message": "Replaces the license verification process with custom DLLs for Xbox App instances.\nAdds antivirus exceptions automatically to prevent the fix from being removed."
+  },
+  "app.settings.bedrock.uwp-unlocker": {
+    "message": "UWP Unlocker (Microsoft Store)"
+  },
+  "app.settings.bedrock.uwp-unlocker.desc": {
+    "message": "Modifies the Windows system Store components to unlock trial restriction for UWP Minecraft instances."
+  },
+  "app.settings.bedrock.uwp-unlocker.warn": {
+    "message": "⚠ This requires Administrator privileges. A backup of original files is automatically taken."
+  },
+  "app.browse.project-type.addons": {
+    "message": "Add-ons"
+  },
+  "app.browse.project-type.resource-packs": {
+    "message": "Resource Packs"
+  },
   "app.action-bar.downloading-java": {
     "message": "Downloading Java {version}"
   },
@@ -44,6 +65,12 @@
   "app.action-bar.view-logs": {
     "message": "View logs"
   },
+  "app.appearance-settings.accent-color.description": {
+    "message": "Select your preferred accent color for the UI."
+  },
+  "app.appearance-settings.accent-color.title": {
+    "message": "Accent Color"
+  },
   "app.appearance-settings.advanced-rendering.description": {
     "message": "Enables advanced rendering such as blur effects that may cause performance issues without hardware-accelerated rendering."
   },
@@ -55,12 +82,6 @@
   },
   "app.appearance-settings.color-theme.title": {
     "message": "Color theme"
-  },
-  "app.appearance-settings.accent-color.description": {
-    "message": "Select your preferred accent color for the UI."
-  },
-  "app.appearance-settings.accent-color.title": {
-    "message": "Accent Color"
   },
   "app.appearance-settings.default-landing-page.description": {
     "message": "Change the page to which the launcher opens on."
@@ -331,6 +352,45 @@
   },
   "app.project.install-context.install-content-to-instance": {
     "message": "Install content to instance"
+  },
+  "app.resource-management.bedrock-downloaded": {
+    "message": "Downloaded Bedrock versions"
+  },
+  "app.resource-management.bedrock-packages": {
+    "message": "Bedrock versions"
+  },
+  "app.resource-management.broken": {
+    "message": "Broken / Incomplete"
+  },
+  "app.resource-management.cache-size": {
+    "message": "Total cache size"
+  },
+  "app.resource-management.delete-selected": {
+    "message": "Delete selected ({count})"
+  },
+  "app.resource-management.http-cache": {
+    "message": "Data cache"
+  },
+  "app.resource-management.java-runtimes": {
+    "message": "Java environments"
+  },
+  "app.resource-management.profiles": {
+    "message": "Installed Builds (Profiles)"
+  },
+  "app.resource-management.sort": {
+    "message": "Sort by"
+  },
+  "app.resource-management.sort.date": {
+    "message": "Date"
+  },
+  "app.resource-management.sort.name": {
+    "message": "Name"
+  },
+  "app.resource-management.sort.size": {
+    "message": "Size"
+  },
+  "app.resource-management.title": {
+    "message": "Memory and Cache Manager"
   },
   "app.settings.developer-mode-enabled": {
     "message": "Developer mode enabled."
@@ -964,5 +1024,12 @@
   },
   "unknown-pack-warning-modal.warning.title": {
     "message": "Unknown file warning"
-  }
+  },
+  "app.settings.bedrock.gdk-unlocker": "GDK Unlocker (Xbox App)",
+  "app.settings.bedrock.gdk-unlocker.desc": "Replaces the license verification process with custom DLLs for Xbox App instances.\\nAdds antivirus exceptions automatically to prevent the fix from being removed.",
+  "app.settings.bedrock.uwp-unlocker": "UWP Unlocker (Microsoft Store)",
+  "app.settings.bedrock.uwp-unlocker.desc": "Modifies the Windows system Store components to unlock trial restriction for UWP Minecraft instances.",
+  "app.settings.bedrock.uwp-unlocker.warn": "⚠ This requires Administrator privileges. A backup of original files is automatically taken.",
+  "app.browse.project-type.addons": "Add-ons",
+  "app.browse.project-type.resource-packs": "Resource Packs"
 }

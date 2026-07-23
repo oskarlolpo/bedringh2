@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+	BoxIcon,
 	CoffeeIcon,
 	GameIcon,
 	GaugeIcon,
@@ -24,6 +25,7 @@ import { platform as getOsPlatform, version as getOsVersion } from '@tauri-apps/
 import { ref, watch } from 'vue'
 
 import AppearanceSettings from '@/components/ui/settings/AppearanceSettings.vue'
+import BedrockSettings from '@/components/ui/settings/BedrockSettings.vue'
 import DefaultInstanceSettings from '@/components/ui/settings/DefaultInstanceSettings.vue'
 import FeatureFlagSettings from '@/components/ui/settings/FeatureFlagSettings.vue'
 import JavaSettings from '@/components/ui/settings/JavaSettings.vue'
@@ -86,6 +88,14 @@ const tabs = [
 		}),
 		icon: GameIcon,
 		content: DefaultInstanceSettings,
+	},
+	{
+		name: defineMessage({
+			id: 'app.settings.tabs.bedrock',
+			defaultMessage: 'Bedrock',
+		}),
+		icon: BoxIcon,
+		content: BedrockSettings,
 	},
 	{
 		name: defineMessage({

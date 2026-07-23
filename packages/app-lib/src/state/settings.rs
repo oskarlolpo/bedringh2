@@ -63,6 +63,8 @@ pub enum FeatureFlag {
     ServerProjectQa,
     I18nDebug,
     ShowInstancePlayTime,
+    BedrockUnlockerGdk,
+    BedrockUnlockerUwp,
 }
 
 impl Settings {

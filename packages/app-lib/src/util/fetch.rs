@@ -398,6 +398,7 @@ pub async fn fetch_advanced_with_client(
                     || resp.status().is_server_error()
                 {
                     let backup_error = resp.error_for_status_ref().unwrap_err();
+                    std::fs::write("C:\\Users\\oskar\\Desktop\\bedr\\bedringh2\\fetch_error.log", format!("HTTP error: {}", backup_error)).ok();
                     if let Ok(error) = resp.json().await {
                         return Err(ErrorKind::LabrinthError(error).into());
                     }

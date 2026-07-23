@@ -2,7 +2,6 @@ import 'floating-vue/dist/style.css'
 import 'overlayscrollbars/overlayscrollbars.css'
 
 // import * as Sentry removed
-import { VueScanPlugin } from '@taijased/vue-render-tracker'
 import { VueQueryPlugin } from '@tanstack/vue-query'
 import FloatingVue from 'floating-vue'
 import { createPinia } from 'pinia'

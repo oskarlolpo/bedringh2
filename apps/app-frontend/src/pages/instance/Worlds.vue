@@ -1,4 +1,6 @@
 <template>
+    <BedrockWorlds v-if="props.instance?.loader === 'bedrock'" :instance="props.instance" />
+    <template v-else>
 	<AddServerModal
 		ref="addServerModal"
 		:instance="instance"
@@ -160,6 +162,7 @@
 			</template>
 		</EmptyState>
 	</ReadyTransition>
+    </template>
 </template>
 <script setup lang="ts">
 import { CompassIcon, FilterIcon, PlusIcon, RefreshCwIcon, SearchIcon } from '@modrinth/assets'
@@ -181,6 +184,7 @@ import { platform } from '@tauri-apps/plugin-os'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import BedrockWorlds from './BedrockWorlds.vue'
 import type ContextMenu from '@/components/ui/ContextMenu.vue'
 import ConfirmModalWrapper from '@/components/ui/modal/ConfirmModalWrapper.vue'
 import AddServerModal from '@/components/ui/world/modal/AddServerModal.vue'

@@ -266,9 +266,17 @@ impl ProcessManager {
             {
                 if prof.loader == crate::state::ModLoader::Bedrock {
                     #[cfg(target_os = "windows")]
-                    let _ = std::process::Command::new("taskkill")
-                        .args(&["/IM", "Minecraft.Windows.exe", "/F"])
-                        .status();
+                    {
+                        let _ = std::process::Command::new("taskkill")
+                            .args(&["/IM", "Minecraft.Windows.exe", "/F", "/T"])
+                            .status();
+                        let _ = std::process::Command::new("taskkill")
+                            .args(&["/IM", "GameLaunchHelper.exe", "/F", "/T"])
+                            .status();
+                        let _ = std::process::Command::new("taskkill")
+                            .args(&["/IM", "Minecraft.exe", "/F", "/T"])
+                            .status();
+                    }
                 }
             }
         }

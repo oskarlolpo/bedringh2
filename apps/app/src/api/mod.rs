@@ -15,6 +15,9 @@ pub mod profile;
 pub mod profile_create;
 pub mod settings;
 pub mod bedrock;
+pub mod bedrock_addons;
+pub mod bedrock_servers;
+pub mod bedrock_worlds;
 pub mod tags;
 pub mod utils;
 
