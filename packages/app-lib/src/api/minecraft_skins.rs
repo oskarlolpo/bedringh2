@@ -81,7 +81,7 @@ mod assets {
     pub use default::DEFAULT_SKINS;
 }
 
-mod png_util;
+pub mod png_util;
 
 const SKIN_CHANGE_DEBOUNCE: Duration = Duration::from_secs(10);
 
@@ -577,6 +577,24 @@ async fn add_and_equip_custom_skin_now(
 ) -> crate::Result<()> {
     let state = State::get().await?;
 
+    let is_offline = selected_credentials.access_token == "null"
+        || selected_credentials.access_token.is_empty();
+
+    if is_offline {
+        let profile_id = selected_credentials.offline_profile.id;
+        CustomMinecraftSkin::add(
+            profile_id,
+            local_texture_key,
+            &texture_blob,
+            variant,
+            cape_id,
+            CustomMinecraftSkinInsertPosition::Top,
+            &state.pool,
+        )
+        .await?;
+        return Ok(());
+    }
+
     let previous_profile = selected_credentials
         .online_profile_fresh()
         .await
@@ -699,6 +717,32 @@ async fn equip_skin_now(
     skin: &Skin,
 ) -> crate::Result<()> {
     let state = State::get().await?;
+
+    let is_offline = selected_credentials.access_token == "null"
+        || selected_credentials.access_token.is_empty();
+
+    if is_offline {
+        let profile_id = selected_credentials.offline_profile.id;
+        let texture_blob = png_util::url_to_data_stream(&skin.texture)
+            .await?
+            .try_fold(Vec::new(), |mut texture, chunk| async move {
+                texture.extend_from_slice(&chunk);
+                Ok(texture)
+            })
+            .await?;
+
+        CustomMinecraftSkin::add(
+            profile_id,
+            &skin.texture_key,
+            &texture_blob,
+            skin.variant,
+            skin.cape_id,
+            CustomMinecraftSkinInsertPosition::Top,
+            &state.pool,
+        )
+        .await?;
+        return Ok(());
+    }
 
     let profile = selected_credentials
         .online_profile_fresh()

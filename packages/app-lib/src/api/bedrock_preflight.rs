@@ -186,3 +186,28 @@ pub async fn check_and_install_gameinput(loading_bar: &LoadingBarId) -> crate::R
 
     Ok(())
 }
+
+pub async fn download_fallback_dll(filename: &str, target_path: &std::path::Path) -> crate::Result<()> {
+    let client = reqwest::Client::new();
+    let urls = [
+        format!("https://github.com/bedrock-repacker/unlocker-dlls/releases/latest/download/{}", filename),
+        format!("https://raw.githubusercontent.com/bedrock-repacker/unlocker-dlls/main/{}", filename),
+    ];
+
+    for url in &urls {
+        if let Ok(res) = client.get(url).send().await {
+            if res.status().is_success() {
+                if let Ok(bytes) = res.bytes().await {
+                    if let Some(parent) = target_path.parent() {
+                        let _ = tokio::fs::create_dir_all(parent).await;
+                    }
+                    if tokio::fs::write(target_path, bytes).await.is_ok() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    Err(ErrorKind::LauncherError(format!("Failed to download missing runtime library: {}", filename)).into())
+}

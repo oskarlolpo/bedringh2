@@ -298,6 +298,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         }
     }
 
+    emit_legacy_log(&profile.path, "Синхронизация скина для Bedrock...");
+    let _ = sync_bedrock_custom_skin_pack(&instance_mojang).await;
+
     emit_legacy_log(&profile.path, "Монтирование изолированной файловой системы профиля...");
     use std::os::windows::process::CommandExt;
     let output = std::process::Command::new("cmd")
@@ -589,4 +592,87 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         Ok(process)
     }
+}
+
+pub async fn sync_bedrock_custom_skin_pack(mojang_dir: &std::path::Path) -> Result<()> {
+    use crate::api::minecraft_skins::get_available_skins;
+    use futures::TryStreamExt;
+
+    let skins = match get_available_skins().await {
+        Ok(s) => s,
+        Err(_) => return Ok(()),
+    };
+
+    let active_skin = match skins.into_iter().find(|s| s.is_equipped) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    let texture_stream = match crate::api::minecraft_skins::png_util::url_to_data_stream(&active_skin.texture).await {
+        Ok(stream) => stream,
+        Err(_) => return Ok(()),
+    };
+
+    let texture_data = match texture_stream
+        .try_fold(Vec::new(), |mut texture, chunk| async move {
+            texture.extend_from_slice(&chunk);
+            Ok(texture)
+        })
+        .await
+    {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(()),
+    };
+
+    let skin_pack_dir = mojang_dir.join("skin_packs").join("launcher_custom_skin");
+    let texts_dir = skin_pack_dir.join("texts");
+    let _ = fs::create_dir_all(&texts_dir).await;
+
+    let is_slim = matches!(
+        active_skin.variant,
+        crate::state::MinecraftSkinVariant::Slim
+    );
+    let geometry = if is_slim {
+        "geometry.humanoid.customSlim"
+    } else {
+        "geometry.humanoid.custom"
+    };
+
+    let manifest_json = serde_json::json!({
+        "format_version": 1,
+        "header": {
+            "name": "Launcher Custom Skin",
+            "uuid": "4c94b7a1-8d23-4e8b-b8f1-34e8921a92a1",
+            "version": [1, 0, 0]
+        },
+        "modules": [
+            {
+                "type": "skin_pack",
+                "uuid": "7a34e8b9-1f23-4d89-b56e-821f92a34567",
+                "version": [1, 0, 0]
+            }
+        ]
+    });
+
+    let skins_json = serde_json::json!({
+        "serialize_name": "launcher_custom_skin",
+        "localization_name": "launcher_custom_skin",
+        "skins": [
+            {
+                "localization_name": "Active Skin",
+                "geometry": geometry,
+                "texture": "skin.png",
+                "type": "free"
+            }
+        ]
+    });
+
+    let lang_content = "skinpack.launcher_custom_skin=Launcher Custom Skin\nskin.launcher_custom_skin.Active Skin=Active Skin\n";
+
+    let _ = fs::write(skin_pack_dir.join("manifest.json"), serde_json::to_string_pretty(&manifest_json).unwrap()).await;
+    let _ = fs::write(skin_pack_dir.join("skins.json"), serde_json::to_string_pretty(&skins_json).unwrap()).await;
+    let _ = fs::write(skin_pack_dir.join("skin.png"), texture_data).await;
+    let _ = fs::write(texts_dir.join("en_US.lang"), lang_content).await;
+
+    Ok(())
 }

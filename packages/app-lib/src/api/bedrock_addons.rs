@@ -1,6 +1,6 @@
 use crate::{Result, ErrorKind};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
@@ -13,6 +13,9 @@ pub struct BedrockAddon {
     pub folder_name: String,
     pub kind: String, // "resource" or "behavior"
     pub is_enabled: bool,
+    pub icon_path: Option<String>,
+    pub has_update: Option<bool>,
+    pub latest_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,6 +78,12 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
                     };
                     
                     let version_str = manifest.header.version.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
+                    let icon_file = path.join("pack_icon.png");
+                    let icon_path = if icon_file.exists() {
+                        Some(icon_file.to_string_lossy().to_string())
+                    } else {
+                        None
+                    };
                     
                     addons.push(BedrockAddon {
                         uuid: manifest.header.uuid,
@@ -84,6 +93,9 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
                         folder_name,
                         kind: kind_str,
                         is_enabled,
+                        icon_path,
+                        has_update: None,
+                        latest_version: None,
                     });
                 }
             }
@@ -224,4 +236,29 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
     let _ = fs::remove_dir_all(&temp_extract_dir).await;
     
     Ok(())
+}
+
+pub async fn check_bedrock_addon_updates(profile_path: &str) -> Result<Vec<BedrockAddon>> {
+    let mut addons = list_bedrock_addons(profile_path).await?;
+
+    for addon in &mut addons {
+        if let Ok(search_results) = crate::api::bedrock_curseforge::search_addons(&addon.name, None, Some(4984)).await {
+            if let Some(match_mod) = search_results.into_iter().next() {
+                if let Ok(files) = crate::api::bedrock_curseforge::get_addon_files(match_mod.id).await {
+                    if let Some(latest_file) = files.first() {
+                        let remote_ver = &latest_file.display_name;
+                        if remote_ver != &addon.version {
+                            addon.has_update = Some(true);
+                            addon.latest_version = Some(remote_ver.clone());
+                        } else {
+                            addon.has_update = Some(false);
+                            addon.latest_version = Some(remote_ver.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(addons)
 }

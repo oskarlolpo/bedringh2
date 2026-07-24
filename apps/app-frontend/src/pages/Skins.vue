@@ -289,9 +289,14 @@ const skinTexture = computedAsync(async () => {
 const capeTexture = computed(() => currentCape.value?.texture)
 const skinVariant = computed(() => selectedSkin.value?.variant)
 const skinNametag = computed(() => (themeStore.hideNametagSkinsPage ? undefined : username.value))
-const isSkinManagementReadOnly = computed(
-	() => offline.value || (authServerQuery.isError.value && !authServerQuery.isLoading.value),
-)
+const isSkinManagementReadOnly = computed(() => {
+	const isOfflineAccount =
+		currentUser.value?.access_token === 'null' || !currentUser.value?.access_token
+	if (isOfflineAccount && currentUser.value) {
+		return false
+	}
+	return offline.value || (authServerQuery.isError.value && !authServerQuery.isLoading.value)
+})
 const hasPendingSkinChange = computed(
 	() => !skinsMatch(selectedSkin.value, originalSelectedSkin.value),
 )
@@ -1022,6 +1027,12 @@ await loadSkins()
 		<div class="sticky top-6 self-start p-2 pt-0">
 			<h1 class="m-0 text-2xl font-bold flex items-center gap-2">
 				{{ formatMessage(messages.skinSelectorTitle) }}
+				<span
+					v-if="currentUser?.access_token === 'null' || !currentUser?.access_token"
+					class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-surface-3 text-secondary border border-solid border-surface-4"
+				>
+					Offline
+				</span>
 			</h1>
 			<div
 				class="ml-5 mt-4 flex h-[calc(80vh-1rem)] items-center justify-center max-[700px]:h-[calc(50vh-1rem)]"

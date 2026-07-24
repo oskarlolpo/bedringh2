@@ -5,6 +5,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("bedrock-addons")
         .invoke_handler(tauri::generate_handler![
             fetch_bedrock_addons,
+            check_bedrock_addon_updates,
             set_bedrock_addon_enabled,
             delete_bedrock_addon,
             install_bedrock_addon_from_file,
@@ -18,6 +19,11 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 #[tauri::command]
 pub async fn fetch_bedrock_addons(profile_path: String) -> Result<Vec<BedrockAddon>> {
     Ok(theseus::bedrock_addons::list_bedrock_addons(&profile_path).await?)
+}
+
+#[tauri::command]
+pub async fn check_bedrock_addon_updates(profile_path: String) -> Result<Vec<BedrockAddon>> {
+    Ok(theseus::bedrock_addons::check_bedrock_addon_updates(&profile_path).await?)
 }
 
 #[tauri::command]

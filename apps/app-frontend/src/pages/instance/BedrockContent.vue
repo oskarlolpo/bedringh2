@@ -18,6 +18,9 @@
 				<div class="flex items-center justify-between mb-4">
 					<h2 class="text-xl font-bold">Bedrock Add-ons</h2>
 					<div class="flex gap-2">
+						<ButtonStyled color="brand-outline" @click="checkAddonUpdates" :disabled="isCheckingUpdates">
+							{{ isCheckingUpdates ? 'Checking...' : 'Check for Updates' }}
+						</ButtonStyled>
 						<ButtonStyled color="brand" @click="installFromFile">
 							<template #icon><DownloadIcon /></template>
 							Install from File
@@ -65,12 +68,21 @@
                         :class="{'opacity-50 grayscale': !addon.is_enabled}"
 					>
 						<div class="flex justify-between items-start">
-							<div class="font-bold text-lg max-w-[80%] truncate" :title="addon.name">
-								{{ addon.name }}
+							<div class="flex items-center gap-3 max-w-[80%]">
+								<img v-if="addon.icon_path" :src="convertFileSrc(addon.icon_path)" class="w-10 h-10 rounded shadow-sm object-cover flex-shrink-0" />
+								<div v-else class="w-10 h-10 rounded bg-surface-2 flex items-center justify-center flex-shrink-0 font-bold text-sm text-contrast">
+									{{ addon.name.charAt(0).toUpperCase() }}
+								</div>
+								<div class="font-bold text-lg truncate" :title="addon.name">
+									{{ addon.name }}
+								</div>
 							</div>
 							<div class="text-xs font-mono bg-surface-2 px-2 py-1 rounded">
 								{{ addon.version }}
 							</div>
+							<span v-if="addon.has_update" class="px-2 py-0.5 text-xs rounded bg-brand text-brand-contrast font-bold animate-pulse">
+								Update (v{{ addon.latest_version }})
+							</span>
 						</div>
 						
 						<p class="text-sm text-contrast line-clamp-2 h-10" :title="addon.description">
@@ -113,7 +125,7 @@
 <script setup lang="ts">
 import { DownloadIcon, TrashIcon, GlobeIcon } from '@modrinth/assets'
 import { ButtonStyled, EmptyState, ReadyTransition, ContentCardLayout, injectNotificationManager } from '@modrinth/ui'
-import { invoke } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ref, onMounted } from 'vue'
@@ -132,6 +144,9 @@ interface BedrockAddon {
     folder_name: string;
     kind: string;
     is_enabled: boolean;
+    icon_path?: string;
+    has_update?: boolean;
+    latest_version?: string;
 }
 
 const loading = ref(true)
@@ -141,6 +156,25 @@ const notifications = injectNotificationManager()
 const searchQuery = ref('')
 const isSearchingCF = ref(false)
 const cfResults = ref<any[]>([])
+const isCheckingUpdates = ref(false)
+
+async function checkAddonUpdates() {
+    isCheckingUpdates.value = true
+    try {
+        addons.value = await invoke('plugin:bedrock-addons|check_bedrock_addon_updates', {
+            profilePath: props.instance.path
+        })
+        notifications.addNotification({
+            type: 'info',
+            title: 'Update check finished',
+            text: 'Bedrock add-ons update status refreshed.'
+        })
+    } catch (e) {
+        notifications.handleError(e as Error)
+    } finally {
+        isCheckingUpdates.value = false
+    }
+}
 
 async function searchCurseForge() {
     isSearchingCF.value = true
@@ -231,33 +265,40 @@ async function deleteAddon(addon: BedrockAddon) {
 }
 
 async function installFromFile() {
-    const file = await open({
-        multiple: false,
+    const selected = await open({
+        multiple: true,
         filters: [{
             name: 'Bedrock Add-ons',
             extensions: ['mcpack', 'mcaddon', 'zip']
         }]
     })
     
-    if (file) {
-        let pathStr = ''
-        if (typeof file === 'string') {
-            pathStr = file
-        } else if ('path' in file) {
-            pathStr = file.path
+    if (selected) {
+        const files: string[] = []
+        if (Array.isArray(selected)) {
+            for (const item of selected) {
+                if (typeof item === 'string') files.push(item)
+                else if (item && typeof item === 'object' && 'path' in item) files.push((item as any).path)
+            }
+        } else if (typeof selected === 'string') {
+            files.push(selected)
+        } else if (selected && typeof selected === 'object' && 'path' in selected) {
+            files.push((selected as any).path)
         }
         
-        if (pathStr) {
+        if (files.length > 0) {
             loading.value = true
             try {
-                await invoke('plugin:bedrock-addons|install_bedrock_addon_from_file', {
-                    profilePath: props.instance.path,
-                    archivePath: pathStr
-                })
+                for (const pathStr of files) {
+                    await invoke('plugin:bedrock-addons|install_bedrock_addon_from_file', {
+                        profilePath: props.instance.path,
+                        archivePath: pathStr
+                    })
+                }
                 notifications.addNotification({
                     type: 'success',
-                    title: 'Add-on installed successfully',
-                    text: 'The Bedrock Add-on has been installed.'
+                    title: 'Add-ons installed successfully',
+                    text: `Successfully installed ${files.length} Bedrock Add-on(s).`
                 })
                 await fetchAddons()
             } catch (e) {
