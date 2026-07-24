@@ -55,7 +55,11 @@ pub struct GetModFilesResponse {
     pub data: Vec<CurseForgeFile>,
 }
 
-pub async fn search_addons(query: &str, category_id: Option<i32>) -> crate::Result<Vec<CurseForgeMod>> {
+pub async fn search_addons(
+    query: &str,
+    category_id: Option<i32>,
+    class_id: Option<i32>,
+) -> crate::Result<Vec<CurseForgeMod>> {
     let client = build_http_client();
     let mut url = format!("{}/mods/search?gameId={}&pageSize=50", CURSEFORGE_API_BASE, GAME_ID);
     
@@ -64,6 +68,9 @@ pub async fn search_addons(query: &str, category_id: Option<i32>) -> crate::Resu
     }
     if let Some(c) = category_id {
         url.push_str(&format!("&categoryId={}", c));
+    }
+    if let Some(cl) = class_id {
+        url.push_str(&format!("&classId={}", cl));
     }
     
     let resp = client.get(&url).send().await?.json::<SearchResponse>().await?;

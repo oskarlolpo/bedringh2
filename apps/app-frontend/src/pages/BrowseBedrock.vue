@@ -868,9 +868,21 @@ async function search(requestParams: string) {
 	const query = params.get('query') || ''
 	const pt = projectType.value
 
+	let classId: number | null = null
+	if (pt === 'resourcepack') {
+		classId = 6929
+	} else if (pt === 'addon' || pt === 'mod') {
+		classId = 4984
+	} else if (pt === 'world' || pt === 'map') {
+		classId = 6913
+	} else if (pt === 'skin') {
+		classId = 6925
+	}
+
 	const rawResults: any[] = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 		query,
-		categoryId: pt === 'resourcepack' ? 4496 : 4488,
+		categoryId: null,
+		classId,
 	})
 
 	const hits = rawResults.map((hit) => {

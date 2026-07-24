@@ -143,12 +143,12 @@ const isSearchingCF = ref(false)
 const cfResults = ref<any[]>([])
 
 async function searchCurseForge() {
-    if (!searchQuery.value) return
     isSearchingCF.value = true
     try {
         cfResults.value = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
-            query: searchQuery.value,
-            categoryId: null
+            query: searchQuery.value || '',
+            categoryId: null,
+            classId: 4984
         })
     } catch (e) {
         notifications.handleError(e as Error)
@@ -271,5 +271,6 @@ async function installFromFile() {
 
 onMounted(() => {
     fetchAddons()
+    searchCurseForge()
 })
 </script>

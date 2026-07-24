@@ -41,8 +41,12 @@ pub async fn install_bedrock_addon_from_file(profile_path: String, archive_path:
 }
 
 #[tauri::command]
-pub async fn search_bedrock_curseforge_addons(query: String, category_id: Option<i32>) -> Result<Vec<theseus::bedrock_curseforge::CurseForgeMod>> {
-    Ok(theseus::bedrock_curseforge::search_addons(&query, category_id).await?)
+pub async fn search_bedrock_curseforge_addons(
+    query: String,
+    category_id: Option<i32>,
+    class_id: Option<i32>,
+) -> Result<Vec<theseus::bedrock_curseforge::CurseForgeMod>> {
+    Ok(theseus::bedrock_curseforge::search_addons(&query, category_id, class_id).await?)
 }
 
 #[tauri::command]
