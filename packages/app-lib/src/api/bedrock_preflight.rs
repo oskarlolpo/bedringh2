@@ -4,7 +4,7 @@ use crate::event::LoadingBarId;
 use crate::event::emit::emit_loading;
 use crate::ErrorKind;
 use std::process::Command;
-use tracing::{info, warn};
+use tracing::warn;
 use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY};
 use winreg::RegKey;
 

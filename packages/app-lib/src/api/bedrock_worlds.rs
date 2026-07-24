@@ -1,6 +1,6 @@
 use crate::{Result, ErrorKind};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
