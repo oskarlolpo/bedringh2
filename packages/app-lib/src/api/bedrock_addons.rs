@@ -154,7 +154,7 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
         return Err(ErrorKind::OtherError("Archive not found".into()).into());
     }
     
-    let mut reader = match ZipFileReader::new(&file_path).await {
+    let reader = match ZipFileReader::new(&file_path).await {
         Ok(r) => r,
         Err(_) => return Err(ErrorKind::OtherError("Failed to open zip archive".into()).into()),
     };

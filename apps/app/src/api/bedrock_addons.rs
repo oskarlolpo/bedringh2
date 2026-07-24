@@ -51,8 +51,9 @@ pub async fn search_bedrock_curseforge_addons(
     query: String,
     category_id: Option<i32>,
     class_id: Option<i32>,
+    game_version: Option<String>,
 ) -> Result<Vec<theseus::bedrock_curseforge::CurseForgeMod>> {
-    Ok(theseus::bedrock_curseforge::search_addons(&query, category_id, class_id).await?)
+    Ok(theseus::bedrock_curseforge::search_addons(&query, category_id, class_id, game_version).await?)
 }
 
 #[tauri::command]

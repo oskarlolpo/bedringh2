@@ -59,6 +59,7 @@ pub async fn search_addons(
     query: &str,
     category_id: Option<i32>,
     class_id: Option<i32>,
+    game_version: Option<String>,
 ) -> crate::Result<Vec<CurseForgeMod>> {
     let client = build_http_client();
     let mut url = format!("{}/mods/search?gameId={}&pageSize=50", CURSEFORGE_API_BASE, GAME_ID);
@@ -71,6 +72,11 @@ pub async fn search_addons(
     }
     if let Some(cl) = class_id {
         url.push_str(&format!("&classId={}", cl));
+    }
+    if let Some(v) = game_version {
+        if !v.is_empty() {
+            url.push_str(&format!("&gameVersion={}", urlencoding::encode(&v)));
+        }
     }
     
     let resp = client.get(&url).send().await?.json::<SearchResponse>().await?;

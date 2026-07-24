@@ -115,7 +115,7 @@ pub async fn export_bedrock_world(profile_path: &str, folder_name: &str, out_pat
     
     let mut stack = vec![world_dir.clone()];
     while let Some(dir) = stack.pop() {
-        if let Ok(mut entries) = std::fs::read_dir(&dir) {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 let name = path.strip_prefix(&world_dir).unwrap().to_string_lossy().replace("\\", "/");
@@ -150,7 +150,7 @@ pub async fn import_bedrock_world(profile_path: &str, archive_path: &str) -> Res
     
     fs::create_dir_all(&out_dir).await?;
     
-    let mut reader = match ZipFileReader::new(&file_path).await {
+    let reader = match ZipFileReader::new(&file_path).await {
         Ok(r) => r,
         Err(_) => return Err(ErrorKind::OtherError("Failed to open zip archive".into()).into()),
     };

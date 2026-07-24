@@ -401,7 +401,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             ("OnlineFix.ini", include_bytes!("../../assets/unlocker/gdk/OnlineFix.ini").as_slice()),
         ];
 
-        let mut mods_list = Vec::new();
+        let mut mods_list: Vec<String> = Vec::new();
 
         if gdk_unlocker_enabled {
             emit_legacy_log(&profile.path, "Applying GDK Unlocker file changes (Enable)...");
