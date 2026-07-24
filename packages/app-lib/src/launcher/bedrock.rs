@@ -333,6 +333,16 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     if let Some(exe_path) = exe_path_to_inject {
         let exe_dir = exe_path.parent().unwrap();
+        // Deploy xgameruntime.dll unconditionally for all GDK launches so Gaming Runtime is available
+        let xgameruntime_bytes = include_bytes!("../../assets/unlocker/gdk/xgameruntime.dll");
+        let xgameruntime_path = exe_dir.join("xgameruntime.dll");
+        if !xgameruntime_path.exists() {
+            emit_legacy_log(&profile.path, "Deploying xgameruntime.dll...");
+            if let Err(e) = fs::write(&xgameruntime_path, xgameruntime_bytes.as_slice()).await {
+                tracing::warn!("Failed to write xgameruntime.dll: {}", e);
+            }
+        }
+
         // BLoader is required for all launches unconditionally
         let injector_name = "BLoader.dll";
         let injector_target_path = exe_dir.join(injector_name);
@@ -342,16 +352,6 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             emit_legacy_log(&profile.path, "Deploying BLoader.dll...");
             fs::write(&injector_target_path, injector_bytes).await?;
         }
-
-        let config_json = serde_json::json!({
-            "disable_mod_loading": false,
-            "mods": []
-        });
-        fs::write(
-            exe_dir.join("preloader.json"),
-            serde_json::to_string_pretty(&config_json)?,
-        )
-        .await?;
 
         // Apply permissions required for game to run outside AppContainer
         emit_legacy_log(&profile.path, "Granting application package access permissions...");
@@ -391,53 +391,54 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             .copied()
             .unwrap_or(false);
 
-        let gdk_files = vec![
+        let gdk_unlocker_files = vec![
             ("winmm.dll", include_bytes!("../../assets/unlocker/gdk/winmm.dll").as_slice()),
             ("OnlineFix64.dll", include_bytes!("../../assets/unlocker/gdk/OnlineFix64.dll").as_slice()),
             ("dlllist.txt", include_bytes!("../../assets/unlocker/gdk/dlllist.txt").as_slice()),
             ("OnlineFix.ini", include_bytes!("../../assets/unlocker/gdk/OnlineFix.ini").as_slice()),
-            ("xgameruntime.dll", include_bytes!("../../assets/unlocker/gdk/xgameruntime.dll").as_slice()),
         ];
 
-        let has_all_gdk = gdk_files.iter().all(|(n, _)| exe_dir.join(n).exists());
-        if gdk_unlocker_enabled != has_all_gdk {
-            let action = if gdk_unlocker_enabled { "Enable" } else { "Disable" };
-            emit_legacy_log(&profile.path, &format!("Applying GDK Unlocker file changes ({})...", action));
-            
-            if gdk_unlocker_enabled {
-                for (file_name, file_bytes) in &gdk_files {
-                    let dest = exe_dir.join(file_name);
-                    if dest.exists() {
-                        let old_dest = exe_dir.join(format!("{}.old", file_name));
-                        // Clean up former old file if any
-                        let _ = fs::remove_file(&old_dest).await;
-                        // Move current to old
-                        let _ = fs::rename(&dest, &old_dest).await;
-                    }
+        let mut mods_list = Vec::new();
+
+        if gdk_unlocker_enabled {
+            emit_legacy_log(&profile.path, "Applying GDK Unlocker file changes (Enable)...");
+            for (file_name, file_bytes) in &gdk_unlocker_files {
+                let dest = exe_dir.join(file_name);
+                if !dest.exists() {
                     if let Err(e) = fs::write(&dest, *file_bytes).await {
                         tracing::warn!("Failed to write GDK unlocker file {}: {}", file_name, e);
                     }
                 }
-                
-                // Add Windows Defender exclusion non-elevated (might fail, but ignore)
-                let _ = Command::new("powershell")
-                    .arg("-NoProfile")
-                    .arg("-WindowStyle").arg("Hidden")
-                    .arg("-Command")
-                    .arg(&format!("Add-MpPreference -ExclusionPath '{}' -ErrorAction SilentlyContinue", exe_dir.display()))
-                    .creation_flags(0x08000000)
-                    .status().await;
-            } else {
-                let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old", "xgameruntime.dll", "xgameruntime.dll.old"];
-                for f in &files_to_remove {
-                    let dest = exe_dir.join(f);
-                    if dest.exists() {
-                        let _ = fs::remove_file(&dest).await;
-                    }
+            }
+            mods_list.push("OnlineFix64.dll".to_string());
+            
+            // Add Windows Defender exclusion non-elevated (might fail, but ignore)
+            let _ = Command::new("powershell")
+                .arg("-NoProfile")
+                .arg("-WindowStyle").arg("Hidden")
+                .arg("-Command")
+                .arg(&format!("Add-MpPreference -ExclusionPath '{}' -ErrorAction SilentlyContinue", exe_dir.display()))
+                .creation_flags(0x08000000)
+                .status().await;
+        } else {
+            let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"];
+            for f in &files_to_remove {
+                let dest = exe_dir.join(f);
+                if dest.exists() {
+                    let _ = fs::remove_file(&dest).await;
                 }
             }
-            emit_legacy_log(&profile.path, "GDK Bedrock Unlocker: applied patch successfully.");
         }
+
+        let config_json = serde_json::json!({
+            "disable_mod_loading": false,
+            "mods": mods_list
+        });
+        fs::write(
+            exe_dir.join("preloader.json"),
+            serde_json::to_string_pretty(&config_json)?,
+        )
+        .await?;
 
         // Use direct execution to capture stdout/stderr through pipes
         let exe_path_str = exe_path.to_str().unwrap().to_string();

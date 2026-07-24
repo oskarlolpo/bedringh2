@@ -21,43 +21,31 @@ pub async fn get_servers_path() -> Result<PathBuf> {
     Ok(servers_path)
 }
 
-#[tauri::command]
-pub async fn list_favorite_servers() -> std::result::Result<Vec<FavoriteServer>, String> {
-    let path = get_servers_path().await.map_err(|e| e.to_string())?;
+pub async fn list_favorite_servers() -> Result<Vec<FavoriteServer>> {
+    let path = get_servers_path().await?;
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let data = fs::read_to_string(path).await.map_err(|e| e.to_string())?;
+    let data = fs::read_to_string(path).await?;
     let servers: Vec<FavoriteServer> = serde_json::from_str(&data).unwrap_or_else(|_| Vec::new());
     Ok(servers)
 }
 
-#[tauri::command]
-pub async fn add_favorite_server(server: FavoriteServer) -> std::result::Result<(), String> {
+pub async fn add_favorite_server(server: FavoriteServer) -> Result<()> {
     let mut servers = list_favorite_servers().await?;
     servers.push(server);
-    let path = get_servers_path().await.map_err(|e| e.to_string())?;
+    let path = get_servers_path().await?;
     let data = serde_json::to_string_pretty(&servers).unwrap();
-    fs::write(path, data).await.map_err(|e| e.to_string())?;
+    fs::write(path, data).await?;
     Ok(())
 }
 
-#[tauri::command]
-pub async fn remove_favorite_server(id: String) -> std::result::Result<(), String> {
+pub async fn remove_favorite_server(id: String) -> Result<()> {
     let mut servers = list_favorite_servers().await?;
     servers.retain(|s| s.id != id);
-    let path = get_servers_path().await.map_err(|e| e.to_string())?;
+    let path = get_servers_path().await?;
     let data = serde_json::to_string_pretty(&servers).unwrap();
-    fs::write(path, data).await.map_err(|e| e.to_string())?;
+    fs::write(path, data).await?;
     Ok(())
 }
 
-pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
-    tauri::plugin::Builder::new("bedrock-servers")
-        .invoke_handler(tauri::generate_handler![
-            list_favorite_servers,
-            add_favorite_server,
-            remove_favorite_server
-        ])
-        .build()
-}
