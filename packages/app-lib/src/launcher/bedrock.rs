@@ -413,7 +413,8 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                     }
                 }
             }
-            mods_list.push("OnlineFix64.dll".to_string());
+            // winmm.dll proxy loads OnlineFix64.dll via dlllist.txt, no need to inject via preloader.json mods_list
+            // mods_list.push("OnlineFix64.dll".to_string());
             
             // Add Windows Defender exclusion non-elevated (might fail, but ignore)
             let _ = Command::new("powershell")

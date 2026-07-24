@@ -1033,5 +1033,12 @@
   "app.settings.bedrock.uwp-unlocker.desc": "Модифицирует системные компоненты Windows Store для разблокировки пробного периода в UWP профилях Minecraft.",
   "app.settings.bedrock.uwp-unlocker.warn": "⚠ Для этого требуются права Администратора. Бекап оригинального файла будет сделан автоматически.",
   "app.browse.project-type.addons": "Аддоны",
-  "app.browse.project-type.resource-packs": "Текстур-паки"
+  "app.browse.project-type.resource-packs": "Текстур-паки",
+  "app.instance.bedrock.worlds.empty.title": "Нет контента",
+  "app.instance.bedrock.worlds.empty.subtitle": "Найдите проекты или добавьте файлы",
+  "app.instance.bedrock.worlds.add_files": "Добавить файлы",
+  "app.instance.bedrock.worlds.find_projects": "Найти проекты",
+  "app.instance.bedrock.content.categories.all": "Все",
+  "app.instance.bedrock.content.categories.behavior": "Наборы параметров",
+  "app.instance.bedrock.content.categories.resource": "Текстуры"
 }

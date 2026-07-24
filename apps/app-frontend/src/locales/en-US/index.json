@@ -1031,5 +1031,12 @@
   "app.settings.bedrock.uwp-unlocker.desc": "Modifies the Windows system Store components to unlock trial restriction for UWP Minecraft instances.",
   "app.settings.bedrock.uwp-unlocker.warn": "⚠ This requires Administrator privileges. A backup of original files is automatically taken.",
   "app.browse.project-type.addons": "Add-ons",
-  "app.browse.project-type.resource-packs": "Resource Packs"
+  "app.browse.project-type.resource-packs": "Resource Packs",
+  "app.instance.bedrock.worlds.empty.title": "No Content",
+  "app.instance.bedrock.worlds.empty.subtitle": "Find projects or add files",
+  "app.instance.bedrock.worlds.add_files": "Add files",
+  "app.instance.bedrock.worlds.find_projects": "Find projects",
+  "app.instance.bedrock.content.categories.all": "All",
+  "app.instance.bedrock.content.categories.behavior": "Behavior Packs",
+  "app.instance.bedrock.content.categories.resource": "Resource Packs"
 }

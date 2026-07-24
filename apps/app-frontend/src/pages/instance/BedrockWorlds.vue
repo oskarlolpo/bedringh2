@@ -13,16 +13,24 @@
                 </div>
             </div>
 
-            <EmptyState
-                v-if="worlds.length === 0"
-                icon="globe"
-                title="No Bedrock Worlds found"
-                description="Import a world to get started."
-            >
-                <ButtonStyled color="brand" @click="importFromFile">
-                    Import World (.mcworld)
-                </ButtonStyled>
-            </EmptyState>
+            <div v-if="worlds.length === 0" class="flex flex-col items-center justify-center py-16 bg-surface-1 rounded-2xl border border-surface-2 gap-4 text-center px-4">
+                <div class="w-16 h-16 rounded-full bg-surface-2 flex items-center justify-center text-contrast mb-2">
+                    <GlobeIcon class="w-8 h-8 opacity-70" />
+                </div>
+                <h3 class="text-xl font-bold">No Content</h3>
+                <p class="text-contrast text-sm max-w-md">Find projects on CurseForge or import world files from your computer.</p>
+                
+                <div class="flex items-center gap-3 mt-2">
+                    <ButtonStyled color="surface" @click="importFromFile" class="!px-6 !py-2.5 font-semibold shadow-sm">
+                        <template #icon><DownloadIcon /></template>
+                        Add Files (.mcworld)
+                    </ButtonStyled>
+                    <ButtonStyled color="brand" @click="openCurseForgeWorlds" class="!px-6 !py-2.5 font-semibold shadow-md">
+                        <template #icon><GlobeIcon /></template>
+                        Find Projects
+                    </ButtonStyled>
+                </div>
+            </div>
 
             <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div 
@@ -67,13 +75,18 @@
 </template>
 
 <script setup lang="ts">
-import { TrashIcon } from '@modrinth/assets'
+import { TrashIcon, DownloadIcon, GlobeIcon } from '@modrinth/assets'
 import { ButtonStyled, EmptyState, ReadyTransition, injectNotificationManager } from '@modrinth/ui'
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { ref, onMounted } from 'vue'
 
 import type { GameInstance } from '@/helpers/types'
+
+function openCurseForgeWorlds() {
+    openUrl('https://www.curseforge.com/minecraft-bedrock/search?class=worlds')
+}
 
 const props = defineProps<{
 	instance: GameInstance

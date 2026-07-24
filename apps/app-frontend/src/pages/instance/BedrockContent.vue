@@ -29,7 +29,20 @@
 				</div>
                 
                 <div class="mb-6 p-4 bg-surface-1 rounded-xl border border-surface-2 flex flex-col gap-4">
-                    <h3 class="font-bold text-lg flex items-center gap-2"><GlobeIcon/> Discover on CurseForge</h3>
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-lg flex items-center gap-2"><GlobeIcon/> Discover on CurseForge</h3>
+                        <div class="flex gap-2">
+                            <button
+                                v-for="cat in cfCategories"
+                                :key="cat.id ?? 'all'"
+                                class="px-3 py-1 text-xs font-semibold rounded-lg transition-colors border"
+                                :class="selectedCategory === cat.id ? 'bg-brand text-brand-contrast border-brand' : 'bg-surface-base text-contrast border-surface-2 hover:border-brand'"
+                                @click="selectCategory(cat.id)"
+                            >
+                                {{ cat.label }}
+                            </button>
+                        </div>
+                    </div>
                     <div class="flex gap-2">
                         <input
                             v-model="searchQuery"
@@ -157,6 +170,17 @@ const searchQuery = ref('')
 const isSearchingCF = ref(false)
 const cfResults = ref<any[]>([])
 const isCheckingUpdates = ref(false)
+const selectedCategory = ref<number | null>(null)
+const cfCategories = [
+    { id: null, label: 'All' },
+    { id: 5193, label: 'Behavior Packs' },
+    { id: 5192, label: 'Resource Packs' },
+]
+
+async function selectCategory(catId: number | null) {
+    selectedCategory.value = catId
+    await searchCurseForge()
+}
 
 async function checkAddonUpdates() {
     isCheckingUpdates.value = true
@@ -181,7 +205,7 @@ async function searchCurseForge() {
     try {
         cfResults.value = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
             query: searchQuery.value || '',
-            categoryId: null,
+            categoryId: selectedCategory.value,
             classId: 4984
         })
     } catch (e) {

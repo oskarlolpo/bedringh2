@@ -636,7 +636,10 @@ export function createContentInstall(opts: {
 		createInstanceCallback: (profile: string) => void = () => {},
 		hints?: { preferredLoader?: string; preferredGameVersion?: string; showProjectInfo?: boolean },
 	) {
-		const project: Labrinth.Projects.v2.Project = await get_project(projectId, 'must_revalidate')
+		const project: Labrinth.Projects.v2.Project | null = await get_project(projectId, 'must_revalidate').catch(() => null)
+		if (!project) {
+			throw new Error(`Project not found: ${projectId}`)
+		}
 
 		if (project.project_type === 'modpack') {
 			const version = versionId ?? project.versions[project.versions.length - 1]
