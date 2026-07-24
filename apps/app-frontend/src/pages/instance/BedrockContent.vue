@@ -29,25 +29,49 @@
 				</div>
                 
                 <div class="mb-6 p-4 bg-surface-1 rounded-xl border border-surface-2 flex flex-col gap-4">
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between cursor-pointer select-none" @click="isFilterExpanded = !isFilterExpanded">
                         <h3 class="font-bold text-lg flex items-center gap-2"><GlobeIcon/> Discover on CurseForge</h3>
-                        <div class="flex gap-2">
+                        <div class="flex items-center gap-2 text-xs font-medium text-contrast">
+                            <span>Category: {{ currentCategoryLabel }}</span>
+                            <span class="text-sm transform transition-transform" :class="{ 'rotate-180': isFilterExpanded }">▼</span>
+                        </div>
+                    </div>
+
+                    <div v-if="isFilterExpanded" class="flex flex-col gap-3 pt-3 border-t border-surface-2">
+                        <div class="font-bold text-sm text-contrast uppercase tracking-wider text-[11px]">Категория</div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                             <button
                                 v-for="cat in cfCategories"
                                 :key="cat.id ?? 'all'"
-                                class="px-3 py-1 text-xs font-semibold rounded-lg transition-colors border"
-                                :class="selectedCategory === cat.id ? 'bg-brand text-brand-contrast border-brand' : 'bg-surface-base text-contrast border-surface-2 hover:border-brand'"
+                                class="flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-all border text-left"
+                                :class="selectedCategory === cat.id ? 'bg-brand text-brand-contrast border-brand shadow-sm' : 'bg-surface-base text-contrast border-surface-2 hover:border-brand hover:bg-surface-2'"
                                 @click="selectCategory(cat.id)"
                             >
-                                {{ cat.label }}
+                                <span class="text-sm">{{ cat.icon }}</span>
+                                <span class="truncate">{{ cat.label }}</span>
+                            </button>
+                        </div>
+
+                        <div class="font-bold text-sm text-contrast uppercase tracking-wider text-[11px] mt-2">Среда</div>
+                        <div class="flex gap-2">
+                            <button
+                                v-for="env in envOptions"
+                                :key="env.id"
+                                class="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all border"
+                                :class="selectedEnv === env.id ? 'bg-brand text-brand-contrast border-brand shadow-sm' : 'bg-surface-base text-contrast border-surface-2 hover:border-brand'"
+                                @click="selectedEnv = env.id; searchCurseForge()"
+                            >
+                                <span>{{ env.icon }}</span>
+                                <span>{{ env.label }}</span>
                             </button>
                         </div>
                     </div>
+
                     <div class="flex gap-2">
                         <input
                             v-model="searchQuery"
                             type="text"
-                            placeholder="Search behavior and resource packs..."
+                            placeholder="Search behavior, resource packs, mods..."
                             class="flex-1 bg-surface-base px-3 py-2 rounded outline-none border border-surface-2 placeholder:text-contrast focus:border-brand"
                             @keydown.enter="searchCurseForge"
                         />
@@ -170,12 +194,35 @@ const searchQuery = ref('')
 const isSearchingCF = ref(false)
 const cfResults = ref<any[]>([])
 const isCheckingUpdates = ref(false)
+const isFilterExpanded = ref(true)
 const selectedCategory = ref<number | null>(null)
-const cfCategories = [
-    { id: null, label: 'All' },
-    { id: 5193, label: 'Behavior Packs' },
-    { id: 5192, label: 'Resource Packs' },
+const selectedEnv = ref<string>('all')
+
+const envOptions = [
+    { id: 'all', label: 'Все (All)', icon: '🌐' },
+    { id: 'client', label: 'Клиент (Client)', icon: '🖥️' },
+    { id: 'server', label: 'Сервер (Server)', icon: '💻' },
 ]
+
+const cfCategories = [
+    { id: null, label: 'Всё подряд', icon: '🏺' },
+    { id: 5191, label: 'Бой', icon: '⚔️' },
+    { id: 5199, label: 'Испытания', icon: '📊' },
+    { id: 5201, label: 'Квесты', icon: '🔀' },
+    { id: 5200, label: 'Легковесные', icon: '🍃' },
+    { id: 5197, label: 'Магия', icon: '🪄' },
+    { id: 5196, label: 'Оптимизация', icon: '⚡' },
+    { id: 5194, label: 'Приключения', icon: '🧭' },
+    { id: 5198, label: 'Сетевая игра', icon: '👥' },
+    { id: 5195, label: 'Технологии', icon: '💻' },
+    { id: 5193, label: 'Наборы параметров', icon: '⚙️' },
+    { id: 5192, label: 'Текстуры', icon: '🎨' },
+]
+
+const currentCategoryLabel = computed(() => {
+    const found = cfCategories.find(c => c.id === selectedCategory.value)
+    return found ? `${found.icon} ${found.label}` : '🏺 Всё подряд'
+})
 
 async function selectCategory(catId: number | null) {
     selectedCategory.value = catId
