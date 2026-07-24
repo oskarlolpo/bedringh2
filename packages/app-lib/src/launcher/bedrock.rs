@@ -396,6 +396,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             ("OnlineFix64.dll", include_bytes!("../../assets/unlocker/gdk/OnlineFix64.dll").as_slice()),
             ("dlllist.txt", include_bytes!("../../assets/unlocker/gdk/dlllist.txt").as_slice()),
             ("OnlineFix.ini", include_bytes!("../../assets/unlocker/gdk/OnlineFix.ini").as_slice()),
+            ("xgameruntime.dll", include_bytes!("../../assets/unlocker/gdk/xgameruntime.dll").as_slice()),
         ];
 
         let has_all_gdk = gdk_files.iter().all(|(n, _)| exe_dir.join(n).exists());
@@ -427,7 +428,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                     .creation_flags(0x08000000)
                     .status().await;
             } else {
-                let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"];
+                let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old", "xgameruntime.dll", "xgameruntime.dll.old"];
                 for f in &files_to_remove {
                     let dest = exe_dir.join(f);
                     if dest.exists() {
@@ -532,8 +533,16 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 if st.success() {
                     emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: successfully applied patch.");
                 } else {
-                    tracing::warn!("UWP unlocker script failed or UAC rejected");
+                    emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: UAC prompt declined or script failed. Disabling UWP unlocker.");
+                    let mut updated_settings = settings.clone();
+                    updated_settings.feature_flags.insert(crate::state::FeatureFlag::BedrockUnlockerUwp, false);
+                    let _ = updated_settings.update(&state.pool).await;
                 }
+            } else {
+                emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: patch process failed to spawn. Disabling UWP unlocker.");
+                let mut updated_settings = settings.clone();
+                updated_settings.feature_flags.insert(crate::state::FeatureFlag::BedrockUnlockerUwp, false);
+                let _ = updated_settings.update(&state.pool).await;
             }
         }
 
