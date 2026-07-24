@@ -337,7 +337,12 @@ fn main() {
                 InlinedPlugin::new()
                     .commands(&[
                         "fetch_bedrock_addons",
-                        "download_bedrock_addon",
+                        "set_bedrock_addon_enabled",
+                        "delete_bedrock_addon",
+                        "install_bedrock_addon_from_file",
+                        "search_bedrock_curseforge_addons",
+                        "get_bedrock_curseforge_addon_files",
+                        "download_and_install_bedrock_curseforge_addon",
                     ])
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,
