@@ -118,11 +118,70 @@ const [categories, loaders, availableGameVersions] = await Promise.all([
 		.then(ref<Labrinth.Tags.v2.GameVersion[]>),
 ])
 
-const tags: Ref<Tags> = computed(() => ({
-	gameVersions: availableGameVersions.value ?? [],
-	loaders: loaders.value ?? [],
-	categories: categories.value ?? [],
-}))
+const bedrockCategoriesMap: Record<string, any[]> = {
+	addon: [
+		{ id: '5191', name: 'Armor, Tools & Weapons', project_type: 'addon' },
+		{ id: '5192', name: 'Cosmetics', project_type: 'addon' },
+		{ id: '5193', name: 'Data Packs', project_type: 'addon' },
+		{ id: '5194', name: 'Fantasy', project_type: 'addon' },
+		{ id: '5195', name: 'Food', project_type: 'addon' },
+		{ id: '5196', name: 'Horror', project_type: 'addon' },
+		{ id: '5197', name: 'Magic', project_type: 'addon' },
+		{ id: '5198', name: 'Maps', project_type: 'addon' },
+		{ id: '5201', name: 'Multiplayer', project_type: 'addon' },
+		{ id: '5202', name: 'Performance', project_type: 'addon' },
+		{ id: '5203', name: 'Roleplay', project_type: 'addon' },
+		{ id: '5204', name: 'Skins', project_type: 'addon' },
+		{ id: '5205', name: 'Survival', project_type: 'addon' },
+	],
+	resourcepack: [
+		{ id: '5217', name: 'GUI', project_type: 'resourcepack' },
+		{ id: '5218', name: 'Miscellaneous', project_type: 'resourcepack' },
+		{ id: '5220', name: 'PvP', project_type: 'resourcepack' },
+		{ id: '5221', name: 'Realistic', project_type: 'resourcepack' },
+		{ id: '5222', name: 'Shaders', project_type: 'resourcepack' },
+		{ id: '5223', name: 'Simplistic', project_type: 'resourcepack' },
+		{ id: '5224', name: 'Themed', project_type: 'resourcepack' },
+		{ id: '5226', name: 'X16', project_type: 'resourcepack' },
+		{ id: '5227', name: 'X32', project_type: 'resourcepack' },
+		{ id: '5228', name: 'X64', project_type: 'resourcepack' },
+		{ id: '5225', name: 'X128', project_type: 'resourcepack' },
+	],
+	world: [
+		{ id: '5206', name: 'Adventure', project_type: 'world' },
+		{ id: '5207', name: 'Creation', project_type: 'world' },
+		{ id: '5208', name: 'CTM', project_type: 'world' },
+		{ id: '5209', name: 'Custom Terrain', project_type: 'world' },
+		{ id: '5210', name: 'Minigame', project_type: 'world' },
+		{ id: '5211', name: 'Parkour', project_type: 'world' },
+		{ id: '5212', name: 'Puzzle', project_type: 'world' },
+		{ id: '5213', name: 'PvP', project_type: 'world' },
+		{ id: '5214', name: 'Redstone', project_type: 'world' },
+		{ id: '5215', name: 'Rollercoaster', project_type: 'world' },
+		{ id: '5216', name: 'Survival', project_type: 'world' },
+	],
+	skin: [
+		{ id: '5231', name: 'Anime', project_type: 'skin' },
+		{ id: '5232', name: 'Fantasy', project_type: 'skin' },
+		{ id: '5233', name: 'Games', project_type: 'skin' },
+		{ id: '5234', name: 'TV & Movies', project_type: 'skin' },
+		{ id: '5235', name: 'Miscellaneous', project_type: 'skin' },
+	],
+	script: [
+		{ id: '5229', name: 'Utility', project_type: 'script' },
+		{ id: '5230', name: 'Miscellaneous', project_type: 'script' },
+	],
+}
+
+const tags: Ref<Tags> = computed(() => {
+	const activeType = (projectType.value as string) || 'addon'
+	const cats = (bedrockCategoriesMap[activeType] || bedrockCategoriesMap['addon']) as any
+	return {
+		gameVersions: availableGameVersions.value ?? [],
+		loaders: loaders.value ?? [],
+		categories: cats,
+	}
+})
 
 type Instance = {
 	game_version: string
@@ -549,6 +608,9 @@ const selectableProjectTypes = computed(() => {
 	return [
 		{ label: formatMessage(messages.addonsProjectType), href: `/browse/bedrock/addon${suffix}` },
 		{ label: formatMessage(messages.resourcePacksProjectType), href: `/browse/bedrock/resourcepack${suffix}` },
+		{ label: 'Карты', href: `/browse/bedrock/world${suffix}` },
+		{ label: 'Скины', href: `/browse/bedrock/skin${suffix}` },
+		{ label: 'Скрипты', href: `/browse/bedrock/script${suffix}` },
 	]
 })
 
@@ -802,37 +864,28 @@ function getCardActions(
 			onClick: async () => {
 				setProjectInstalling(projectResult.project_id, true)
 				try {
-					const selectedInstall = instance.value
-						? await chooseInstanceInstallVersion(projectResult, currentProjectType)
-						: { versionId: null as string | null }
-					if (selectedInstall === null) {
-						setProjectInstalling(projectResult.project_id, false)
-						return
-					}
-					const selectedPreferences = getCurrentSelectedInstallPreferences(currentProjectType)
-					await installVersion(
-						projectResult.project_id,
-						selectedInstall.versionId,
-						instance.value ? instance.value.path : null,
-						'SearchCard',
-						(versionId, installedProjectIds) => {
-							setProjectInstalling(projectResult.project_id, false)
-							if (versionId) {
-								onSearchResultsInstalled(installedProjectIds ?? [projectResult.project_id])
+					const modId = parseInt(projectResult.project_id)
+					if (!isNaN(modId) && instance.value) {
+						const files: any[] = await invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId })
+						if (files && files.length > 0) {
+							const downloadUrl = files[0].downloadUrl
+							if (downloadUrl) {
+								await invoke('plugin:bedrock-addons|download_and_install_bedrock_curseforge_addon', {
+									profilePath: instance.value.path,
+									downloadUrl,
+								})
+								onSearchResultsInstalled([projectResult.project_id])
+							} else {
+								throw new Error('Download URL not found for this project.')
 							}
-						},
-						(profile) => {
-							router.push(`/instance/${profile}`)
-						},
-						{
-							preferredLoader: instance.value?.loader ?? selectedPreferences.loaders?.[0],
-							preferredGameVersion:
-								instance.value?.game_version ?? selectedPreferences.gameVersions?.[0],
-						},
-					)
+						} else {
+							throw new Error('No files found for this project.')
+						}
+					}
 				} catch (err) {
+					handleError(err as Error)
+				} finally {
 					setProjectInstalling(projectResult.project_id, false)
-					handleError(err)
 				}
 			},
 		},
@@ -868,21 +921,43 @@ async function search(requestParams: string) {
 	const query = params.get('query') || ''
 	const pt = projectType.value
 
-	let classId: number | null = null
+	let classId: number | null = 4984
 	if (pt === 'resourcepack') {
-		classId = 6929
+		classId = 4986
 	} else if (pt === 'addon' || pt === 'mod') {
 		classId = 4984
 	} else if (pt === 'world' || pt === 'map') {
-		classId = 6913
+		classId = 4985
 	} else if (pt === 'skin') {
-		classId = 6925
+		classId = 4988
+	} else if (pt === 'script') {
+		classId = 4987
+	}
+
+	let categoryId: number | null = null
+	const facetsStr = params.get('facets')
+	if (facetsStr) {
+		try {
+			const parsed = JSON.parse(facetsStr)
+			for (const group of parsed) {
+				for (const item of group) {
+					if (typeof item === 'string' && item.startsWith('categories:')) {
+						const catVal = item.replace('categories:', '')
+						const parsedCat = parseInt(catVal)
+						if (!isNaN(parsedCat)) {
+							categoryId = parsedCat
+						}
+					}
+				}
+			}
+		} catch (e) {}
 	}
 
 	const rawResults: any[] = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 		query,
-		categoryId: null,
+		categoryId,
 		classId,
+		gameVersion: instance.value?.game_version || null,
 	})
 
 	const hits = rawResults.map((hit) => {
@@ -895,7 +970,7 @@ async function search(requestParams: string) {
 			description: hit.summary,
 			downloads: hit.downloadCount,
 			icon_url: hit.logo?.thumbnailUrl,
-			categories: hit.categories?.map((c: any) => c.slug),
+			categories: hit.categories?.map((c: any) => c.id?.toString() || c.slug),
 			project_types: [pt],
 		} as unknown as Labrinth.Search.v2.ResultSearchProject & { installed?: boolean }
 

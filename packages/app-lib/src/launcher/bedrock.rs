@@ -436,6 +436,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         let config_json = serde_json::json!({
             "disable_mod_loading": false,
+            "enable_dx11": true,
             "mods": mods_list
         });
         fs::write(
