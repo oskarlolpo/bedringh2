@@ -3,6 +3,7 @@
 use crate::event::LoadingBarId;
 use crate::event::emit::emit_loading;
 use crate::ErrorKind;
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 use tracing::warn;
 use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY};
@@ -24,6 +25,7 @@ pub fn is_developer_mode_enabled() -> bool {
 
 pub fn auto_enable_developer_mode() -> crate::Result<()> {
     let install_output = Command::new("powershell")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .args(&[
             "-NoProfile",
             "-Command",
@@ -74,6 +76,7 @@ pub async fn check_and_install_vclibs(loading_bar: &LoadingBarId) -> crate::Resu
     
     let output = tokio::task::spawn_blocking(|| {
         Command::new("powershell")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .args(&[
                 "-NoProfile",
                 "-Command",
@@ -95,6 +98,7 @@ pub async fn check_and_install_vclibs(loading_bar: &LoadingBarId) -> crate::Resu
     // Install via Add-AppxPackage directly
     let install_output = tokio::task::spawn_blocking(|| {
         Command::new("powershell")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .args(&[
                 "-NoProfile",
                 "-Command",

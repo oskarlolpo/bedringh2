@@ -416,14 +416,6 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             // winmm.dll proxy loads OnlineFix64.dll via dlllist.txt, no need to inject via preloader.json mods_list
             // mods_list.push("OnlineFix64.dll".to_string());
             
-            // Add Windows Defender exclusion non-elevated (might fail, but ignore)
-            let _ = Command::new("powershell")
-                .arg("-NoProfile")
-                .arg("-WindowStyle").arg("Hidden")
-                .arg("-Command")
-                .arg(&format!("Add-MpPreference -ExclusionPath '{}' -ErrorAction SilentlyContinue", exe_dir.display()))
-                .creation_flags(0x08000000)
-                .status().await;
         } else {
             let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"];
             for f in &files_to_remove {
@@ -439,11 +431,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             "enable_dx11": true,
             "mods": mods_list
         });
-        fs::write(
-            exe_dir.join("preloader.json"),
-            serde_json::to_string_pretty(&config_json)?,
-        )
-        .await?;
+        let config_str = serde_json::to_string_pretty(&config_json)?;
+        fs::write(exe_dir.join("config.json"), &config_str).await?;
+        fs::write(exe_dir.join("preloader.json"), &config_str).await?;
 
         // Use direct execution to capture stdout/stderr through pipes
         let exe_path_str = exe_path.to_str().unwrap().to_string();
