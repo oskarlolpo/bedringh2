@@ -4,6 +4,7 @@ use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
+use std::os::windows::process::CommandExt;
 use std::sync::Arc;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::Diagnostics::Debug::{
@@ -41,6 +42,7 @@ pub async fn grant_all_application_packages_access(path: &Path) -> Result<()> {
     }
 
     let output = tokio::process::Command::new("icacls")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .arg(path)
         .arg("/grant")
         .arg("*S-1-15-2-1:(OI)(CI)M") // [安全修复] 降级为 Modify (M)，游戏只需读写，不需要完全控制
