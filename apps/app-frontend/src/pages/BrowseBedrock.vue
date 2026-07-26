@@ -106,70 +106,89 @@ const {
 } = serverInstallContent
 
 debugLog('fetching tags (categories, loaders, gameVersions)')
-const [categories, loaders, availableGameVersions] = await Promise.all([
+const [categories, loaders, rawBedrockVersions] = await Promise.all([
 	get_categories()
 		.catch(handleError)
 		.then(ref<Labrinth.Tags.v2.Category[]>),
 	get_loaders()
 		.catch(handleError)
 		.then(ref<Labrinth.Tags.v2.Loader[]>),
-	get_game_versions()
-		.catch(handleError)
-		.then(ref<Labrinth.Tags.v2.GameVersion[]>),
+	invoke('plugin:bedrock-addons|get_curseforge_minecraft_versions')
+		.catch(() => [])
+		.then((vs: any) =>
+			ref<Labrinth.Tags.v2.GameVersion[]>(
+				(vs || []).map((v: string) => ({
+					version: v,
+					version_type: 'release',
+					date: new Date().toISOString(),
+					major: true,
+				})),
+			),
+		),
 ])
+
+const availableGameVersions = rawBedrockVersions
 
 const bedrockCategoriesMap: Record<string, any[]> = {
 	addon: [
-		{ id: '5191', name: 'Armor, Tools & Weapons', project_type: 'addon' },
-		{ id: '5192', name: 'Cosmetics', project_type: 'addon' },
-		{ id: '5193', name: 'Data Packs', project_type: 'addon' },
-		{ id: '5194', name: 'Fantasy', project_type: 'addon' },
-		{ id: '5195', name: 'Food', project_type: 'addon' },
-		{ id: '5196', name: 'Horror', project_type: 'addon' },
-		{ id: '5197', name: 'Magic', project_type: 'addon' },
-		{ id: '5198', name: 'Maps', project_type: 'addon' },
-		{ id: '5201', name: 'Multiplayer', project_type: 'addon' },
-		{ id: '5202', name: 'Performance', project_type: 'addon' },
-		{ id: '5203', name: 'Roleplay', project_type: 'addon' },
-		{ id: '5204', name: 'Skins', project_type: 'addon' },
-		{ id: '5205', name: 'Survival', project_type: 'addon' },
+		{ id: '8834', name: 'Оружие и броня', project_type: 'addon' },
+		{ id: '8825', name: 'Косметика', project_type: 'addon' },
+		{ id: '4992', name: 'Дата-паки', project_type: 'addon' },
+		{ id: '8828', name: 'Фэнтези', project_type: 'addon' },
+		{ id: '8836', name: 'Еда', project_type: 'addon' },
+		{ id: '8833', name: 'Хоррор', project_type: 'addon' },
+		{ id: '8829', name: 'Магия', project_type: 'addon' },
+		{ id: '4986', name: 'Карты', project_type: 'addon' },
+		{ id: '4991', name: 'Мобы', project_type: 'addon' },
+		{ id: '8835', name: 'Мультиплеер', project_type: 'addon' },
+		{ id: '8837', name: 'Производительность', project_type: 'addon' },
+		{ id: '4990', name: 'Игроки', project_type: 'addon' },
+		{ id: '4993', name: 'PvP', project_type: 'addon' },
+		{ id: '4994', name: 'Реализм', project_type: 'addon' },
+		{ id: '8827', name: 'РП (Roleplay)', project_type: 'addon' },
+		{ id: '4995', name: 'Простые', project_type: 'addon' },
+		{ id: '4989', name: 'Скины', project_type: 'addon' },
+		{ id: '8831', name: 'Выживание', project_type: 'addon' },
+		{ id: '8826', name: 'Технологии', project_type: 'addon' },
+		{ id: '4987', name: 'Текстуры', project_type: 'addon' },
+		{ id: '4997', name: 'Тематические', project_type: 'addon' },
+		{ id: '8832', name: 'Утилиты', project_type: 'addon' },
+		{ id: '8830', name: 'Ванилла+', project_type: 'addon' },
 	],
 	resourcepack: [
-		{ id: '5217', name: 'GUI', project_type: 'resourcepack' },
-		{ id: '5218', name: 'Miscellaneous', project_type: 'resourcepack' },
-		{ id: '5220', name: 'PvP', project_type: 'resourcepack' },
-		{ id: '5221', name: 'Realistic', project_type: 'resourcepack' },
-		{ id: '5222', name: 'Shaders', project_type: 'resourcepack' },
-		{ id: '5223', name: 'Simplistic', project_type: 'resourcepack' },
-		{ id: '5224', name: 'Themed', project_type: 'resourcepack' },
-		{ id: '5226', name: 'X16', project_type: 'resourcepack' },
-		{ id: '5227', name: 'X32', project_type: 'resourcepack' },
-		{ id: '5228', name: 'X64', project_type: 'resourcepack' },
-		{ id: '5225', name: 'X128', project_type: 'resourcepack' },
+		{ id: '10747', name: 'Интерфейс (GUI)', project_type: 'resourcepack' },
+		{ id: '6930', name: 'Разное', project_type: 'resourcepack' },
+		{ id: '6931', name: 'PvP', project_type: 'resourcepack' },
+		{ id: '6932', name: 'Реализм', project_type: 'resourcepack' },
+		{ id: '6939', name: 'Шейдеры', project_type: 'resourcepack' },
+		{ id: '6933', name: 'Простые', project_type: 'resourcepack' },
+		{ id: '6934', name: 'Тематические', project_type: 'resourcepack' },
+		{ id: '6935', name: '16x', project_type: 'resourcepack' },
+		{ id: '6936', name: '32x', project_type: 'resourcepack' },
+		{ id: '6937', name: '64x', project_type: 'resourcepack' },
+		{ id: '6938', name: '128x', project_type: 'resourcepack' },
 	],
 	world: [
-		{ id: '5206', name: 'Adventure', project_type: 'world' },
-		{ id: '5207', name: 'Creation', project_type: 'world' },
-		{ id: '5208', name: 'CTM', project_type: 'world' },
-		{ id: '5209', name: 'Custom Terrain', project_type: 'world' },
-		{ id: '5210', name: 'Minigame', project_type: 'world' },
-		{ id: '5211', name: 'Parkour', project_type: 'world' },
-		{ id: '5212', name: 'Puzzle', project_type: 'world' },
-		{ id: '5213', name: 'PvP', project_type: 'world' },
-		{ id: '5214', name: 'Redstone', project_type: 'world' },
-		{ id: '5215', name: 'Rollercoaster', project_type: 'world' },
-		{ id: '5216', name: 'Survival', project_type: 'world' },
+		{ id: '6914', name: 'Приключения', project_type: 'world' },
+		{ id: '6915', name: 'Строительство', project_type: 'world' },
+		{ id: '6916', name: 'CTM', project_type: 'world' },
+		{ id: '6917', name: 'Свой ландшафт', project_type: 'world' },
+		{ id: '6918', name: 'Мини-игры', project_type: 'world' },
+		{ id: '6919', name: 'Паркур', project_type: 'world' },
+		{ id: '6920', name: 'Головоломки', project_type: 'world' },
+		{ id: '6921', name: 'PvP', project_type: 'world' },
+		{ id: '6922', name: 'Редстоун', project_type: 'world' },
+		{ id: '6923', name: 'Американские горки', project_type: 'world' },
+		{ id: '6924', name: 'Выживание', project_type: 'world' },
 	],
 	skin: [
-		{ id: '5231', name: 'Anime', project_type: 'skin' },
-		{ id: '5232', name: 'Fantasy', project_type: 'skin' },
-		{ id: '5233', name: 'Games', project_type: 'skin' },
-		{ id: '5234', name: 'TV & Movies', project_type: 'skin' },
-		{ id: '5235', name: 'Miscellaneous', project_type: 'skin' },
+		{ id: '6928', name: 'Наборы скинов', project_type: 'skin' },
+		{ id: '6927', name: 'Скины игроков', project_type: 'skin' },
+		{ id: '6926', name: 'Скины мобов', project_type: 'skin' },
 	],
 	script: [
-		{ id: '5229', name: 'Utility', project_type: 'script' },
-		{ id: '5230', name: 'Miscellaneous', project_type: 'script' },
+		{ id: '6941', name: 'Скрипты', project_type: 'script' },
+		{ id: '8824', name: 'Утилиты', project_type: 'script' },
 	],
 }
 
@@ -923,15 +942,15 @@ async function search(requestParams: string) {
 
 	let classId: number | null = 4984
 	if (pt === 'resourcepack') {
-		classId = 4986
+		classId = 6929
 	} else if (pt === 'addon' || pt === 'mod') {
 		classId = 4984
 	} else if (pt === 'world' || pt === 'map') {
-		classId = 4985
+		classId = 6913
 	} else if (pt === 'skin') {
-		classId = 4988
+		classId = 6925
 	} else if (pt === 'script') {
-		classId = 4987
+		classId = 6940
 	}
 
 	let categoryId: number | null = null
@@ -953,14 +972,59 @@ async function search(requestParams: string) {
 		} catch (e) {}
 	}
 
-	const rawResults: any[] = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
-		query,
-		categoryId,
-		classId,
-		gameVersion: instance.value?.game_version || null,
-	})
+	let gameVersionFilter: string | null = instance.value?.game_version || null
+	if (!gameVersionFilter && facetsStr) {
+		try {
+			const parsed = JSON.parse(facetsStr)
+			for (const group of parsed) {
+				for (const item of group) {
+					if (typeof item === 'string' && item.startsWith('versions:')) {
+						gameVersionFilter = item.replace('versions:', '')
+					}
+				}
+			}
+		} catch (e) {}
+	}
 
-	const hits = rawResults.map((hit) => {
+	const page = parseInt(params.get('page') || '1')
+	const limit = parseInt(params.get('limit') || '20')
+	const offset = (page - 1) * limit
+
+	let sortField = 1
+	const indexSort = params.get('index')
+	if (indexSort === 'downloads') {
+		sortField = 6
+	} else if (indexSort === 'updated' || indexSort === 'newest') {
+		sortField = 3
+	} else if (indexSort === 'name') {
+		sortField = 4
+	} else {
+		sortField = 6
+	}
+
+	const searchRes: { data: any[]; totalCount: number } = await invoke(
+		'plugin:bedrock-addons|search_bedrock_curseforge_addons',
+		{
+			query,
+			categoryId,
+			classId,
+			gameVersion: gameVersionFilter,
+			sortField,
+			sortOrder: 'desc',
+			index: offset,
+			pageSize: limit,
+		},
+	)
+
+	const hits = (searchRes.data || []).map((hit: any) => {
+		let authorName = ''
+		let authorUrl = ''
+		if (hit.authors && hit.authors.length > 0) {
+			authorName = hit.authors[0].name
+			authorUrl = hit.authors[0].url || `https://www.curseforge.com/members/${hit.authors[0].name}`
+		}
+		const websiteUrl = `https://www.curseforge.com/minecraft/mc-addons/${hit.slug}`
+
 		const mapped = {
 			project_id: hit.id.toString(),
 			slug: hit.slug,
@@ -969,9 +1033,15 @@ async function search(requestParams: string) {
 			summary: hit.summary,
 			description: hit.summary,
 			downloads: hit.downloadCount,
-			icon_url: hit.logo?.thumbnailUrl,
+			icon_url: hit.logo?.thumbnailUrl || hit.logo?.url,
 			categories: hit.categories?.map((c: any) => c.id?.toString() || c.slug),
 			project_types: [pt],
+			author: authorName,
+			author_details: {
+				name: authorName || 'CurseForge Creator',
+				link: authorUrl || websiteUrl,
+			},
+			website_url: websiteUrl,
 		} as unknown as Labrinth.Search.v2.ResultSearchProject & { installed?: boolean }
 
 		if (instance.value) {
@@ -985,8 +1055,8 @@ async function search(requestParams: string) {
 	return {
 		projectHits: hits,
 		serverHits: [],
-		total_hits: hits.length,
-		per_page: 50,
+		total_hits: searchRes.totalCount || hits.length,
+		per_page: limit,
 	}
 }
 

@@ -11,6 +11,8 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             install_bedrock_addon_from_file,
             search_bedrock_curseforge_addons,
             get_bedrock_curseforge_addon_files,
+            get_bedrock_curseforge_addon,
+            get_bedrock_curseforge_addon_description,
             download_and_install_bedrock_curseforge_addon,
             get_curseforge_minecraft_versions,
         ])
@@ -58,8 +60,32 @@ pub async fn search_bedrock_curseforge_addons(
     category_id: Option<i32>,
     class_id: Option<i32>,
     game_version: Option<String>,
-) -> Result<Vec<theseus::bedrock_curseforge::CurseForgeMod>> {
-    Ok(theseus::bedrock_curseforge::search_addons(&query, category_id, class_id, game_version).await?)
+    sort_field: Option<i32>,
+    sort_order: Option<String>,
+    index: Option<i32>,
+    page_size: Option<i32>,
+) -> Result<theseus::bedrock_curseforge::CurseForgeSearchResult> {
+    Ok(theseus::bedrock_curseforge::search_addons(
+        &query,
+        category_id,
+        class_id,
+        game_version,
+        sort_field,
+        sort_order,
+        index,
+        page_size,
+    )
+    .await?)
+}
+
+#[tauri::command]
+pub async fn get_bedrock_curseforge_addon(mod_id: i32) -> Result<theseus::bedrock_curseforge::CurseForgeMod> {
+    Ok(theseus::bedrock_curseforge::get_addon_details(mod_id).await?)
+}
+
+#[tauri::command]
+pub async fn get_bedrock_curseforge_addon_description(mod_id: i32) -> Result<String> {
+    Ok(theseus::bedrock_curseforge::get_addon_description(mod_id).await?)
 }
 
 #[tauri::command]

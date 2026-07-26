@@ -22,8 +22,17 @@ fn build_http_client() -> &'static Client {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct CurseForgeAuthor {
+    pub id: i32,
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CurseForgeMod {
     pub id: i32,
+    pub game_id: Option<i32>,
     pub name: String,
     pub slug: String,
     pub summary: Option<String>,
@@ -31,6 +40,11 @@ pub struct CurseForgeMod {
     pub logo: Option<serde_json::Value>,
     pub categories: Vec<serde_json::Value>,
     pub class_id: Option<i32>,
+    #[serde(default)]
+    pub authors: Vec<CurseForgeAuthor>,
+    pub website_url: Option<String>,
+    #[serde(default)]
+    pub latest_files: Vec<CurseForgeFile>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -46,8 +60,35 @@ pub struct CurseForgeFile {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CurseForgePagination {
+    pub index: i32,
+    pub page_size: i32,
+    pub result_count: i32,
+    pub total_count: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchResponse {
     pub data: Vec<CurseForgeMod>,
+    pub pagination: Option<CurseForgePagination>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CurseForgeSearchResult {
+    pub data: Vec<CurseForgeMod>,
+    pub total_count: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GetModResponse {
+    pub data: CurseForgeMod,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GetDescriptionResponse {
+    pub data: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -81,9 +122,19 @@ pub async fn search_addons(
     category_id: Option<i32>,
     class_id: Option<i32>,
     game_version: Option<String>,
-) -> crate::Result<Vec<CurseForgeMod>> {
+    sort_field: Option<i32>,
+    sort_order: Option<String>,
+    index: Option<i32>,
+    page_size: Option<i32>,
+) -> crate::Result<CurseForgeSearchResult> {
     let client = build_http_client();
-    let mut base_url = format!("{}/mods/search?gameId={}&pageSize=50", CURSEFORGE_API_BASE, GAME_ID);
+    let idx = index.unwrap_or(0);
+    let ps = page_size.unwrap_or(20);
+
+    let mut base_url = format!(
+        "{}/mods/search?gameId={}&index={}&pageSize={}",
+        CURSEFORGE_API_BASE, GAME_ID, idx, ps
+    );
     
     if !query.is_empty() {
         base_url.push_str(&format!("&searchFilter={}", urlencoding::encode(query)));
@@ -93,6 +144,14 @@ pub async fn search_addons(
     }
     if let Some(cl) = class_id {
         base_url.push_str(&format!("&classId={}", cl));
+    }
+    if let Some(sf) = sort_field {
+        base_url.push_str(&format!("&sortField={}", sf));
+    }
+    if let Some(ref so) = sort_order {
+        if !so.is_empty() {
+            base_url.push_str(&format!("&sortOrder={}", urlencoding::encode(so)));
+        }
     }
 
     let mut url = base_url.clone();
@@ -104,14 +163,36 @@ pub async fn search_addons(
     
     if let Ok(resp) = client.get(&url).send().await {
         if let Ok(data) = resp.json::<SearchResponse>().await {
+            let total = data.pagination.as_ref().map(|p| p.total_count).unwrap_or(data.data.len() as i32);
             if !data.data.is_empty() || game_version.is_none() {
-                return Ok(data.data);
+                return Ok(CurseForgeSearchResult {
+                    data: data.data,
+                    total_count: total,
+                });
             }
         }
     }
 
     // Fallback search without strict gameVersion if strict search returned empty or failed
     let resp = client.get(&base_url).send().await?.json::<SearchResponse>().await?;
+    let total = resp.pagination.as_ref().map(|p| p.total_count).unwrap_or(resp.data.len() as i32);
+    Ok(CurseForgeSearchResult {
+        data: resp.data,
+        total_count: total,
+    })
+}
+
+pub async fn get_addon_details(mod_id: i32) -> crate::Result<CurseForgeMod> {
+    let client = build_http_client();
+    let url = format!("{}/mods/{}", CURSEFORGE_API_BASE, mod_id);
+    let resp = client.get(&url).send().await?.json::<GetModResponse>().await?;
+    Ok(resp.data)
+}
+
+pub async fn get_addon_description(mod_id: i32) -> crate::Result<String> {
+    let client = build_http_client();
+    let url = format!("{}/mods/{}/description", CURSEFORGE_API_BASE, mod_id);
+    let resp = client.get(&url).send().await?.json::<GetDescriptionResponse>().await?;
     Ok(resp.data)
 }
 

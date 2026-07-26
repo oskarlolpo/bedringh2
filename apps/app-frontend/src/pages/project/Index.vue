@@ -31,7 +31,7 @@
 				:organization="organization"
 				:members="members"
 				:org-link="(slug) => `https://modrinth.com/organization/${slug}`"
-				:user-link="(username) => `https://modrinth.com/user/${username}`"
+				:user-link="(username) => data?.is_curseforge ? (data?.author_details?.link || `https://www.curseforge.com/members/${username}`) : `https://modrinth.com/user/${username}`"
 				link-target="_blank"
 				class="project-sidebar-section"
 			/>
@@ -100,7 +100,7 @@
 								:options="[
 									{
 										id: 'open-in-browser',
-										link: `https://modrinth.com/project/${data.slug}`,
+										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/project/${data?.slug}`,
 										external: true,
 									},
 									{
@@ -110,7 +110,7 @@
 										id: 'report',
 										color: 'red',
 										hoverFilled: true,
-										link: `https://modrinth.com/report?item=project&itemID=${data.id}`,
+										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/report?item=project&itemID=${data?.id}`,
 									},
 								]"
 								aria-label="More options"
@@ -553,11 +553,89 @@ function handleAddServerToInstance() {
 }
 
 async function fetchProjectData() {
-	const [project, projectV3Result] = await Promise.all([
-		get_project(route.params.id, 'must_revalidate').catch(handleError),
-		get_project_v3(route.params.id, 'must_revalidate').catch(handleError),
-	])
-	projectV3.value = projectV3Result
+	let project = null
+	let projectV3Result = null
+	const isNumericId = /^\d+$/.test(route.params.id)
+
+	if (!isNumericId) {
+		project = await get_project(route.params.id, 'must_revalidate').catch(() => null)
+		projectV3Result = await get_project_v3(route.params.id, 'must_revalidate').catch(() => null)
+	}
+
+	if (!project) {
+		const cfModId = parseInt(route.params.id)
+		if (!isNaN(cfModId)) {
+			try {
+				const [cfMod, cfFiles, cfDescription] = await Promise.all([
+					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon', { modId: cfModId }).catch(() => null),
+					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId: cfModId }).catch(() => []),
+					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_description', { modId: cfModId }).catch(() => ''),
+				])
+
+				if (cfMod) {
+					let authorName = 'CurseForge Creator'
+					let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`
+					if (cfMod.authors && cfMod.authors.length > 0) {
+						authorName = cfMod.authors[0].name
+						authorUrl = cfMod.authors[0].url || authorUrl
+					}
+
+					project = {
+						id: cfMod.id.toString(),
+						slug: cfMod.slug,
+						project_type: 'addon',
+						title: cfMod.name,
+						name: cfMod.name,
+						summary: cfMod.summary,
+						description: cfDescription || cfMod.summary,
+						body: cfDescription || cfMod.summary,
+						downloads: cfMod.downloadCount,
+						icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url,
+						categories: cfMod.categories?.map((c) => c.name || c.slug),
+						versions: (cfFiles || []).map((f) => f.id.toString()),
+						author: authorName,
+						author_details: {
+							name: authorName,
+							link: authorUrl,
+						},
+						website_url: cfMod.websiteUrl || `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`,
+						is_curseforge: true,
+					}
+
+					versions.value = (cfFiles || []).map((f) => ({
+						id: f.id.toString(),
+						project_id: cfMod.id.toString(),
+						name: f.displayName || f.fileName,
+						version_number: f.displayName,
+						game_versions: f.gameVersions || [],
+						files: [
+							{
+								id: f.id.toString(),
+								url: f.downloadUrl,
+								filename: f.fileName,
+								size: f.fileLength,
+								primary: true,
+							},
+						],
+						date_published: new Date().toISOString(),
+					}))
+
+					members.value = [
+						{
+							user: {
+								id: 'cf_' + authorName,
+								username: authorName,
+								name: authorName,
+							},
+							role: 'Creator',
+						},
+					]
+				}
+			} catch (e) {
+				console.error('Failed to load CurseForge mod:', e)
+			}
+		}
+	}
 
 	if (!project) {
 		handleError('Error loading project')
@@ -565,16 +643,28 @@ async function fetchProjectData() {
 	}
 
 	data.value = project
-	;[versions.value, members.value, categories.value, instance.value, instanceProjects.value] =
-		await Promise.all([
-			get_version_many(project.versions, 'must_revalidate').catch(handleError),
-			get_team(project.team).catch(handleError),
+	projectV3.value = projectV3Result
+
+	if (!project.is_curseforge) {
+		;[versions.value, members.value, categories.value, instance.value, instanceProjects.value] =
+			await Promise.all([
+				get_version_many(project.versions, 'must_revalidate').catch(handleError),
+				get_team(project.team).catch(handleError),
+				get_categories().catch(handleError),
+				route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
+				route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
+			])
+
+		versions.value = (versions.value || []).sort(
+			(a, b) => dayjs(b.date_published) - dayjs(a.date_published),
+		)
+	} else {
+		;[categories.value, instance.value, instanceProjects.value] = await Promise.all([
 			get_categories().catch(handleError),
 			route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
 			route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
 		])
-
-	versions.value = versions.value.sort((a, b) => dayjs(b.date_published) - dayjs(a.date_published))
+	}
 
 	if (instanceProjects.value) {
 		const installedFile = Object.values(instanceProjects.value).find(

@@ -84,6 +84,10 @@ export type ProjectType =
 	| 'plugin'
 	| 'server'
 	| 'project'
+	| 'addon'
+	| 'world'
+	| 'skin'
+	| 'script'
 
 const ALL_PROJECT_TYPES: ProjectType[] = [
 	'mod',
@@ -93,6 +97,10 @@ const ALL_PROJECT_TYPES: ProjectType[] = [
 	'datapack',
 	'plugin',
 	'server',
+	'addon',
+	'world',
+	'skin',
+	'script',
 ]
 
 export interface Tags {
