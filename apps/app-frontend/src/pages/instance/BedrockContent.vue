@@ -367,19 +367,27 @@ const availableCategories = computed(() => {
 	return categoriesMap[selectedClassId.value]
 })
 
+const curseForgeVersions = ref<string[]>([])
+
 const gameVersionsList = [
 	'1.21.132', '1.21.131', '1.21.130', '1.21.124', '1.21.123', '1.21.122', '1.21.121', '1.21.120',
-	'1.21.114', '1.21.60', '1.21.50', '1.21.40', '1.21.30', '1.21.20', '1.21.0',
+	'1.21.60', '1.21.50', '1.21.40', '1.21.30', '1.21.20', '1.21.0',
 	'1.20.80', '1.20.70', '1.20.60', '1.20.50', '1.20.40', '1.20.30', '1.20.10', '1.20.0'
 ]
 
-// Dynamically include instance version in version list if missing
+// Dynamically include CurseForge versions & instance version
 const allGameVersions = computed(() => {
-	const list = [...gameVersionsList]
-	if (props.instance.game_version && !list.includes(props.instance.game_version)) {
-		list.unshift(props.instance.game_version)
+	const set = new Set<string>()
+	if (props.instance.game_version) {
+		set.add(props.instance.game_version)
 	}
-	return list
+	for (const v of curseForgeVersions.value) {
+		set.add(v)
+	}
+	for (const v of gameVersionsList) {
+		set.add(v)
+	}
+	return Array.from(set)
 })
 
 const filteredVersions = computed(() => {
@@ -579,8 +587,16 @@ async function installFromFile() {
 	}
 }
 
-onMounted(() => {
+onMounted(async () => {
 	fetchAddons()
 	searchCurseForge()
+	try {
+		const versions: string[] = await invoke('plugin:bedrock-addons|get_curseforge_minecraft_versions')
+		if (versions && versions.length > 0) {
+			curseForgeVersions.value = versions
+		}
+	} catch (e) {
+		console.warn('Failed to load CurseForge versions', e)
+	}
 })
 </script>

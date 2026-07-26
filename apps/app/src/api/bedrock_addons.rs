@@ -12,8 +12,14 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             search_bedrock_curseforge_addons,
             get_bedrock_curseforge_addon_files,
             download_and_install_bedrock_curseforge_addon,
+            get_curseforge_minecraft_versions,
         ])
         .build()
+}
+
+#[tauri::command]
+pub async fn get_curseforge_minecraft_versions() -> Result<Vec<String>> {
+    Ok(theseus::bedrock_curseforge::get_curseforge_minecraft_versions().await?)
 }
 
 #[tauri::command]

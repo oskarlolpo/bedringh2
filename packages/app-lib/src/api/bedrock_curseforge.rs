@@ -55,6 +55,27 @@ pub struct GetModFilesResponse {
     pub data: Vec<CurseForgeFile>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CurseForgeMinecraftVersion {
+    pub id: i32,
+    pub game_version_id: Option<i32>,
+    pub version_string: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GetMinecraftVersionsResponse {
+    pub data: Vec<CurseForgeMinecraftVersion>,
+}
+
+pub async fn get_curseforge_minecraft_versions() -> crate::Result<Vec<String>> {
+    let client = build_http_client();
+    let url = format!("{}/minecraft/version", CURSEFORGE_API_BASE);
+    let resp = client.get(&url).send().await?.json::<GetMinecraftVersionsResponse>().await?;
+    let versions = resp.data.into_iter().map(|v| v.version_string).collect();
+    Ok(versions)
+}
+
 pub async fn search_addons(
     query: &str,
     category_id: Option<i32>,

@@ -188,8 +188,8 @@ static GLOBAL_FETCH_FENCE: LazyLock<FetchFence> =
 fn reqwest_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .tcp_keepalive(Some(time::Duration::from_secs(10)))
-        .connect_timeout(time::Duration::from_secs(5))
-        .timeout(time::Duration::from_secs(15))
+        .connect_timeout(time::Duration::from_secs(30))
+        .timeout(time::Duration::from_secs(300))
         .user_agent(crate::launcher_user_agent())
 }
 
@@ -412,9 +412,13 @@ pub async fn fetch_advanced_with_client(
                         let mut stream = resp.bytes_stream();
                         let mut bytes = Vec::new();
                         while let Some(item) = stream.next().await {
-                            let chunk = item.or(Err(ErrorKind::NoValueFor(
-                                "fetch bytes".to_string(),
-                            )))?;
+                            let chunk = match item {
+                                Ok(c) => c,
+                                Err(err) => {
+                                    tracing::error!("Fetch stream error: {err}");
+                                    return Err(err.into());
+                                }
+                            };
                             bytes.append(&mut chunk.to_vec());
                             emit_loading(
                                 bar,
