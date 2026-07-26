@@ -62,24 +62,35 @@ pub async fn search_addons(
     game_version: Option<String>,
 ) -> crate::Result<Vec<CurseForgeMod>> {
     let client = build_http_client();
-    let mut url = format!("{}/mods/search?gameId={}&pageSize=50", CURSEFORGE_API_BASE, GAME_ID);
+    let mut base_url = format!("{}/mods/search?gameId={}&pageSize=50", CURSEFORGE_API_BASE, GAME_ID);
     
     if !query.is_empty() {
-        url.push_str(&format!("&searchFilter={}", urlencoding::encode(query)));
+        base_url.push_str(&format!("&searchFilter={}", urlencoding::encode(query)));
     }
     if let Some(c) = category_id {
-        url.push_str(&format!("&categoryId={}", c));
+        base_url.push_str(&format!("&categoryId={}", c));
     }
     if let Some(cl) = class_id {
-        url.push_str(&format!("&classId={}", cl));
+        base_url.push_str(&format!("&classId={}", cl));
     }
-    if let Some(v) = game_version {
+
+    let mut url = base_url.clone();
+    if let Some(ref v) = game_version {
         if !v.is_empty() {
-            url.push_str(&format!("&gameVersion={}", urlencoding::encode(&v)));
+            url.push_str(&format!("&gameVersion={}", urlencoding::encode(v)));
         }
     }
     
-    let resp = client.get(&url).send().await?.json::<SearchResponse>().await?;
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(data) = resp.json::<SearchResponse>().await {
+            if !data.data.is_empty() || game_version.is_none() {
+                return Ok(data.data);
+            }
+        }
+    }
+
+    // Fallback search without strict gameVersion if strict search returned empty or failed
+    let resp = client.get(&base_url).send().await?.json::<SearchResponse>().await?;
     Ok(resp.data)
 }
 

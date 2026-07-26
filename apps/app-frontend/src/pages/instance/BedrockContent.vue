@@ -280,8 +280,8 @@ const isCheckingUpdates = ref(false)
 // Filters State
 const selectedClassId = ref<number | null>(4984) // Default: Addons (4984)
 const selectedCategoryId = ref<number | null>(null)
-// Default game version is pre-checked to the instance's game_version as requested!
-const selectedGameVersion = ref<string | null>(props.instance.game_version || null)
+// Default game version is null for broad compatibility, selectable in sidebar
+const selectedGameVersion = ref<string | null>(null)
 const versionSearch = ref('')
 
 // CurseForge Browse By Content Types

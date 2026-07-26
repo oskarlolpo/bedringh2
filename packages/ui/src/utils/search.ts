@@ -220,6 +220,7 @@ export function useSearch(
 				display: 'scrollable',
 				query_param: 'v',
 				supports_negative_filter: false,
+				allows_custom_options: true,
 				toggle_groups: [
 					{
 						id: 'all_versions',
@@ -558,7 +559,7 @@ export function useSearch(
 	readQueryParams()
 
 	function readQueryParams() {
-		const readParams = new Set<string>()
+		const readParams = new Set<string>(options.persistentQueryParams ?? [])
 
 		// Load legacy params
 		loadQueryParam(['l'], (openSource) => {
