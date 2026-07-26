@@ -18,13 +18,17 @@
 					wrapper-class="flex-1 min-w-[200px]"
 				/>
 				<div class="flex items-center gap-2">
-					<ButtonStyled color="surface" type="outlined" @click="importFromFile">
-						<template #icon><DownloadIcon class="size-4" /></template>
-						Импорт (.mcworld)
+					<ButtonStyled type="outlined">
+						<button @click="importFromFile">
+							<DownloadIcon class="size-4" />
+							Импорт (.mcworld)
+						</button>
 					</ButtonStyled>
-					<ButtonStyled color="brand" @click="openCurseForgeWorlds">
-						<template #icon><CompassIcon class="size-4" /></template>
-						Каталог миров
+					<ButtonStyled color="brand">
+						<button @click="openCurseForgeWorlds">
+							<CompassIcon class="size-4" />
+							Каталог миров
+						</button>
 					</ButtonStyled>
 				</div>
 			</div>
@@ -33,7 +37,7 @@
 				<div 
 					v-for="world in filteredWorlds" 
 					:key="world.folderName" 
-					class="bg-surface-1 rounded-2xl overflow-hidden border border-surface-2 flex flex-col shadow-sm transition-all duration-150 hover:border-brand/40 hover:shadow-md"
+					class="bg-surface-3 rounded-2xl overflow-hidden border border-surface-4 flex flex-col shadow-sm transition-all duration-150 hover:border-brand hover:shadow-md hover:-translate-y-0.5"
 				>
 					<div class="h-36 bg-surface-2 w-full relative overflow-hidden">
 						<img v-if="world.iconPath" :src="convertFileSrc(world.iconPath)" class="w-full h-full object-cover">
@@ -57,12 +61,16 @@
 							{{ world.folderName }}
 						</div>
 						
-						<div class="mt-auto pt-3 flex gap-2 justify-end items-center border-t border-surface-2/60">
-							<ButtonStyled size="small" color="surface" type="outlined" @click="exportWorld(world)">
-								Экспорт
+						<div class="mt-auto pt-3 flex gap-2 justify-end items-center border-t border-surface-4/60">
+							<ButtonStyled size="small" type="outlined">
+								<button @click="exportWorld(world)">
+									Экспорт
+								</button>
 							</ButtonStyled>
-							<ButtonStyled size="small" color="red" type="transparent" @click="deleteWorld(world)" title="Удалить мир">
-								<TrashIcon class="size-4 text-red-500" />
+							<ButtonStyled size="small" color="red" type="transparent">
+								<button @click="deleteWorld(world)" title="Удалить мир">
+									<TrashIcon class="size-4" />
+								</button>
 							</ButtonStyled>
 						</div>
 					</div>

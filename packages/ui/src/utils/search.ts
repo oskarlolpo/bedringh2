@@ -112,6 +112,7 @@ export function useSearch(
 	projectTypes: Ref<ProjectType[]>,
 	tags: Ref<Tags>,
 	providedFilters: Ref<FilterValue[]>,
+	persistentQueryParams: string[] = [],
 ) {
 	const query = ref('')
 	const maxResults = ref(20)
@@ -559,7 +560,7 @@ export function useSearch(
 	readQueryParams()
 
 	function readQueryParams() {
-		const readParams = new Set<string>(options.persistentQueryParams ?? [])
+		const readParams = new Set<string>(persistentQueryParams ?? [])
 
 		// Load legacy params
 		loadQueryParam(['l'], (openSource) => {
