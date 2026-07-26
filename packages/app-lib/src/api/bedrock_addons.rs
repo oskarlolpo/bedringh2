@@ -242,8 +242,17 @@ pub async fn check_bedrock_addon_updates(profile_path: &str) -> Result<Vec<Bedro
     let mut addons = list_bedrock_addons(profile_path).await?;
 
     for addon in &mut addons {
-        if let Ok(search_results) = crate::api::bedrock_curseforge::search_addons(&addon.name, None, Some(4984), None).await {
-            if let Some(match_mod) = search_results.into_iter().next() {
+        if let Ok(search_results) = crate::api::bedrock_curseforge::search_addons(
+            &addon.name,
+            None,
+            Some(4984),
+            None,
+            None,
+            None,
+            Some(0),
+            Some(1),
+        ).await {
+            if let Some(match_mod) = search_results.data.into_iter().next() {
                 if let Ok(files) = crate::api::bedrock_curseforge::get_addon_files(match_mod.id).await {
                     if let Some(latest_file) = files.first() {
                         let remote_ver = &latest_file.display_name;
