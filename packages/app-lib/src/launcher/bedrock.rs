@@ -268,6 +268,8 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     } else {
         get_bedrock_target_dir(install_type).await?
     };
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&target_games_dir).await;
+
     let mojang_dir = target_games_dir.join("com.mojang");
     let mut actual_backup_dir = target_games_dir.join("com.mojang.backup");
 
@@ -316,6 +318,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             ErrorKind::LauncherError(format!("Не удалось примонтировать файловую систему профиля: {} {}", err_msg, out_msg)).into()
         );
     }
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&mojang_dir).await;
 
     let junction_guard = BedrockJunctionGuard {
         profile_path: profile.path.clone(),

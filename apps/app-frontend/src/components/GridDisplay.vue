@@ -166,18 +166,18 @@ const filteredResults = computed(() => {
 	const { group = 'Group', sortBy = 'Name' } = state.value
 
 	const instances = props.instances.filter((instance) => {
-		return instance.name.toLowerCase().includes(search.value.toLowerCase())
+		return (instance.name ?? '').toLowerCase().includes(search.value.toLowerCase())
 	})
 
 	if (sortBy === 'Name') {
 		instances.sort((a, b) => {
-			return a.name.localeCompare(b.name)
+			return (a.name ?? '').localeCompare(b.name ?? '')
 		})
 	}
 
 	if (sortBy === 'Game version') {
 		instances.sort((a, b) => {
-			return a.game_version.localeCompare(b.game_version, undefined, { numeric: true })
+			return (a.game_version ?? '').localeCompare(b.game_version ?? '', undefined, { numeric: true })
 		})
 	}
 
@@ -212,15 +212,17 @@ const filteredResults = computed(() => {
 		})
 	} else if (group === 'Game version') {
 		instances.forEach((instance) => {
-			if (!instanceMap.has(instance.game_version)) {
-				instanceMap.set(instance.game_version, [])
+			const ver = instance.game_version ?? 'Unknown'
+			if (!instanceMap.has(ver)) {
+				instanceMap.set(ver, [])
 			}
 
-			instanceMap.get(instance.game_version).push(instance)
+			instanceMap.get(ver).push(instance)
 		})
 	} else if (group === 'Group') {
 		instances.forEach((instance) => {
-			if (instance.groups.length === 0) {
+			if (!instance.groups || instance.groups.length === 0) {
+				if (!instance.groups) instance.groups = []
 				instance.groups.push('None')
 			}
 
@@ -247,7 +249,7 @@ const filteredResults = computed(() => {
 			if (a[0] !== 'None' && b[0] === 'None') {
 				return 1
 			}
-			return a[0].localeCompare(b[0])
+			return (a[0] ?? '').localeCompare(b[0] ?? '')
 		})
 		instanceMap.clear()
 		sortedEntries.forEach((entry) => {
@@ -258,7 +260,7 @@ const filteredResults = computed(() => {
 	// localeCompare with numeric=true puts 1.8.9 < 1.20.4 because 8 < 20
 	if (group === 'Game version') {
 		const sortedEntries = [...instanceMap.entries()].sort((a, b) => {
-			return a[0].localeCompare(b[0], undefined, { numeric: true })
+			return (a[0] ?? '').localeCompare(b[0] ?? '', undefined, { numeric: true })
 		})
 		instanceMap.clear()
 		sortedEntries.forEach((entry) => {

@@ -1,11 +1,34 @@
 <template>
 	<ReadyTransition :pending="loading">
-		<div class="flex flex-col gap-4">
-			<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-surface-1 p-5 rounded-2xl border border-surface-2 gap-4">
-				<div class="flex flex-col gap-1">
-					<h2 class="text-xl font-bold text-primary">Миры Bedrock</h2>
-					<p class="text-sm text-secondary">Управляйте мирами Minecraft Bedrock, импортируйте новые или экспортируйте для обмена.</p>
-				</div>
+		<div v-if="worlds.length === 0" class="flex flex-col items-center justify-center py-12">
+			<EmptyState
+				type="empty-inbox"
+				heading="Нет сохраненных миров"
+				description="Импортируйте готовый файл .mcworld с вашего компьютера или найдите миры в каталоге."
+			>
+				<template #actions>
+					<ButtonStyled color="surface" type="outlined" @click="importFromFile">
+						<template #icon><DownloadIcon class="size-4" /></template>
+						Импортировать (.mcworld)
+					</ButtonStyled>
+					<ButtonStyled color="brand" @click="openCurseForgeWorlds">
+						<template #icon><CompassIcon class="size-4" /></template>
+						Каталог миров
+					</ButtonStyled>
+				</template>
+			</EmptyState>
+		</div>
+
+		<div v-else class="flex flex-col gap-4">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<StyledInput
+					v-model="searchQuery"
+					:icon="SearchIcon"
+					type="text"
+					placeholder="Поиск миров..."
+					clearable
+					wrapper-class="flex-1 min-w-[200px]"
+				/>
 				<div class="flex items-center gap-2">
 					<ButtonStyled color="surface" type="outlined" @click="importFromFile">
 						<template #icon><DownloadIcon class="size-4" /></template>
@@ -13,35 +36,14 @@
 					</ButtonStyled>
 					<ButtonStyled color="brand" @click="openCurseForgeWorlds">
 						<template #icon><CompassIcon class="size-4" /></template>
-						Найти миры
-					</ButtonStyled>
-				</div>
-			</div>
-
-			<div v-if="worlds.length === 0" class="flex flex-col items-center justify-center py-16 bg-surface-1 rounded-2xl border border-surface-2 gap-4 text-center px-4">
-				<div class="w-16 h-16 rounded-full bg-surface-2 flex items-center justify-center text-primary mb-1 shadow-inner">
-					<GlobeIcon class="w-8 h-8 opacity-80 text-brand" />
-				</div>
-				<div class="flex flex-col gap-1">
-					<h3 class="text-xl font-bold text-primary">Нет сохраненных миров</h3>
-					<p class="text-secondary text-sm max-w-md">Найдите миры на CurseForge или импортируйте готовый файл .mcworld с вашего компьютера.</p>
-				</div>
-				
-				<div class="flex items-center gap-3 mt-2">
-					<ButtonStyled color="surface" @click="importFromFile" class="!px-5 !py-2.5 font-semibold">
-						<template #icon><DownloadIcon class="size-4" /></template>
-						Импортировать (.mcworld)
-					</ButtonStyled>
-					<ButtonStyled color="brand" @click="openCurseForgeWorlds" class="!px-5 !py-2.5 font-semibold">
-						<template #icon><CompassIcon class="size-4" /></template>
 						Каталог миров
 					</ButtonStyled>
 				</div>
 			</div>
 
-			<div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+			<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 				<div 
-					v-for="world in worlds" 
+					v-for="world in filteredWorlds" 
 					:key="world.folderName" 
 					class="bg-surface-1 rounded-2xl overflow-hidden border border-surface-2 flex flex-col shadow-sm transition-all duration-150 hover:border-brand/40 hover:shadow-md"
 				>
@@ -83,11 +85,11 @@
 </template>
 
 <script setup lang="ts">
-import { CompassIcon, DownloadIcon, GlobeIcon, TrashIcon } from '@modrinth/assets'
-import { ButtonStyled, ReadyTransition, injectNotificationManager } from '@modrinth/ui'
+import { CompassIcon, DownloadIcon, GlobeIcon, SearchIcon, TrashIcon } from '@modrinth/assets'
+import { ButtonStyled, EmptyState, ReadyTransition, StyledInput, injectNotificationManager } from '@modrinth/ui'
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { GameInstance } from '@/helpers/types'
@@ -114,8 +116,15 @@ interface BedrockWorld {
 }
 
 const loading = ref(true)
+const searchQuery = ref('')
 const worlds = ref<BedrockWorld[]>([])
 const notifications = injectNotificationManager()
+
+const filteredWorlds = computed(() => {
+	if (!searchQuery.value.trim()) return worlds.value
+	const q = searchQuery.value.toLowerCase()
+	return worlds.value.filter((w) => w.name.toLowerCase().includes(q) || w.folderName.toLowerCase().includes(q))
+})
 
 function formatSize(bytes: number) {
 	if (bytes < 1024) return bytes + ' B'
