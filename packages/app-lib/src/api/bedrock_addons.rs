@@ -21,6 +21,7 @@ pub struct BedrockAddon {
 #[derive(Debug, Deserialize)]
 struct BedrockManifest {
     header: BedrockManifestHeader,
+    #[serde(default)]
     modules: Option<Vec<BedrockManifestModule>>,
 }
 
@@ -29,13 +30,88 @@ struct BedrockManifestHeader {
     uuid: String,
     name: String,
     description: Option<String>,
-    version: Vec<u32>,
+    #[serde(default)]
+    version: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
 struct BedrockManifestModule {
     #[serde(rename = "type")]
     module_type: String, // resource, data (behavior), etc.
+}
+
+fn parse_version_vec(val: &serde_json::Value) -> Vec<u32> {
+    if let Some(arr) = val.as_array() {
+        arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect()
+    } else if let Some(s) = val.as_str() {
+        s.split('.').filter_map(|p| p.parse::<u32>().ok()).collect()
+    } else {
+        vec![1, 0, 0]
+    }
+}
+
+fn sanitize_folder_name(name: &str, uuid: &str) -> String {
+    let clean: String = name.chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ' ' => c,
+            _ => '_',
+        })
+        .collect();
+    let trimmed = clean.trim();
+    if trimmed.is_empty() {
+        uuid.to_string()
+    } else {
+        let short_uuid = if uuid.len() >= 8 { &uuid[..8] } else { uuid };
+        format!("{}_{}", trimmed, short_uuid)
+    }
+}
+
+async fn register_pack_in_worlds(com_mojang: &std::path::Path, pack_uuid: &str, version_vec: &[u32], is_resource: bool) {
+    let worlds_dir = com_mojang.join("minecraftWorlds");
+    if !worlds_dir.exists() {
+        return;
+    }
+
+    let json_filename = if is_resource { "world_resource_packs.json" } else { "world_behavior_packs.json" };
+
+    let mut entries = match fs::read_dir(&worlds_dir).await {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let world_path = entry.path();
+        if !world_path.is_dir() {
+            continue;
+        }
+
+        let target_json = world_path.join(json_filename);
+        let mut packs: Vec<serde_json::Value> = if target_json.exists() {
+            fs::read_to_string(&target_json).await
+                .ok()
+                .and_then(|content| serde_json::from_str(&content).ok())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Check if pack already present
+        let already_present = packs.iter().any(|p| {
+            p.get("pack_id").and_then(|id| id.as_str()) == Some(pack_uuid)
+        });
+
+        if !already_present {
+            let ver_val = if version_vec.is_empty() { vec![1, 0, 0] } else { version_vec.to_vec() };
+            let new_entry = serde_json::json!({
+                "pack_id": pack_uuid,
+                "version": ver_val
+            });
+            packs.push(new_entry);
+            if let Ok(pretty) = serde_json::to_string_pretty(&packs) {
+                let _ = fs::write(&target_json, pretty).await;
+            }
+        }
+    }
 }
 
 pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>> {
@@ -77,7 +153,8 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
                         "behavior".to_string()
                     };
                     
-                    let version_str = manifest.header.version.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
+                    let ver_vec = parse_version_vec(&manifest.header.version);
+                    let version_str = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
                     let icon_file = path.join("pack_icon.png");
                     let icon_path = if icon_file.exists() {
                         Some(icon_file.to_string_lossy().to_string())
@@ -211,10 +288,16 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
             let mut is_resource = false;
             if let Some(modules) = &manifest.modules {
                 for m in modules {
-                    if m.module_type.contains("resource") {
+                    let t = m.module_type.to_lowercase();
+                    if t.contains("resource") || t.contains("client_data") || t.contains("texture") || t.contains("skin") {
                         is_resource = true;
                         break;
                     }
+                }
+            }
+            if !is_resource {
+                if pack_dir.join("textures").exists() || pack_dir.join("sounds").exists() || pack_dir.join("ui").exists() || pack_dir.join("attachables").exists() {
+                    is_resource = true;
                 }
             }
             
@@ -222,14 +305,18 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
             let target_base = com_mojang.join(kind_dir);
             let _ = fs::create_dir_all(&target_base).await;
             
-            let target_path = target_base.join(&manifest.header.name);
-            // If exists, delete first to overwrite or rename. We will just delete.
+            let safe_name = sanitize_folder_name(&manifest.header.name, &manifest.header.uuid);
+            let target_path = target_base.join(&safe_name);
             if target_path.exists() {
                 let _ = fs::remove_dir_all(&target_path).await;
             }
             
             // Move pack_dir to target_path
             let _ = fs::rename(&pack_dir, &target_path).await;
+
+            // Register pack in existing worlds
+            let ver_vec = parse_version_vec(&manifest.header.version);
+            register_pack_in_worlds(&com_mojang, &manifest.header.uuid, &ver_vec, is_resource).await;
         }
     }
     

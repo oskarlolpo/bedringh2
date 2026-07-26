@@ -150,17 +150,18 @@ export function useSearch(
 	const filters = computed(() => {
 		const categoryFilters: Record<string, FilterType> = {}
 		for (const category of sortedCategories(tags.value, formatCategoryName, locale.value)) {
-			const filterTypeId = `category_${category.project_type}_${category.header}`
+			const header = category.header || 'categories'
+			const filterTypeId = `category_${category.project_type}_${header}`
 			if (!categoryFilters[filterTypeId]) {
 				categoryFilters[filterTypeId] = {
 					id: filterTypeId,
-					formatted_name: formatCategoryHeader(formatMessage, category.header),
+					formatted_name: formatCategoryHeader(formatMessage, header),
 					supported_project_types:
 						category.project_type === 'mod'
 							? ['mod', 'plugin', 'datapack']
 							: ([category.project_type] as ProjectType[]),
 					display: 'all',
-					query_param: category.header === 'resolutions' ? 'g' : 'f',
+					query_param: header === 'resolutions' ? 'g' : 'f',
 					supports_negative_filter: true,
 					searchable: false,
 					options: [],
@@ -168,10 +169,10 @@ export function useSearch(
 			}
 			categoryFilters[filterTypeId].options.push({
 				id: category.name,
-				formatted_name: formatCategory(formatMessage, category.name),
-				icon: getCategoryIcon(category.name),
+				formatted_name: category.formatted_name || formatCategory(formatMessage, category.name),
+				icon: category.icon || getCategoryIcon(category.icon_name || category.name),
 				value: `categories:${category.name}`,
-				method: category.header === 'resolutions' ? 'or' : 'and',
+				method: header === 'resolutions' ? 'or' : 'and',
 			})
 		}
 
@@ -399,7 +400,7 @@ export function useSearch(
 				formatted_name: formatMessage(
 					defineMessage({ id: 'search.filter_type.license', defaultMessage: 'License' }),
 				),
-				supported_project_types: ['mod', 'modpack', 'resourcepack', 'shader', 'plugin', 'datapack'],
+				supported_project_types: ['mod', 'modpack', 'shader', 'plugin', 'datapack'],
 				query_param: 'l',
 				supports_negative_filter: true,
 				display: 'all',

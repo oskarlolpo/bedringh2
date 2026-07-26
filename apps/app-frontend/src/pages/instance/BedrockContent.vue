@@ -5,25 +5,25 @@
 				<EmptyState
 					v-if="addons.length === 0"
 					icon="boxes"
-					title="No Add-ons installed"
-					description="Add behavioral or resource packs to customize your Bedrock experience."
+					title="Аддоны не установлены"
+					description="Добавляйте наборы ресурсов и поведения для кастомизации Minecraft Bedrock."
 				>
 					<ButtonStyled color="brand" @click="installFromFile">
 						<template #icon><DownloadIcon /></template>
-						Install Add-on (.mcpack / .mcaddon)
+						Установить аддон (.mcpack / .mcaddon)
 					</ButtonStyled>
 				</EmptyState>
 			</template>
 			<template #default>
 				<div class="flex items-center justify-between mb-4">
-					<h2 class="text-xl font-bold">Bedrock Add-ons & Content</h2>
+					<h2 class="text-xl font-bold">Контент и Аддоны Bedrock</h2>
 					<div class="flex gap-2">
 						<ButtonStyled color="brand-outline" @click="checkAddonUpdates" :disabled="isCheckingUpdates">
-							{{ isCheckingUpdates ? 'Checking...' : 'Check for Updates' }}
+							{{ isCheckingUpdates ? 'Проверка...' : 'Проверить обновления' }}
 						</ButtonStyled>
 						<ButtonStyled color="brand" @click="installFromFile">
 							<template #icon><DownloadIcon /></template>
-							Install from File
+							Установить из файла
 						</ButtonStyled>
 					</div>
 				</div>
@@ -36,10 +36,10 @@
 						<div class="p-4 bg-surface-1 rounded-xl border border-surface-2 flex flex-col gap-3">
 							<div class="flex items-center justify-between">
 								<h3 class="font-bold text-base flex items-center gap-2">
-									<GlobeIcon class="w-5 h-5 text-brand" /> Discover on CurseForge
+									<GlobeIcon class="w-5 h-5 text-brand" /> Найти на CurseForge
 								</h3>
 								<span v-if="activeFilterCount > 0" class="text-xs px-2 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
-									{{ activeFilterCount }} filter(s) active
+									Активно фильтров: {{ activeFilterCount }}
 								</span>
 							</div>
 
@@ -47,12 +47,12 @@
 								<input
 									v-model="searchQuery"
 									type="text"
-									placeholder="Search behavior packs, resource packs, maps, skins..."
+									placeholder="Поиск аддонов, текстур-паков, карт, скинов..."
 									class="flex-1 bg-surface-base px-3 py-2 rounded-lg outline-none border border-surface-2 placeholder:text-contrast focus:border-brand text-sm"
 									@keydown.enter="searchCurseForge"
 								/>
 								<ButtonStyled color="brand" @click="searchCurseForge" :disabled="isSearchingCF">
-									{{ isSearchingCF ? 'Searching...' : 'Search' }}
+									{{ isSearchingCF ? 'Поиск...' : 'Искать' }}
 								</ButtonStyled>
 							</div>
 
@@ -66,28 +66,29 @@
 										</div>
 										<div class="flex flex-col min-w-0">
 											<span class="font-bold text-sm cursor-pointer hover:underline truncate" @click="openCfUrl(cfMod.slug)">{{ cfMod.name }}</span>
-											<span class="text-xs text-contrast line-clamp-1">{{ cfMod.summary || 'No description' }}</span>
+											<span class="text-xs text-contrast line-clamp-1">{{ cfMod.summary || 'Нет описания' }}</span>
 										</div>
 									</div>
 									<ButtonStyled size="small" color="brand" @click="installCfMod(cfMod)">
-										Install
+										Установить
 									</ButtonStyled>
 								</div>
 							</div>
 							<div v-else-if="hasSearched && !isSearchingCF" class="text-xs text-contrast text-center py-3">
-								No content found matching current search and filters.
+								Ничего не найдено по текущему запросу и фильтрам.
 							</div>
 						</div>
 
 						<!-- Installed Add-ons List -->
 						<div class="flex flex-col gap-3">
-							<h3 class="font-bold text-lg">Installed Add-ons ({{ addons.length }})</h3>
+							<h3 class="font-bold text-lg">Установленные аддоны ({{ addons.length }})</h3>
 							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 								<div 
 									v-for="addon in addons" 
 									:key="addon.uuid" 
-									class="bg-surface-1 rounded-xl p-4 border border-surface-2 flex flex-col gap-2 relative shadow-sm transition-all hover:shadow-md"
+									class="bg-surface-1 rounded-xl p-4 border border-surface-2 flex flex-col gap-2 relative shadow-sm transition-all hover:shadow-md hover:border-brand/40 cursor-pointer"
 									:class="{'opacity-50 grayscale': !addon.is_enabled}"
+									@click="selectedAddonDetail = addon"
 								>
 									<div class="flex justify-between items-start">
 										<div class="flex items-center gap-3 max-w-[75%]">
@@ -105,28 +106,28 @@
 									</div>
 									
 									<p class="text-xs text-contrast line-clamp-2 h-8" :title="addon.description">
-										{{ addon.description || 'No description provided.' }}
+										{{ addon.description || 'Описание отсутствует.' }}
 									</p>
 									
 									<div class="mt-auto pt-2 flex items-center justify-between border-t border-surface-2">
 										<span class="text-[11px] font-semibold uppercase tracking-wider" :class="addon.kind === 'resource' ? 'text-blue-400' : 'text-purple-400'">
-											{{ addon.kind }}
+											пакет {{ addon.kind === 'resource' ? 'ресурсов' : 'поведения' }}
 										</span>
 										
-										<div class="flex gap-2 isolate">
+										<div class="flex gap-2 isolate" @click.stop>
 											<ButtonStyled 
 												size="small" 
 												:color="addon.is_enabled ? 'surface' : 'brand'"
-												@click="toggleAddon(addon)"
+												@click.stop="toggleAddon(addon)"
 											>
-												{{ addon.is_enabled ? 'Disable' : 'Enable' }}
+												{{ addon.is_enabled ? 'Отключить' : 'Включить' }}
 											</ButtonStyled>
 											<ButtonStyled 
 												size="small" 
 												color="red"
 												type="transparent"
-												@click="deleteAddon(addon)"
-												title="Delete Add-on"
+												@click.stop="deleteAddon(addon)"
+												title="Удалить аддон"
 											>
 												<TrashIcon class="w-4 h-4" />
 											</ButtonStyled>
@@ -142,7 +143,7 @@
 						<!-- Filters Header -->
 						<div class="flex items-center justify-between border-b border-surface-2 pb-3">
 							<h3 class="font-bold text-base flex items-center gap-1.5">
-								Filters
+								Фильтры
 								<span v-if="activeFilterCount > 0" class="w-5 h-5 rounded-full bg-brand text-brand-contrast text-xs flex items-center justify-center font-bold">
 									{{ activeFilterCount }}
 								</span>
@@ -151,14 +152,14 @@
 								class="text-xs text-contrast hover:text-brand underline font-medium transition-colors"
 								@click="clearAllFilters"
 							>
-								Clear all
+								Сбросить
 							</button>
 						</div>
 
 						<!-- Browse by Section -->
 						<div class="flex flex-col gap-2">
 							<div class="font-bold text-xs uppercase tracking-wider text-contrast flex items-center justify-between">
-								<span>Browse by</span>
+								<span>Тип контента</span>
 							</div>
 							<div class="flex flex-col gap-1">
 								<label 
@@ -182,7 +183,7 @@
 						<!-- Categories Section -->
 						<div class="flex flex-col gap-2 border-t border-surface-2 pt-4">
 							<div class="font-bold text-xs uppercase tracking-wider text-contrast flex items-center justify-between">
-								<span>Categories</span>
+								<span>Категории</span>
 							</div>
 							<div class="flex flex-col gap-1 max-h-[220px] overflow-y-auto pr-1">
 								<label 
@@ -205,12 +206,12 @@
 						<!-- Game Version Section -->
 						<div class="flex flex-col gap-2 border-t border-surface-2 pt-4">
 							<div class="font-bold text-xs uppercase tracking-wider text-contrast flex items-center justify-between">
-								<span>Game Version</span>
+								<span>Версия Minecraft</span>
 							</div>
 							<input
 								v-model="versionSearch"
 								type="text"
-								placeholder="Search versions..."
+								placeholder="Поиск версии..."
 								class="bg-surface-base px-2.5 py-1.5 rounded outline-none border border-surface-2 placeholder:text-contrast text-xs"
 							/>
 							<div class="flex flex-col gap-1 max-h-[180px] overflow-y-auto pr-1">
@@ -228,7 +229,7 @@
 									/>
 									<span>{{ ver }}</span>
 									<span v-if="ver === props.instance.game_version" class="text-[10px] px-1.5 py-0.2 rounded bg-brand/20 text-brand font-semibold ml-auto">
-										Current
+										Текущая
 									</span>
 								</label>
 							</div>
@@ -238,6 +239,112 @@
 			</template>
 		</ContentCardLayout>
 	</ReadyTransition>
+
+	<!-- Installed Add-on Detail Modal -->
+	<div 
+		v-if="selectedAddonDetail" 
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-fade-in"
+		@click.self="selectedAddonDetail = null"
+	>
+		<div class="bg-surface-1 border border-surface-3 rounded-2xl p-6 max-w-lg w-full shadow-2xl flex flex-col gap-5 relative overflow-hidden">
+			<!-- Header -->
+			<div class="flex items-start gap-4 border-b border-surface-2 pb-4">
+				<div class="w-16 h-16 rounded-xl bg-surface-2 overflow-hidden flex-shrink-0 flex items-center justify-center border border-surface-3 shadow-inner">
+					<img 
+						v-if="selectedAddonDetail.icon_path" 
+						:src="convertFileSrc(selectedAddonDetail.icon_path)" 
+						:alt="selectedAddonDetail.name"
+						class="w-full h-full object-cover"
+					/>
+					<div v-else class="text-xl font-black text-contrast uppercase">
+						{{ selectedAddonDetail.kind[0] }}
+					</div>
+				</div>
+				
+				<div class="flex-1 min-w-0">
+					<h3 class="font-extrabold text-xl truncate text-foreground">
+						{{ selectedAddonDetail.name }}
+					</h3>
+					<div class="flex items-center gap-2 mt-1.5 flex-wrap">
+						<span class="text-xs font-mono bg-surface-2 px-2.5 py-0.5 rounded-full font-semibold border border-surface-3">
+							v{{ selectedAddonDetail.version }}
+						</span>
+						<span 
+							class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full"
+							:class="selectedAddonDetail.kind === 'resource' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'"
+						>
+							пакет {{ selectedAddonDetail.kind === 'resource' ? 'ресурсов' : 'поведения' }}
+						</span>
+						<span 
+							class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full"
+							:class="selectedAddonDetail.is_enabled ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'"
+						>
+							{{ selectedAddonDetail.is_enabled ? 'Активен' : 'Отключен' }}
+						</span>
+					</div>
+				</div>
+				
+				<button 
+					class="text-contrast hover:text-foreground text-lg font-bold p-1 transition-colors"
+					@click="selectedAddonDetail = null"
+				>
+					✕
+				</button>
+			</div>
+
+			<!-- Details Content -->
+			<div class="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
+				<div>
+					<h4 class="text-xs uppercase font-bold text-contrast tracking-wider mb-1">Описание</h4>
+					<p class="text-sm text-contrast leading-relaxed whitespace-pre-wrap bg-surface-2/50 p-3 rounded-xl border border-surface-2">
+						{{ selectedAddonDetail.description || 'Для данного пакета описание не указано.' }}
+					</p>
+				</div>
+
+				<div class="grid grid-cols-2 gap-3 text-xs bg-surface-2/30 p-3 rounded-xl border border-surface-2">
+					<div>
+						<span class="text-contrast block font-medium">Имя папки</span>
+						<span class="font-mono text-foreground font-semibold truncate block" :title="selectedAddonDetail.folder_name">
+							{{ selectedAddonDetail.folder_name }}
+						</span>
+					</div>
+					<div>
+						<span class="text-contrast block font-medium">UUID</span>
+						<span class="font-mono text-foreground font-semibold truncate block" :title="selectedAddonDetail.uuid">
+							{{ selectedAddonDetail.uuid }}
+						</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- Footer Actions -->
+			<div class="flex items-center justify-between border-t border-surface-2 pt-4 mt-1">
+				<ButtonStyled 
+					color="red"
+					type="transparent"
+					@click="deleteAddon(selectedAddonDetail); selectedAddonDetail = null"
+				>
+					<TrashIcon class="w-4 h-4 mr-1.5" />
+					Удалить аддон
+				</ButtonStyled>
+
+				<div class="flex items-center gap-2">
+					<ButtonStyled 
+						:color="selectedAddonDetail.is_enabled ? 'surface' : 'brand'"
+						@click="toggleAddon(selectedAddonDetail)"
+					>
+						{{ selectedAddonDetail.is_enabled ? 'Отключить' : 'Включить' }}
+					</ButtonStyled>
+					<ButtonStyled 
+						color="surface"
+						@click="selectedAddonDetail = null"
+					>
+						Закрыть
+					</ButtonStyled>
+				</div>
+			</div>
+		</div>
+	</div>
 </template>
 
 <script setup lang="ts">
@@ -267,6 +374,8 @@ interface BedrockAddon {
 	latest_version?: string;
 }
 
+const selectedAddonDetail = ref<BedrockAddon | null>(null)
+
 const loading = ref(true)
 const addons = ref<BedrockAddon[]>([])
 const notifications = injectNotificationManager()
@@ -286,71 +395,76 @@ const versionSearch = ref('')
 
 // CurseForge Browse By Content Types
 const browseByTypes = [
-	{ id: null, label: 'All' },
-	{ id: 4984, label: 'Addons' },
-	{ id: 4985, label: 'Maps' },
-	{ id: 4986, label: 'Texture Packs' },
-	{ id: 4987, label: 'Scripts' },
-	{ id: 4988, label: 'Skins' },
+	{ id: null, label: 'Все' },
+	{ id: 4984, label: 'Аддоны' },
+	{ id: 6913, label: 'Карты' },
+	{ id: 6929, label: 'Текстур-паки' },
+	{ id: 6940, label: 'Скрипты' },
+	{ id: 6925, label: 'Скины' },
 ]
 
 // CurseForge Categories by Class ID
 const categoriesMap: Record<number, { id: number; label: string }[]> = {
 	4984: [ // Addons
-		{ id: 5191, label: 'Armor, Tools, And Weapons' },
-		{ id: 5192, label: 'Cosmetics' },
-		{ id: 5193, label: 'Data Packs' },
-		{ id: 5194, label: 'Fantasy' },
-		{ id: 5195, label: 'Food' },
-		{ id: 5196, label: 'Horror' },
-		{ id: 5197, label: 'Magic' },
-		{ id: 5198, label: 'Maps' },
-		{ id: 5199, label: 'Minecraft Addon Maker' },
-		{ id: 5200, label: 'ModJam 2025' },
-		{ id: 5201, label: 'Multiplayer' },
-		{ id: 5202, label: 'Performance' },
-		{ id: 5203, label: 'Roleplay' },
-		{ id: 5204, label: 'Skins' },
-		{ id: 5205, label: 'Survival' },
+		{ id: 8834, label: 'Оружие и броня' },
+		{ id: 8825, label: 'Косметика' },
+		{ id: 4992, label: 'Дата-паки' },
+		{ id: 8828, label: 'Фэнтези' },
+		{ id: 8836, label: 'Еда' },
+		{ id: 8833, label: 'Хоррор' },
+		{ id: 8829, label: 'Магия' },
+		{ id: 4986, label: 'Карты' },
+		{ id: 4991, label: 'Мобы' },
+		{ id: 8835, label: 'Мультиплеер' },
+		{ id: 8837, label: 'Производительность' },
+		{ id: 4990, label: 'Игроки' },
+		{ id: 4993, label: 'PvP' },
+		{ id: 4994, label: 'Реализм' },
+		{ id: 8827, label: 'РП (Roleplay)' },
+		{ id: 4995, label: 'Простые' },
+		{ id: 4989, label: 'Скины' },
+		{ id: 8831, label: 'Выживание' },
+		{ id: 8826, label: 'Технологии' },
+		{ id: 4987, label: 'Текстуры' },
+		{ id: 4997, label: 'Тематические' },
+		{ id: 8832, label: 'Утилиты' },
+		{ id: 8830, label: 'Ванилла+' },
 	],
-	4985: [ // Maps
-		{ id: 5206, label: 'Adventure' },
-		{ id: 5207, label: 'Creation' },
-		{ id: 5208, label: 'CTM' },
-		{ id: 5209, label: 'Custom Terrain' },
-		{ id: 5210, label: 'Minigame' },
-		{ id: 5211, label: 'Parkour' },
-		{ id: 5212, label: 'Puzzle' },
-		{ id: 5213, label: 'PvP' },
-		{ id: 5214, label: 'Redstone' },
-		{ id: 5215, label: 'Rollercoaster' },
-		{ id: 5216, label: 'Survival' },
+	6913: [ // Maps
+		{ id: 6914, label: 'Приключения' },
+		{ id: 6915, label: 'Строительство' },
+		{ id: 6916, label: 'CTM' },
+		{ id: 6917, label: 'Свой ландшафт' },
+		{ id: 6918, label: 'Мини-игры' },
+		{ id: 6919, label: 'Паркур' },
+		{ id: 6920, label: 'Головоломки' },
+		{ id: 6921, label: 'PvP' },
+		{ id: 6922, label: 'Редстоун' },
+		{ id: 6923, label: 'Американские горки' },
+		{ id: 6924, label: 'Выживание' },
 	],
-	4986: [ // Texture Packs
-		{ id: 5217, label: 'GUI' },
-		{ id: 5218, label: 'Miscellaneous' },
-		{ id: 5219, label: 'ModJam 2025' },
-		{ id: 5220, label: 'PvP' },
-		{ id: 5221, label: 'Realistic' },
-		{ id: 5222, label: 'Shaders' },
-		{ id: 5223, label: 'Simplistic' },
-		{ id: 5224, label: 'Themed' },
-		{ id: 5225, label: 'X128' },
-		{ id: 5226, label: 'X16' },
-		{ id: 5227, label: 'X32' },
-		{ id: 5228, label: 'X64' },
+	6929: [ // Texture Packs
+		{ id: 10747, label: 'Интерфейс (GUI)' },
+		{ id: 6930, label: 'Разное' },
+		{ id: 6931, label: 'PvP' },
+		{ id: 6932, label: 'Реализм' },
+		{ id: 6939, label: 'Шейдеры' },
+		{ id: 6933, label: 'Простые' },
+		{ id: 6934, label: 'Тематические' },
+		{ id: 6935, label: '16x' },
+		{ id: 6936, label: '32x' },
+		{ id: 6937, label: '64x' },
+		{ id: 6938, label: '128x' },
 	],
-	4987: [ // Scripts
-		{ id: 5229, label: 'Utility' },
-		{ id: 5230, label: 'Miscellaneous' },
+	6940: [ // Scripts
+		{ id: 6941, label: 'Скрипты' },
+		{ id: 8824, label: 'Утилиты' },
 	],
-	4988: [ // Skins
-		{ id: 5231, label: 'Anime' },
-		{ id: 5232, label: 'Fantasy' },
-		{ id: 5233, label: 'Games' },
-		{ id: 5234, label: 'TV & Movies' },
-		{ id: 5235, label: 'Miscellaneous' },
-	]
+	6925: [ // Skins
+		{ id: 6928, label: 'Наборы скинов' },
+		{ id: 6927, label: 'Скины игроков' },
+		{ id: 6926, label: 'Скины мобов' },
+	],
 }
 
 const availableCategories = computed(() => {
@@ -457,12 +571,13 @@ async function searchCurseForge() {
 	isSearchingCF.value = true
 	hasSearched.value = true
 	try {
-		cfResults.value = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
+		const res: any = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 			query: searchQuery.value || '',
 			categoryId: selectedCategoryId.value,
 			classId: selectedClassId.value,
 			gameVersion: selectedGameVersion.value
 		})
+		cfResults.value = res?.data || (Array.isArray(res) ? res : [])
 	} catch (e) {
 		notifications.handleError(e as Error)
 	} finally {

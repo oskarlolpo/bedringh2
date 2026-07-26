@@ -194,7 +194,14 @@ const bedrockCategoriesMap: Record<string, any[]> = {
 
 const tags: Ref<Tags> = computed(() => {
 	const activeType = (projectType.value as string) || 'addon'
-	const cats = (bedrockCategoriesMap[activeType] || bedrockCategoriesMap['addon']) as any
+	const rawCats = (bedrockCategoriesMap[activeType] || bedrockCategoriesMap['addon']) as any[]
+	const cats = rawCats.map((c) => ({
+		header: 'categories',
+		name: c.id,
+		formatted_name: c.name || c.formatted_name,
+		project_type: activeType,
+		icon: c.icon,
+	}))
 	return {
 		gameVersions: availableGameVersions.value ?? [],
 		loaders: loaders.value ?? [],
@@ -971,19 +978,33 @@ async function search(requestParams: string) {
 			}
 		} catch (e) {}
 	}
+	if (!categoryId && params.get('f')) {
+		const fVal = params.get('f')
+		if (fVal?.includes('categories:')) {
+			const parsedCat = parseInt(fVal.split('categories:')[1])
+			if (!isNaN(parsedCat)) categoryId = parsedCat
+		}
+	}
 
-	let gameVersionFilter: string | null = instance.value?.game_version || null
+	let gameVersionFilter: string | null = params.get('v') || null
 	if (!gameVersionFilter && facetsStr) {
 		try {
 			const parsed = JSON.parse(facetsStr)
 			for (const group of parsed) {
 				for (const item of group) {
-					if (typeof item === 'string' && item.startsWith('versions:')) {
-						gameVersionFilter = item.replace('versions:', '')
+					if (typeof item === 'string') {
+						if (item.startsWith('versions:')) {
+							gameVersionFilter = item.replace('versions:', '')
+						} else if (item.startsWith('game_versions:')) {
+							gameVersionFilter = item.replace('game_versions:', '')
+						}
 					}
 				}
 			}
 		} catch (e) {}
+	}
+	if (!gameVersionFilter && instance.value?.game_version) {
+		gameVersionFilter = instance.value.game_version
 	}
 
 	const page = parseInt(params.get('page') || '1')
@@ -1042,6 +1063,7 @@ async function search(requestParams: string) {
 				link: authorUrl || websiteUrl,
 			},
 			website_url: websiteUrl,
+			is_curseforge: true,
 		} as unknown as Labrinth.Search.v2.ResultSearchProject & { installed?: boolean }
 
 		if (instance.value) {
