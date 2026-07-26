@@ -4,19 +4,7 @@
 			<EmptyState
 				type="empty-inbox"
 				heading="Нет сохраненных миров"
-				description="Импортируйте готовый файл .mcworld с вашего компьютера или найдите миры в каталоге."
-			>
-				<template #actions>
-					<ButtonStyled color="surface" type="outlined" @click="importFromFile">
-						<template #icon><DownloadIcon class="size-4" /></template>
-						Импортировать (.mcworld)
-					</ButtonStyled>
-					<ButtonStyled color="brand" @click="openCurseForgeWorlds">
-						<template #icon><CompassIcon class="size-4" /></template>
-						Каталог миров
-					</ButtonStyled>
-				</template>
-			</EmptyState>
+			/>
 		</div>
 
 		<div v-else class="flex flex-col gap-4">

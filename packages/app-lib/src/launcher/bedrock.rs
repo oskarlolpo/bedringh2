@@ -237,38 +237,37 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     emit_legacy_log(&profile.path, "Granting application package access permissions to profile data...");
     let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang).await;
 
-    let target_games_dir = if let Some(ref exe_path) = exe_path_to_inject {
+    let target_games_dir = get_bedrock_target_dir(install_type).await?;
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&target_games_dir).await;
+
+    if let Some(ref exe_path) = exe_path_to_inject {
         let exe_dir = exe_path.parent().unwrap();
         let local_data_root = exe_dir.join("Minecraft Bedrock");
         if !local_data_root.exists() {
-            fs::create_dir_all(&local_data_root).await?;
+            let _ = fs::create_dir_all(&local_data_root).await;
         }
-        let dir = local_data_root.join("LocalState").join("games");
-        if !dir.exists() {
-            fs::create_dir_all(&dir).await?;
+        let local_games_dir = local_data_root.join("LocalState").join("games");
+        if !local_games_dir.exists() {
+            let _ = fs::create_dir_all(&local_games_dir).await;
         }
-        dir
-    } else if is_custom_unpacked {
-        let local_appdata =
-            std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
-                let mut path = dirs::home_dir().unwrap();
-                path.push("AppData");
-                path.push("Local");
-                path.to_string_lossy().into_owned()
-            });
-        let dir = PathBuf::from(local_appdata)
-            .join("Packages")
-            .join(&pfn_to_use)
-            .join("LocalState")
-            .join("games");
-        if !dir.exists() {
-            fs::create_dir_all(&dir).await?;
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&local_games_dir).await;
+        let local_mojang = local_games_dir.join("com.mojang");
+        if local_mojang.exists() {
+            let meta: std::fs::Metadata = fs::symlink_metadata(&local_mojang).await?;
+            let is_reparse_point = (meta.file_attributes() & 0x00000400) != 0;
+            if is_reparse_point {
+                let _ = fs::remove_dir(&local_mojang).await;
+            } else {
+                let _ = fs::remove_dir_all(&local_mojang).await;
+            }
         }
-        dir
-    } else {
-        get_bedrock_target_dir(install_type).await?
-    };
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&target_games_dir).await;
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("cmd")
+            .creation_flags(0x08000000)
+            .arg("/c")
+            .raw_arg(format!("mklink /J \"{}\" \"{}\"", local_mojang.display(), instance_mojang.display()))
+            .output();
+    }
 
     let mojang_dir = target_games_dir.join("com.mojang");
     let mut actual_backup_dir = target_games_dir.join("com.mojang.backup");

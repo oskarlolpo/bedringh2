@@ -66,7 +66,9 @@ export function useFileSorting(items: Ref<FileItem[]>) {
 					return sortDesc.value ? aValue - bValue : bValue - aValue
 				}
 				default:
-					return sortDesc.value ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)
+					return sortDesc.value
+						? (b.name ?? '').localeCompare(a.name ?? '')
+						: (a.name ?? '').localeCompare(b.name ?? '')
 			}
 		}
 
