@@ -31,12 +31,14 @@ export async function find_filtered_jres(version) {
 // Gets java version from a specific path by trying to run 'java -version' on it.
 // This also validates it, as it returns null if no valid java version is found at the path
 export async function get_jre(path) {
+	if (!path) return null
 	return await invoke('plugin:jre|jre_get_jre', { path })
 }
 
 // Tests JRE version by running 'java -version' on it.
 // Returns true if the version is valid, and matches given (after extraction)
 export async function test_jre(path, majorVersion) {
+	if (!path) return false
 	return await invoke('plugin:jre|jre_test_jre', { path, majorVersion })
 }
 

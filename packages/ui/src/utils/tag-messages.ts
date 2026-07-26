@@ -583,15 +583,16 @@ const DEFAULT_LOADER_NAMES = new Set([...DEFAULT_MOD_LOADERS, ...DEFAULT_SHADER_
 // 2. default loaders, alphabetically
 // 3. other loaders, alphabetically
 export function sortTagsForDisplay(tags: string[]): string[] {
+	if (!tags || !Array.isArray(tags)) return []
 	const isLoader = (tag: string) => getTagMessage(tag, 'loader') !== undefined
 	const loaders = tags.filter(isLoader)
 	const categories = tags.filter((tag) => !isLoader(tag))
-	categories.sort((a, b) => a.localeCompare(b))
+	categories.sort((a, b) => (a ?? '').localeCompare(b ?? ''))
 	loaders.sort((a, b) => {
 		const aDefault = DEFAULT_LOADER_NAMES.has(a)
 		const bDefault = DEFAULT_LOADER_NAMES.has(b)
 		if (aDefault !== bDefault) return aDefault ? -1 : 1
-		return a.localeCompare(b)
+		return (a ?? '').localeCompare(b ?? '')
 	})
 	return [...categories, ...loaders]
 }

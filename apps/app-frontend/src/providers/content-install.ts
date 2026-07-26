@@ -57,7 +57,7 @@ function sortLoaders(loaders: string[]): string[] {
 	return loaders.slice().sort((a, b) => {
 		const aIdx = LOADER_ORDER.indexOf(a)
 		const bIdx = LOADER_ORDER.indexOf(b)
-		if (aIdx === -1 && bIdx === -1) return a.localeCompare(b)
+		if (aIdx === -1 && bIdx === -1) return (a ?? '').localeCompare(b ?? '')
 		if (aIdx === -1) return 1
 		if (bIdx === -1) return -1
 		return aIdx - bIdx
