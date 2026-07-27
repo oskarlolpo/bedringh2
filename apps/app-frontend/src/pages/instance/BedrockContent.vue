@@ -198,6 +198,7 @@
 										class="accent-brand rounded cursor-pointer"
 										@change="toggleCategory(cat.id)"
 									/>
+									<component :is="cat.icon" v-if="cat.icon" class="h-4 w-4 shrink-0 text-secondary" />
 									<span class="truncate">{{ cat.label }}</span>
 								</label>
 							</div>
@@ -348,7 +349,7 @@
 </template>
 
 <script setup lang="ts">
-import { DownloadIcon, TrashIcon, GlobeIcon } from '@modrinth/assets'
+import { DownloadIcon, TrashIcon, GlobeIcon, getCategoryIcon } from '@modrinth/assets'
 import { ButtonStyled, EmptyState, ReadyTransition, ContentCardLayout, injectNotificationManager, defineMessages, useVIntl } from '@modrinth/ui'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -528,6 +529,49 @@ const messages = defineMessages({
 		id: 'app.bedrock.type-skins',
 		defaultMessage: 'Skins',
 	},
+	catWeaponsArmor: { id: 'app.bedrock.category.weapons-armor', defaultMessage: 'Armor, Tools & Weapons' },
+	catCosmetics: { id: 'app.bedrock.category.cosmetics', defaultMessage: 'Cosmetics' },
+	catDataPacks: { id: 'app.bedrock.category.data-packs', defaultMessage: 'Data Packs' },
+	catFantasy: { id: 'app.bedrock.category.fantasy', defaultMessage: 'Fantasy' },
+	catFood: { id: 'app.bedrock.category.food', defaultMessage: 'Food' },
+	catHorror: { id: 'app.bedrock.category.horror', defaultMessage: 'Horror' },
+	catMagic: { id: 'app.bedrock.category.magic', defaultMessage: 'Magic' },
+	catMaps: { id: 'app.bedrock.category.maps', defaultMessage: 'Maps' },
+	catMobs: { id: 'app.bedrock.category.mobs', defaultMessage: 'Mobs' },
+	catMultiplayer: { id: 'app.bedrock.category.multiplayer', defaultMessage: 'Multiplayer' },
+	catPerformance: { id: 'app.bedrock.category.performance', defaultMessage: 'Performance' },
+	catPlayers: { id: 'app.bedrock.category.players', defaultMessage: 'Players' },
+	catPvp: { id: 'app.bedrock.category.pvp', defaultMessage: 'PvP' },
+	catRealistic: { id: 'app.bedrock.category.realistic', defaultMessage: 'Realistic' },
+	catRoleplay: { id: 'app.bedrock.category.roleplay', defaultMessage: 'Roleplay' },
+	catSimplistic: { id: 'app.bedrock.category.simplistic', defaultMessage: 'Simplistic' },
+	catSkins: { id: 'app.bedrock.category.skins', defaultMessage: 'Skins' },
+	catSurvival: { id: 'app.bedrock.category.survival', defaultMessage: 'Survival' },
+	catTechnology: { id: 'app.bedrock.category.technology', defaultMessage: 'Technology' },
+	catTextures: { id: 'app.bedrock.category.textures', defaultMessage: 'Textures' },
+	catThemed: { id: 'app.bedrock.category.themed', defaultMessage: 'Themed' },
+	catUtility: { id: 'app.bedrock.category.utility', defaultMessage: 'Utility' },
+	catVanillaPlus: { id: 'app.bedrock.category.vanilla-plus', defaultMessage: 'Vanilla+' },
+	catAdventure: { id: 'app.bedrock.category.adventure', defaultMessage: 'Adventure' },
+	catBuilding: { id: 'app.bedrock.category.building', defaultMessage: 'Building' },
+	catCtm: { id: 'app.bedrock.category.ctm', defaultMessage: 'CTM' },
+	catCustomTerrain: { id: 'app.bedrock.category.custom-terrain', defaultMessage: 'Custom Terrain' },
+	catMinigame: { id: 'app.bedrock.category.minigame', defaultMessage: 'Minigame' },
+	catParkour: { id: 'app.bedrock.category.parkour', defaultMessage: 'Parkour' },
+	catPuzzle: { id: 'app.bedrock.category.puzzle', defaultMessage: 'Puzzle' },
+	catRedstone: { id: 'app.bedrock.category.redstone', defaultMessage: 'Redstone' },
+	catRollerCoaster: { id: 'app.bedrock.category.roller-coaster', defaultMessage: 'Roller Coaster' },
+	catGui: { id: 'app.bedrock.category.gui', defaultMessage: 'GUI' },
+	catMiscellaneous: { id: 'app.bedrock.category.miscellaneous', defaultMessage: 'Miscellaneous' },
+	catShaders: { id: 'app.bedrock.category.shaders', defaultMessage: 'Shaders' },
+	cat16x: { id: 'app.bedrock.category.16x', defaultMessage: '16x' },
+	cat32x: { id: 'app.bedrock.category.32x', defaultMessage: '32x' },
+	cat64x: { id: 'app.bedrock.category.64x', defaultMessage: '64x' },
+	cat128x: { id: 'app.bedrock.category.128x', defaultMessage: '128x' },
+	catScripts: { id: 'app.bedrock.category.scripts', defaultMessage: 'Scripts' },
+	catSkinPacks: { id: 'app.bedrock.category.skin-packs', defaultMessage: 'Skin Packs' },
+	catPlayerSkins: { id: 'app.bedrock.category.player-skins', defaultMessage: 'Player Skins' },
+	catMobSkins: { id: 'app.bedrock.category.mob-skins', defaultMessage: 'Mob Skins' },
 })
 
 interface BedrockAddon {
@@ -573,81 +617,81 @@ const browseByTypes = computed(() => [
 ])
 
 // CurseForge Categories by Class ID
-const categoriesMap: Record<number, { id: number; label: string }[]> = {
+const categoriesMap = computed<Record<number, { id: number; label: string; icon?: unknown }[]>>(() => ({
 	4984: [ // Addons
-		{ id: 8834, label: 'Оружие и броня' },
-		{ id: 8825, label: 'Косметика' },
-		{ id: 4992, label: 'Дата-паки' },
-		{ id: 8828, label: 'Фэнтези' },
-		{ id: 8836, label: 'Еда' },
-		{ id: 8833, label: 'Хоррор' },
-		{ id: 8829, label: 'Магия' },
-		{ id: 4986, label: 'Карты' },
-		{ id: 4991, label: 'Мобы' },
-		{ id: 8835, label: 'Мультиплеер' },
-		{ id: 8837, label: 'Производительность' },
-		{ id: 4990, label: 'Игроки' },
-		{ id: 4993, label: 'PvP' },
-		{ id: 4994, label: 'Реализм' },
-		{ id: 8827, label: 'РП (Roleplay)' },
-		{ id: 4995, label: 'Простые' },
-		{ id: 4989, label: 'Скины' },
-		{ id: 8831, label: 'Выживание' },
-		{ id: 8826, label: 'Технологии' },
-		{ id: 4987, label: 'Текстуры' },
-		{ id: 4997, label: 'Тематические' },
-		{ id: 8832, label: 'Утилиты' },
-		{ id: 8830, label: 'Ванилла+' },
+		{ id: 8834, label: formatMessage(messages.catWeaponsArmor), icon: getCategoryIcon('swords') },
+		{ id: 8825, label: formatMessage(messages.catCosmetics), icon: getCategoryIcon('palette') },
+		{ id: 4992, label: formatMessage(messages.catDataPacks), icon: getCategoryIcon('library') },
+		{ id: 8828, label: formatMessage(messages.catFantasy), icon: getCategoryIcon('fantasy') },
+		{ id: 8836, label: formatMessage(messages.catFood), icon: getCategoryIcon('food') },
+		{ id: 8833, label: formatMessage(messages.catHorror), icon: getCategoryIcon('skull') },
+		{ id: 8829, label: formatMessage(messages.catMagic), icon: getCategoryIcon('magic') },
+		{ id: 4986, label: formatMessage(messages.catMaps), icon: getCategoryIcon('map-pinned') },
+		{ id: 4991, label: formatMessage(messages.catMobs), icon: getCategoryIcon('mobs') },
+		{ id: 8835, label: formatMessage(messages.catMultiplayer), icon: getCategoryIcon('multiplayer') },
+		{ id: 8837, label: formatMessage(messages.catPerformance), icon: getCategoryIcon('optimization') },
+		{ id: 4990, label: formatMessage(messages.catPlayers), icon: getCategoryIcon('users') },
+		{ id: 4993, label: formatMessage(messages.catPvp), icon: getCategoryIcon('sword') },
+		{ id: 4994, label: formatMessage(messages.catRealistic), icon: getCategoryIcon('realistic') },
+		{ id: 8827, label: formatMessage(messages.catRoleplay), icon: getCategoryIcon('theater') },
+		{ id: 4995, label: formatMessage(messages.catSimplistic), icon: getCategoryIcon('simplistic') },
+		{ id: 4989, label: formatMessage(messages.catSkins), icon: getCategoryIcon('palette') },
+		{ id: 8831, label: formatMessage(messages.catSurvival), icon: getCategoryIcon('shield') },
+		{ id: 8826, label: formatMessage(messages.catTechnology), icon: getCategoryIcon('technology') },
+		{ id: 4987, label: formatMessage(messages.catTextures), icon: getCategoryIcon('palette') },
+		{ id: 4997, label: formatMessage(messages.catThemed), icon: getCategoryIcon('themed') },
+		{ id: 8832, label: formatMessage(messages.catUtility), icon: getCategoryIcon('utility') },
+		{ id: 8830, label: formatMessage(messages.catVanillaPlus), icon: getCategoryIcon('vanilla-like') },
 	],
 	6913: [ // Maps
-		{ id: 6914, label: 'Приключения' },
-		{ id: 6915, label: 'Строительство' },
-		{ id: 6916, label: 'CTM' },
-		{ id: 6917, label: 'Свой ландшафт' },
-		{ id: 6918, label: 'Мини-игры' },
-		{ id: 6919, label: 'Паркур' },
-		{ id: 6920, label: 'Головоломки' },
-		{ id: 6921, label: 'PvP' },
-		{ id: 6922, label: 'Редстоун' },
-		{ id: 6923, label: 'Американские горки' },
-		{ id: 6924, label: 'Выживание' },
+		{ id: 6914, label: formatMessage(messages.catAdventure), icon: getCategoryIcon('adventure') },
+		{ id: 6915, label: formatMessage(messages.catBuilding), icon: getCategoryIcon('building-2') },
+		{ id: 6916, label: formatMessage(messages.catCtm), icon: getCategoryIcon('blocks') },
+		{ id: 6917, label: formatMessage(messages.catCustomTerrain), icon: getCategoryIcon('tree-pine') },
+		{ id: 6918, label: formatMessage(messages.catMinigame), icon: getCategoryIcon('minigame') },
+		{ id: 6919, label: formatMessage(messages.catParkour), icon: getCategoryIcon('footprints') },
+		{ id: 6920, label: formatMessage(messages.catPuzzle), icon: getCategoryIcon('quests') },
+		{ id: 6921, label: formatMessage(messages.catPvp), icon: getCategoryIcon('sword') },
+		{ id: 6922, label: formatMessage(messages.catRedstone), icon: getCategoryIcon('zap') },
+		{ id: 6923, label: formatMessage(messages.catRollerCoaster), icon: getCategoryIcon('compass') },
+		{ id: 6924, label: formatMessage(messages.catSurvival), icon: getCategoryIcon('shield') },
 	],
 	6929: [ // Texture Packs
-		{ id: 10747, label: 'Интерфейс (GUI)' },
-		{ id: 6930, label: 'Разное' },
-		{ id: 6931, label: 'PvP' },
-		{ id: 6932, label: 'Реализм' },
-		{ id: 6939, label: 'Шейдеры' },
-		{ id: 6933, label: 'Простые' },
-		{ id: 6934, label: 'Тематические' },
-		{ id: 6935, label: '16x' },
-		{ id: 6936, label: '32x' },
-		{ id: 6937, label: '64x' },
-		{ id: 6938, label: '128x' },
+		{ id: 10747, label: formatMessage(messages.catGui), icon: getCategoryIcon('gui') },
+		{ id: 6930, label: formatMessage(messages.catMiscellaneous), icon: getCategoryIcon('kitchen-sink') },
+		{ id: 6931, label: formatMessage(messages.catPvp), icon: getCategoryIcon('sword') },
+		{ id: 6932, label: formatMessage(messages.catRealistic), icon: getCategoryIcon('realistic') },
+		{ id: 6939, label: formatMessage(messages.catShaders), icon: getCategoryIcon('core-shaders') },
+		{ id: 6933, label: formatMessage(messages.catSimplistic), icon: getCategoryIcon('simplistic') },
+		{ id: 6934, label: formatMessage(messages.catThemed), icon: getCategoryIcon('themed') },
+		{ id: 6935, label: formatMessage(messages.cat16x), icon: getCategoryIcon('grid-3x3') },
+		{ id: 6936, label: formatMessage(messages.cat32x), icon: getCategoryIcon('grid-3x3') },
+		{ id: 6937, label: formatMessage(messages.cat64x), icon: getCategoryIcon('grid-3x3') },
+		{ id: 6938, label: formatMessage(messages.cat128x), icon: getCategoryIcon('grid-3x3') },
 	],
 	6940: [ // Scripts
-		{ id: 6941, label: 'Скрипты' },
-		{ id: 8824, label: 'Утилиты' },
+		{ id: 6941, label: formatMessage(messages.catScripts), icon: getCategoryIcon('terminal') },
+		{ id: 8824, label: formatMessage(messages.catUtility), icon: getCategoryIcon('utility') },
 	],
 	6925: [ // Skins
-		{ id: 6928, label: 'Наборы скинов' },
-		{ id: 6927, label: 'Скины игроков' },
-		{ id: 6926, label: 'Скины мобов' },
+		{ id: 6928, label: formatMessage(messages.catSkinPacks), icon: getCategoryIcon('palette') },
+		{ id: 6927, label: formatMessage(messages.catPlayerSkins), icon: getCategoryIcon('users') },
+		{ id: 6926, label: formatMessage(messages.catMobSkins), icon: getCategoryIcon('mobs') },
 	],
-}
+}))
 
 const availableCategories = computed(() => {
-	if (!selectedClassId.value || !categoriesMap[selectedClassId.value]) {
+	if (!selectedClassId.value || !categoriesMap.value[selectedClassId.value]) {
 		// Return combined unique categories if 'All' is selected
-		const allCats: { id: number; label: string }[] = []
-		Object.values(categoriesMap).forEach(cats => {
+		const allCats: { id: number; label: string; icon?: unknown }[] = []
+		Object.values(categoriesMap.value).forEach(cats => {
 			cats.forEach(c => {
 				if (!allCats.some(x => x.id === c.id)) allCats.push(c)
 			})
 		})
 		return allCats
 	}
-	return categoriesMap[selectedClassId.value]
+	return categoriesMap.value[selectedClassId.value]
 })
 
 const curseForgeVersions = ref<string[]>([])

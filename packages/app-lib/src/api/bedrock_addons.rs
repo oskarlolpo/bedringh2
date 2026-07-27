@@ -120,7 +120,7 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
     
     let mut addons = Vec::new();
     
-    for kind in &["behavior_packs", "resource_packs"] {
+    for kind in &["behavior_packs", "resource_packs", "skin_packs"] {
         let packs_dir = base_dir.join(kind);
         if !packs_dir.exists() {
             continue;
@@ -147,10 +147,10 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
             
             if let Ok(content) = fs::read_to_string(&manifest_path).await {
                 if let Ok(manifest) = serde_json::from_str::<BedrockManifest>(&content) {
-                    let kind_str = if kind == &"resource_packs" {
-                        "resource".to_string()
-                    } else {
-                        "behavior".to_string()
+                    let kind_str = match *kind {
+                        "resource_packs" => "resource".to_string(),
+                        "skin_packs" => "skin".to_string(),
+                        _ => "behavior".to_string(),
                     };
                     
                     let ver_vec = parse_version_vec(&manifest.header.version);
@@ -182,9 +182,17 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
     Ok(addons)
 }
 
+fn kind_to_dir(kind: &str) -> &'static str {
+    match kind {
+        "resource" => "resource_packs",
+        "skin" => "skin_packs",
+        _ => "behavior_packs",
+    }
+}
+
 pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_name: &str, enable: bool) -> Result<()> {
     let instance_path = crate::api::profile::get_full_path(profile_path).await?;
-    let kind_dir = if kind == "resource" { "resource_packs" } else { "behavior_packs" };
+    let kind_dir = kind_to_dir(kind);
     let base_dir = instance_path.join("com.mojang").join(kind_dir);
     
     let current_path = base_dir.join(folder_name);
@@ -212,7 +220,7 @@ pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_na
 
 pub async fn delete_bedrock_addon(profile_path: &str, kind: &str, folder_name: &str) -> Result<()> {
     let instance_path = crate::api::profile::get_full_path(profile_path).await?;
-    let kind_dir = if kind == "resource" { "resource_packs" } else { "behavior_packs" };
+    let kind_dir = kind_to_dir(kind);
     let base_dir = instance_path.join("com.mojang").join(kind_dir);
     
     let target_path = base_dir.join(folder_name);
@@ -262,6 +270,38 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
         }
     }
     
+    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let com_mojang = instance_path.join("com.mojang");
+
+    // Figure out the "effective root" of the extracted archive - some archives
+    // (especially world/map downloads) wrap everything in a single top-level folder.
+    let mut effective_root = temp_extract_dir.clone();
+    if let Ok(mut root_entries) = fs::read_dir(&temp_extract_dir).await {
+        let mut items = Vec::new();
+        while let Ok(Some(e)) = root_entries.next_entry().await {
+            items.push(e.path());
+        }
+        if items.len() == 1 && items[0].is_dir() {
+            effective_root = items[0].clone();
+        }
+    }
+
+    // A full world/map (e.g. a CurseForge "Maps" download) has a level.dat at its root
+    // and must be imported into minecraftWorlds, not treated as an installable pack.
+    if fs::metadata(effective_root.join("level.dat")).await.is_ok() {
+        let target_uuid = uuid::Uuid::new_v4().to_string();
+        let out_dir = com_mojang.join("minecraftWorlds").join(&target_uuid);
+        let _ = fs::create_dir_all(&out_dir).await;
+
+        let mut entries = fs::read_dir(&effective_root).await?;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let _ = fs::rename(entry.path(), out_dir.join(entry.file_name())).await;
+        }
+
+        let _ = fs::remove_dir_all(&temp_extract_dir).await;
+        return Ok(());
+    }
+
     // Now scan temp_extract_dir for manifest.json.
     // It can be at root or inside a folder.
     let mut manifests_found = Vec::new();
@@ -279,29 +319,28 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
         }
     }
     
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
-    let com_mojang = instance_path.join("com.mojang");
-    
     for pack_dir in manifests_found {
         let manifest_content = fs::read_to_string(pack_dir.join("manifest.json")).await.unwrap_or_default();
         if let Ok(manifest) = serde_json::from_str::<BedrockManifest>(&manifest_content) {
+            let mut is_skin = fs::metadata(pack_dir.join("skins.json")).await.is_ok();
             let mut is_resource = false;
             if let Some(modules) = &manifest.modules {
                 for m in modules {
                     let t = m.module_type.to_lowercase();
-                    if t.contains("resource") || t.contains("client_data") || t.contains("texture") || t.contains("skin") {
+                    if t.contains("skin_pack") {
+                        is_skin = true;
+                    } else if t.contains("resources") || t.contains("client_data") {
                         is_resource = true;
-                        break;
                     }
                 }
             }
-            if !is_resource {
+            if !is_skin && !is_resource {
                 if pack_dir.join("textures").exists() || pack_dir.join("sounds").exists() || pack_dir.join("ui").exists() || pack_dir.join("attachables").exists() {
                     is_resource = true;
                 }
             }
-            
-            let kind_dir = if is_resource { "resource_packs" } else { "behavior_packs" };
+
+            let kind_dir = if is_skin { "skin_packs" } else if is_resource { "resource_packs" } else { "behavior_packs" };
             let target_base = com_mojang.join(kind_dir);
             let _ = fs::create_dir_all(&target_base).await;
             
@@ -314,9 +353,11 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
             // Move pack_dir to target_path
             let _ = fs::rename(&pack_dir, &target_path).await;
 
-            // Register pack in existing worlds
-            let ver_vec = parse_version_vec(&manifest.header.version);
-            register_pack_in_worlds(&com_mojang, &manifest.header.uuid, &ver_vec, is_resource).await;
+            // Register pack in existing worlds (skin packs aren't referenced per-world)
+            if !is_skin {
+                let ver_vec = parse_version_vec(&manifest.header.version);
+                register_pack_in_worlds(&com_mojang, &manifest.header.uuid, &ver_vec, is_resource).await;
+            }
         }
     }
     
