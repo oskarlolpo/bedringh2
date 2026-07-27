@@ -108,28 +108,22 @@ const {
 } = serverInstallContent
 
 debugLog('fetching tags (categories, loaders, gameVersions)')
-const [categories, loaders, rawBedrockVersions] = await Promise.all([
-	get_categories()
-		.catch(handleError)
-		.then(ref<Labrinth.Tags.v2.Category[]>),
-	get_loaders()
-		.catch(handleError)
-		.then(ref<Labrinth.Tags.v2.Loader[]>),
-	invoke('plugin:bedrock-addons|get_curseforge_minecraft_versions')
-		.catch(() => [])
-		.then((vs: any) =>
-			ref<Labrinth.Tags.v2.GameVersion[]>(
-				(vs || []).map((v: string) => ({
-					version: v,
-					version_type: 'release',
-					date: new Date().toISOString(),
-					major: true,
-				})),
-			),
-		),
+const [categoriesRes, loadersRes, rawBedrockVersionsRes] = await Promise.all([
+	get_categories().catch(() => []),
+	get_loaders().catch(() => []),
+	invoke('plugin:bedrock-addons|get_curseforge_minecraft_versions').catch(() => []),
 ])
 
-const availableGameVersions = rawBedrockVersions
+const categories = ref(categoriesRes)
+const loaders = ref(loadersRes)
+const availableGameVersions = ref<Labrinth.Tags.v2.GameVersion[]>(
+	((rawBedrockVersionsRes as string[]) || []).map((v: string) => ({
+		version: v,
+		version_type: 'release',
+		date: new Date().toISOString(),
+		major: true,
+	})),
+)
 
 const bedrockCategoriesMap = computed<Record<string, any[]>>(() => ({
 	addon: [
@@ -578,6 +572,18 @@ const messages = defineMessages({
 		id: 'app.browse.project-type.resource-packs',
 		defaultMessage: 'Resource Packs',
 	},
+	worldsProjectType: {
+		id: 'app.browse.project-type.worlds',
+		defaultMessage: 'Worlds',
+	},
+	skinsProjectType: {
+		id: 'app.browse.project-type.skins',
+		defaultMessage: 'Skins',
+	},
+	scriptsProjectType: {
+		id: 'app.browse.project-type.scripts',
+		defaultMessage: 'Scripts',
+	},
 })
 
 const breadcrumbs = useBreadcrumbs()
@@ -679,9 +685,9 @@ const selectableProjectTypes = computed(() => {
 	return [
 		{ label: formatMessage(messages.addonsProjectType), href: `/browse/bedrock/addon${suffix}` },
 		{ label: formatMessage(messages.resourcePacksProjectType), href: `/browse/bedrock/resourcepack${suffix}` },
-		{ label: 'Карты', href: `/browse/bedrock/world${suffix}` },
-		{ label: 'Скины', href: `/browse/bedrock/skin${suffix}` },
-		{ label: 'Скрипты', href: `/browse/bedrock/script${suffix}` },
+		{ label: formatMessage(messages.worldsProjectType), href: `/browse/bedrock/world${suffix}` },
+		{ label: formatMessage(messages.skinsProjectType), href: `/browse/bedrock/skin${suffix}` },
+		{ label: formatMessage(messages.scriptsProjectType), href: `/browse/bedrock/script${suffix}` },
 	]
 })
 
@@ -1012,8 +1018,8 @@ async function search(requestParams: string) {
 			const parsed = JSON.parse(facetsStr)
 			for (const group of parsed) {
 				for (const item of group) {
-					if (typeof item === 'string' && item.startsWith('categories:')) {
-						const catVal = item.replace('categories:', '')
+					if (typeof item === 'string' && item.includes('categories:')) {
+						const catVal = item.split(':').pop() || ''
 						const parsedCat = parseInt(catVal)
 						if (!isNaN(parsedCat)) {
 							categoryId = parsedCat
@@ -1026,7 +1032,8 @@ async function search(requestParams: string) {
 	if (!categoryId && params.get('f')) {
 		const fVal = params.get('f')
 		if (fVal?.includes('categories:')) {
-			const parsedCat = parseInt(fVal.split('categories:')[1])
+			const catVal = fVal.split(':').pop() || ''
+			const parsedCat = parseInt(catVal)
 			if (!isNaN(parsedCat)) categoryId = parsedCat
 		}
 	}
@@ -1038,23 +1045,22 @@ async function search(requestParams: string) {
 			for (const group of parsed) {
 				for (const item of group) {
 					if (typeof item === 'string') {
-						if (item.startsWith('versions:')) {
-							gameVersionFilter = item.replace('versions:', '')
-						} else if (item.startsWith('game_versions:')) {
-							gameVersionFilter = item.replace('game_versions:', '')
+						if (item.includes('versions:') || item.includes('game_versions:')) {
+							gameVersionFilter = item.split(':').pop() || null
 						}
 					}
 				}
 			}
 		} catch (e) {}
 	}
-	if (!gameVersionFilter && instance.value?.game_version) {
-		gameVersionFilter = instance.value.game_version
-	}
 
-	const page = parseInt(params.get('page') || '1')
 	const limit = parseInt(params.get('limit') || '20')
-	const offset = (page - 1) * limit
+	let offset = 0
+	if (params.has('offset')) {
+		offset = parseInt(params.get('offset')!)
+	} else if (params.has('page')) {
+		offset = (parseInt(params.get('page')!) - 1) * limit
+	}
 
 	let sortField = 1
 	const indexSort = params.get('index')

@@ -246,15 +246,16 @@ const messages = defineMessages({
 					:title="result.title"
 					:icon-url="result.icon_url"
 					:author="{
-						name: result.organization == null ? result.author : result.organization,
+						name: (result as any).author_details?.name || (result.organization == null ? result.author : result.organization),
 						link:
-							result.organization_id == null
+							(result as any).author_details?.link ||
+							(result.organization_id == null
 								? ctx.variant === 'web'
 									? `/user/${result.author_id ?? result.author}`
 									: `https://modrinth.com/user/${result.author_id ?? result.author}`
 								: ctx.variant === 'web'
 									? `/organization/${result.organization_id}`
-									: `https://modrinth.com/organization/${result.organization_id}`,
+									: `https://modrinth.com/organization/${result.organization_id}`),
 					}"
 					:date-updated="result.date_modified"
 					:date-published="result.date_created"
