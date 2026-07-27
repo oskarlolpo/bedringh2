@@ -7,6 +7,7 @@ import {
 	GlobeIcon,
 	PlusIcon,
 	SpinnerIcon,
+	getCategoryIcon,
 } from '@modrinth/assets'
 import type { BrowseInstallContentType, CardAction, ProjectType, Tags } from '@modrinth/ui'
 import {
