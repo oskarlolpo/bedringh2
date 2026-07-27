@@ -56,7 +56,6 @@ p256 = { workspace = true, features = ["ecdsa"] }
 parking_lot = { workspace = true }
 paste = { workspace = true }
 path-util = { workspace = true }
-pelite = "0.10.0"
 phf = { workspace = true }
 png = { workspace = true }
 quartz_nbt = { workspace = true, features = ["serde"] }
@@ -114,7 +113,6 @@ url = { workspace = true, features = ["serde"] }
 urlencoding.workspace = true
 uuid = { workspace = true, features = ["serde", "v4"] }
 whoami = { workspace = true }
-xmltree = "0.12.0"
 zbus = { workspace = true }
 zip = { workspace = true }
 
