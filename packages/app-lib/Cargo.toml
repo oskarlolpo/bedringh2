@@ -12,7 +12,7 @@ async-minecraft-ping = { workspace = true, features = ["srv"] }
 async-recursion = { workspace = true }
 async-tungstenite = { workspace = true, features = [
   "tokio-runtime",
-  "tokio-rustls-webpki-roots"
+  "tokio-rustls-webpki-roots",
 ] }
 async-walkdir = { workspace = true }
 async_zip = { workspace = true, features = [
@@ -131,7 +131,7 @@ windows = { workspace = true, features = [
   "Win32_System_LibraryLoader",
   "Win32_System_Memory",
   "Win32_System_Threading",
-  "Win32_System_JobObjects"
+  "Win32_System_JobObjects",
 ] }
 windows-core = { workspace = true }
 winreg = { workspace = true }

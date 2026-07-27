@@ -21,3 +21,6 @@ gam = "gam"
 consts = "consts"
 # short for "Copy"
 Cpy = "Cpy"
+# GDK struct field name
+writeable = "writeable"
+
