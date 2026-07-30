@@ -1,19 +1,6 @@
 <template>
 	<ReadyTransition :pending="loading">
 		<ContentCardLayout>
-			<template #empty>
-				<EmptyState
-					v-if="addons.length === 0"
-					icon="boxes"
-					:title="formatMessage(messages.noAddonsInstalled)"
-					:description="formatMessage(messages.noAddonsDesc)"
-				>
-					<ButtonStyled color="brand" @click="installFromFile">
-						<template #icon><DownloadIcon /></template>
-						{{ formatMessage(messages.installAddonBtn) }}
-					</ButtonStyled>
-				</EmptyState>
-			</template>
 			<template #default>
 				<div class="flex items-center justify-between mb-4">
 					<h2 class="text-xl font-bold">{{ formatMessage(messages.bedrockTitle) }}</h2>
@@ -82,7 +69,10 @@
 						<!-- Installed Add-ons List -->
 						<div class="flex flex-col gap-3">
 							<h3 class="font-bold text-lg">{{ formatMessage(messages.installedAddons, { count: addons.length }) }}</h3>
-							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div v-if="addons.length === 0" class="p-6 bg-surface-base rounded-xl border border-surface-2 text-center text-contrast text-sm">
+								{{ formatMessage(messages.noAddonsDesc) }}
+							</div>
+							<div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
 								<div 
 									v-for="addon in addons" 
 									:key="addon.uuid" 

@@ -1009,30 +1009,53 @@ async function search(requestParams: string) {
 	}
 
 	let categoryId: number | null = null
-	const facetsStr = params.get('facets')
-	if (facetsStr) {
+
+	// 1. Check new_filters parameter (Modrinth v3 search format: "categories = '8834'" or "categories IN ['8834']")
+	const newFilters = params.get('new_filters')
+	if (newFilters) {
+		const match = newFilters.match(/categories\s*(?:=|\bIN\b)\s*\[?['"]?(\d+)['"]?\]?/)
+		if (match && match[1]) {
+			const parsed = parseInt(match[1])
+			if (!isNaN(parsed)) categoryId = parsed
+		}
+	}
+
+	// 2. Check f or facets parameter (legacy format: "categories:8834" or "8834")
+	if (!categoryId) {
+		const fVals = params.getAll('f')
+		for (const fVal of fVals) {
+			const match = fVal.match(/(?:categories:)?(\d+)/)
+			if (match && match[1]) {
+				const parsed = parseInt(match[1])
+				if (!isNaN(parsed)) {
+					categoryId = parsed
+					break
+				}
+			}
+		}
+	}
+
+	// 3. Check facets JSON parameter
+	if (!categoryId && params.get('facets')) {
+		const facetsStr = params.get('facets')
 		try {
-			const parsed = JSON.parse(facetsStr)
+			const parsed = JSON.parse(facetsStr!)
 			for (const group of parsed) {
-				for (const item of group) {
-					if (typeof item === 'string' && item.includes('categories:')) {
-						const catVal = item.split(':').pop() || ''
-						const parsedCat = parseInt(catVal)
-						if (!isNaN(parsedCat)) {
-							categoryId = parsedCat
+				const arr = Array.isArray(group) ? group : [group]
+				for (const item of arr) {
+					if (typeof item === 'string') {
+						const match = item.match(/(\d+)/)
+						if (match && match[1]) {
+							const parsedCat = parseInt(match[1])
+							if (!isNaN(parsedCat) && parsedCat > 100) {
+								categoryId = parsedCat
+								break
+							}
 						}
 					}
 				}
 			}
 		} catch (e) {}
-	}
-	if (!categoryId && params.get('f')) {
-		const fVal = params.get('f')
-		if (fVal?.includes('categories:')) {
-			const catVal = fVal.split(':').pop() || ''
-			const parsedCat = parseInt(catVal)
-			if (!isNaN(parsedCat)) categoryId = parsedCat
-		}
 	}
 
 	let gameVersionFilter: string | null = params.get('v') || null
