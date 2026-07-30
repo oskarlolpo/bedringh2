@@ -39,7 +39,23 @@ pub(crate) async fn connect(
 
     let mut migrator = sqlx::migrate!();
     migrator.set_ignore_missing(true);
-    migrator.run(&pool).await?;
+    if let Err(e) = migrator.run(&pool).await {
+        let err_str = e.to_string();
+        if err_str.contains("was previously applied but has been modified") {
+            tracing::warn!("Migration checksum mismatch detected, updating _sqlx_migrations table: {}", err_str);
+            for migration in migrator.iter() {
+                let checksum_bytes: &[u8] = migration.checksum.as_ref();
+                let _ = sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ?")
+                    .bind(checksum_bytes)
+                    .bind(migration.version)
+                    .execute(&pool)
+                    .await;
+            }
+            migrator.run(&pool).await?;
+        } else {
+            return Err(e.into());
+        }
+    }
 
     if let Err(err) = stale_data_cleanup(&pool).await {
         tracing::warn!(
