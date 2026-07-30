@@ -336,11 +336,15 @@ fn main() {
                 "bedrock-addons",
                 InlinedPlugin::new()
                     .commands(&[
+                        "get_curseforge_minecraft_versions",
                         "fetch_bedrock_addons",
+                        "check_bedrock_addon_updates",
                         "set_bedrock_addon_enabled",
                         "delete_bedrock_addon",
                         "install_bedrock_addon_from_file",
                         "search_bedrock_curseforge_addons",
+                        "get_bedrock_curseforge_addon",
+                        "get_bedrock_curseforge_addon_description",
                         "get_bedrock_curseforge_addon_files",
                         "download_and_install_bedrock_curseforge_addon",
                     ])

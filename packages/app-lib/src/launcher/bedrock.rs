@@ -262,11 +262,69 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             }
         }
         use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("cmd")
+        let local_junction_output = std::process::Command::new("cmd")
             .creation_flags(0x08000000)
             .arg("/c")
             .raw_arg(format!("mklink /J \"{}\" \"{}\"", local_mojang.display(), instance_mojang.display()))
             .output();
+
+        match local_junction_output {
+            Ok(out) if out.status.success() => {
+                emit_legacy_log(&profile.path, &format!("Local GDK data junction mounted: {}", local_mojang.display()));
+            }
+            Ok(out) => {
+                let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                let out_msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                emit_legacy_log(
+                    &profile.path,
+                    &format!(
+                        "WARNING: Failed to mount local GDK data junction ({}): {} {}. Installed content may not be visible in-game.",
+                        local_mojang.display(), err_msg, out_msg
+                    ),
+                );
+            }
+            Err(e) => {
+                emit_legacy_log(
+                    &profile.path,
+                    &format!(
+                        "WARNING: Failed to run mklink for local GDK data junction ({}): {}. Installed content may not be visible in-game.",
+                        local_mojang.display(), e
+                    ),
+                );
+            }
+        }
+
+        // Verify the junction actually resolves to our instance folder before proceeding;
+        // if it doesn't, retry once after a fresh cleanup pass.
+        let junction_ok = std::fs::symlink_metadata(&local_mojang)
+            .map(|m| (m.file_attributes() & 0x00000400) != 0)
+            .unwrap_or(false);
+        if !junction_ok {
+            emit_legacy_log(
+                &profile.path,
+                &format!(
+                    "WARNING: Local GDK data junction verification failed at {} - retrying once.",
+                    local_mojang.display()
+                ),
+            );
+            let _ = fs::remove_dir_all(&local_mojang).await;
+            let retry_output = std::process::Command::new("cmd")
+                .creation_flags(0x08000000)
+                .arg("/c")
+                .raw_arg(format!("mklink /J \"{}\" \"{}\"", local_mojang.display(), instance_mojang.display()))
+                .output();
+            match retry_output {
+                Ok(out) if out.status.success() => {
+                    emit_legacy_log(&profile.path, "Local GDK data junction mounted on retry.");
+                }
+                _ => {
+                    emit_legacy_log(
+                        &profile.path,
+                        "ERROR: Local GDK data junction could not be mounted after retry. Installed content will NOT appear in-game for this launch.",
+                    );
+                }
+            }
+        }
     }
 
     let mojang_dir = target_games_dir.join("com.mojang");
@@ -336,15 +394,20 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     emit_legacy_log(&profile.path, "Starting Minecraft Bedrock launch sequence...");
 
-    if let Some(exe_path) = exe_path_to_inject {
+    let target_exe_path = if exe_path.exists() {
+        Some(exe_path.clone())
+    } else {
+        exe_path_to_inject
+    };
+
+    if let Some(exe_path) = target_exe_path {
         let exe_dir = exe_path.parent().unwrap();
-        // Deploy xgameruntime.dll unconditionally for all GDK launches so Gaming Runtime is available
-        let xgameruntime_bytes = include_bytes!("../../assets/unlocker/gdk/xgameruntime.dll");
+        // Deploy xgameruntime.dll unconditionally for all launches so Gaming Runtime is available
         let xgameruntime_path = exe_dir.join("xgameruntime.dll");
         if !xgameruntime_path.exists() {
-            emit_legacy_log(&profile.path, "Deploying xgameruntime.dll...");
-            if let Err(e) = fs::write(&xgameruntime_path, xgameruntime_bytes.as_slice()).await {
-                tracing::warn!("Failed to write xgameruntime.dll: {}", e);
+            emit_legacy_log(&profile.path, "Downloading xgameruntime.dll from GitHub releases...");
+            if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("xgameruntime.dll", &xgameruntime_path).await {
+                tracing::error!("Failed to download xgameruntime.dll: {}", e);
             }
         }
 
@@ -352,10 +415,11 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let injector_name = "BLoader.dll";
         let injector_target_path = exe_dir.join(injector_name);
 
-        let injector_bytes = include_bytes!("../../assets/BLoader.dll");
         if !injector_target_path.exists() {
-            emit_legacy_log(&profile.path, "Deploying BLoader.dll...");
-            fs::write(&injector_target_path, injector_bytes).await?;
+            emit_legacy_log(&profile.path, "Downloading BLoader.dll from GitHub releases...");
+            if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("BLoader.dll", &injector_target_path).await {
+                tracing::error!("Failed to download BLoader.dll: {}", e);
+            }
         }
 
         // Apply permissions required for game to run outside AppContainer
@@ -396,28 +460,23 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             .copied()
             .unwrap_or(false);
 
-        let gdk_unlocker_files = vec![
-            ("winmm.dll", include_bytes!("../../assets/unlocker/gdk/winmm.dll").as_slice()),
-            ("OnlineFix64.dll", include_bytes!("../../assets/unlocker/gdk/OnlineFix64.dll").as_slice()),
-            ("dlllist.txt", include_bytes!("../../assets/unlocker/gdk/dlllist.txt").as_slice()),
-            ("OnlineFix.ini", include_bytes!("../../assets/unlocker/gdk/OnlineFix.ini").as_slice()),
-        ];
+        let gdk_unlocker_files = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini"];
 
         let mods_list: Vec<String> = Vec::new();
 
         if gdk_unlocker_enabled {
             emit_legacy_log(&profile.path, "Applying GDK Unlocker file changes (Enable)...");
-            for (file_name, file_bytes) in &gdk_unlocker_files {
+            for file_name in &gdk_unlocker_files {
                 let dest = exe_dir.join(file_name);
                 if !dest.exists() {
-                    if let Err(e) = fs::write(&dest, *file_bytes).await {
-                        tracing::warn!("Failed to write GDK unlocker file {}: {}", file_name, e);
+                    emit_legacy_log(&profile.path, &format!("Downloading {} from GitHub releases...", file_name));
+                    if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll(file_name, &dest).await {
+                        tracing::warn!("Failed to download GDK unlocker file {}: {}", file_name, e);
                     }
                 }
             }
-            // winmm.dll proxy loads OnlineFix64.dll via dlllist.txt, no need to inject via preloader.json mods_list
-            // mods_list.push("OnlineFix64.dll".to_string());
-            
+            // Re-apply permissions to newly downloaded unlocker files
+            let _ = crate::launcher::inject::grant_all_application_packages_access(exe_dir).await;
         } else {
             let files_to_remove = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "winmm.dll.old", "OnlineFix64.dll.old"];
             for f in &files_to_remove {
@@ -589,7 +648,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 }
 
 pub async fn sync_bedrock_custom_skin_pack(mojang_dir: &std::path::Path) -> Result<()> {
-    use crate::api::minecraft_skins::get_available_skins;
+    use crate::api::minecraft_skins::{get_available_skins, SkinSource};
     use futures::TryStreamExt;
 
     let skins = match get_available_skins().await {
@@ -597,45 +656,70 @@ pub async fn sync_bedrock_custom_skin_pack(mojang_dir: &std::path::Path) -> Resu
         Err(_) => return Ok(()),
     };
 
-    let active_skin = match skins.into_iter().find(|s| s.is_equipped) {
-        Some(s) => s,
-        None => return Ok(()),
-    };
+    let mut custom_skins: Vec<_> = skins.into_iter().filter(|s| matches!(s.source, SkinSource::Custom | SkinSource::CustomExternal)).collect();
+    if custom_skins.is_empty() {
+        return Ok(());
+    }
 
-    let texture_stream = match crate::api::minecraft_skins::png_util::url_to_data_stream(&active_skin.texture).await {
-        Ok(stream) => stream,
-        Err(_) => return Ok(()),
-    };
-
-    let texture_data = match texture_stream
-        .try_fold(Vec::new(), |mut texture, chunk| async move {
-            texture.extend_from_slice(&chunk);
-            Ok(texture)
-        })
-        .await
-    {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(()),
-    };
+    if let Some(pos) = custom_skins.iter().position(|s| s.is_equipped) {
+        let equipped = custom_skins.remove(pos);
+        custom_skins.insert(0, equipped);
+    }
 
     let skin_pack_dir = mojang_dir.join("skin_packs").join("launcher_custom_skin");
     let texts_dir = skin_pack_dir.join("texts");
     let _ = fs::create_dir_all(&texts_dir).await;
 
-    let is_slim = matches!(
-        active_skin.variant,
-        crate::state::MinecraftSkinVariant::Slim
-    );
-    let geometry = if is_slim {
-        "geometry.humanoid.customSlim"
-    } else {
-        "geometry.humanoid.custom"
-    };
+    let mut skin_entries = Vec::new();
+    let mut lang_content = String::from("skinpack.launcher_custom_skin=Launcher Custom Skins\n");
+
+    for (idx, skin) in custom_skins.iter().enumerate() {
+        let texture_stream = match crate::api::minecraft_skins::png_util::url_to_data_stream(&skin.texture).await {
+            Ok(stream) => stream,
+            Err(_) => continue,
+        };
+
+        let texture_data = match texture_stream
+            .try_fold(Vec::new(), |mut texture, chunk| async move {
+                texture.extend_from_slice(&chunk);
+                Ok(texture)
+            })
+            .await
+        {
+            Ok(bytes) => bytes,
+            Err(_) => continue,
+        };
+
+        let texture_filename = format!("skin_{}.png", idx);
+        let loc_name = format!("Custom Skin {}", idx + 1);
+
+        let is_slim = matches!(skin.variant, crate::state::MinecraftSkinVariant::Slim);
+        let geometry = if is_slim {
+            "geometry.humanoid.customSlim"
+        } else {
+            "geometry.humanoid.custom"
+        };
+
+        let _ = fs::write(skin_pack_dir.join(&texture_filename), texture_data).await;
+
+        skin_entries.push(serde_json::json!({
+            "localization_name": loc_name,
+            "geometry": geometry,
+            "texture": texture_filename,
+            "type": "free"
+        }));
+
+        lang_content.push_str(&format!("skin.launcher_custom_skin.{}={}\n", loc_name, loc_name));
+    }
+
+    if skin_entries.is_empty() {
+        return Ok(());
+    }
 
     let manifest_json = serde_json::json!({
         "format_version": 1,
         "header": {
-            "name": "Launcher Custom Skin",
+            "name": "Launcher Custom Skins",
             "uuid": "4c94b7a1-8d23-4e8b-b8f1-34e8921a92a1",
             "version": [1, 0, 0]
         },
@@ -651,21 +735,11 @@ pub async fn sync_bedrock_custom_skin_pack(mojang_dir: &std::path::Path) -> Resu
     let skins_json = serde_json::json!({
         "serialize_name": "launcher_custom_skin",
         "localization_name": "launcher_custom_skin",
-        "skins": [
-            {
-                "localization_name": "Active Skin",
-                "geometry": geometry,
-                "texture": "skin.png",
-                "type": "free"
-            }
-        ]
+        "skins": skin_entries
     });
-
-    let lang_content = "skinpack.launcher_custom_skin=Launcher Custom Skin\nskin.launcher_custom_skin.Active Skin=Active Skin\n";
 
     let _ = fs::write(skin_pack_dir.join("manifest.json"), serde_json::to_string_pretty(&manifest_json).unwrap()).await;
     let _ = fs::write(skin_pack_dir.join("skins.json"), serde_json::to_string_pretty(&skins_json).unwrap()).await;
-    let _ = fs::write(skin_pack_dir.join("skin.png"), texture_data).await;
     let _ = fs::write(texts_dir.join("en_US.lang"), lang_content).await;
 
     Ok(())

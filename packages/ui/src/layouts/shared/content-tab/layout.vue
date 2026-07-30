@@ -723,7 +723,7 @@ const confirmUnlinkModal = ref<InstanceType<typeof ConfirmUnlinkModal>>()
 									class="cursor-pointer rounded-full border border-solid px-3 py-1.5 text-base font-semibold leading-5 transition-all duration-100 active:scale-[0.97]"
 									:class="
 										selectedFilters.length === 0
-											? 'border-green bg-brand-highlight text-brand'
+											? 'border-brand bg-brand-highlight text-brand'
 											: 'border-surface-5 bg-surface-4 text-primary hover:bg-surface-5'
 									"
 									:aria-pressed="selectedFilters.length === 0"
@@ -737,7 +737,7 @@ const confirmUnlinkModal = ref<InstanceType<typeof ConfirmUnlinkModal>>()
 									class="cursor-pointer rounded-full border border-solid px-3 py-1.5 text-base font-semibold leading-5 transition-all duration-100 active:scale-[0.97]"
 									:class="
 										selectedFilters.includes(option.id)
-											? 'border-green bg-brand-highlight text-brand'
+											? 'border-brand bg-brand-highlight text-brand'
 											: 'border-surface-5 bg-surface-4 text-primary hover:bg-surface-5'
 									"
 									:aria-pressed="selectedFilters.includes(option.id)"
@@ -785,7 +785,7 @@ const confirmUnlinkModal = ref<InstanceType<typeof ConfirmUnlinkModal>>()
 
 								<ButtonStyled
 									v-if="hasBulkUpdateSupport && hasOutdatedProjects"
-									color="green"
+									color="brand"
 									type="transparent"
 									color-fill="text"
 									hover-color-fill="background"
@@ -901,7 +901,7 @@ const confirmUnlinkModal = ref<InstanceType<typeof ConfirmUnlinkModal>>()
 				<ButtonStyled
 					v-if="hasBulkUpdateSupport && selectedItems.some((m) => m.has_update)"
 					type="transparent"
-					color="green"
+					color="brand"
 					color-fill="text"
 					hover-color-fill="background"
 				>

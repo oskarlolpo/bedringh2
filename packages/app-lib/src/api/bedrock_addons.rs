@@ -442,6 +442,27 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
     // A full world/map (e.g. a CurseForge "Maps" download) has a level.dat at its root
     // and must be imported into minecraftWorlds, not treated as an installable pack.
     if fs::metadata(effective_root.join("level.dat")).await.is_ok() {
+        // Verify this is actually a loadable save (has a non-empty LevelDB db/ folder)
+        // before we accept it - otherwise the launcher would show a "world" that
+        // Minecraft itself silently refuses to load, with no visible error anywhere.
+        let db_dir = effective_root.join("db");
+        let mut has_db_contents = false;
+        if let Ok(mut db_entries) = fs::read_dir(&db_dir).await {
+            if let Ok(Some(_)) = db_entries.next_entry().await {
+                has_db_contents = true;
+            }
+        }
+        if !has_db_contents {
+            let _ = fs::remove_dir_all(&temp_extract_dir).await;
+            return Err(ErrorKind::OtherError(
+                "This download looks like a world/map but its 'db' save-data folder is missing or empty. \
+                 The file is likely incomplete, corrupted, or not a real world export - it will not be \
+                 loadable in Minecraft even though it would otherwise appear installed."
+                    .to_string(),
+            )
+            .into());
+        }
+
         let target_uuid = uuid::Uuid::new_v4().to_string();
         let out_dir = com_mojang.join("minecraftWorlds").join(&target_uuid);
         let _ = fs::create_dir_all(&out_dir).await;

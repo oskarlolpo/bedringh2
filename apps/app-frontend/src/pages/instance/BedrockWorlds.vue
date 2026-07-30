@@ -51,8 +51,17 @@
 					</div>
 					
 					<div class="p-4 flex flex-col gap-1.5 flex-1">
-						<div class="font-bold text-base text-primary truncate" :title="world.name">
-							{{ world.name }}
+						<div class="flex items-center gap-1.5">
+							<div class="font-bold text-base text-primary truncate" :title="world.name">
+								{{ world.name }}
+							</div>
+							<span
+								v-if="world.isValid === false"
+								class="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/15 text-red-400"
+								title="В этой папке нет рабочих данных сохранения (db/) - Minecraft не сможет загрузить этот мир, даже если он отображается здесь"
+							>
+								Повреждён
+							</span>
 						</div>
 						<div class="text-xs text-secondary flex items-center gap-1">
 							<span>Последняя игра: {{ formatDate(world.lastPlayed) }}</span>

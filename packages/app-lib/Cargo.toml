@@ -84,7 +84,7 @@ sevenz-rust = "0.6.1"
 sha1_smol = { workspace = true }
 sha2 = { workspace = true }
 shlex = { workspace = true }
-sqlx = { workspace = true, features = [
+sqlx = { version = "0.8.6", default-features = false, features = [
   "json",
   "macros",
   "migrate",

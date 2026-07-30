@@ -169,33 +169,56 @@ pub async fn check_and_install_gameinput(loading_bar: &LoadingBarId) -> crate::R
 
     let _ = emit_loading(loading_bar, 0.0, Some("Установка GameInput Runtime... (разрешите UAC)"));
 
-    // Execute MSI silently, but requiring elevation (msiexec will prompt UAC)
+    // Execute MSI with explicit elevation. msiexec does NOT auto-elevate just
+    // because it's msiexec - when spawned as a direct child process (as opposed
+    // to via the shell/explorer), it inherits our own process token. If Bedrin
+    // itself isn't running elevated, msiexec silently fails to write to
+    // protected locations (C:\Windows\Installer, Program Files, HKLM) with
+    // exactly Windows Installer errors 2502/2503. Route through
+    // `Start-Process -Verb RunAs` (the same elevation pattern already used by
+    // auto_enable_developer_mode above) so the user gets a real UAC prompt and
+    // the install actually has the rights it needs.
+    let msi_path_str = msi_path.to_string_lossy().to_string();
+    let ps_command = format!(
+        "$p = Start-Process msiexec -ArgumentList '/i \"{}\" /qb /norestart' -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
+        msi_path_str.replace('\'', "''")
+    );
     let msi_install_output = tokio::task::spawn_blocking(move || {
-        Command::new("msiexec")
-            .args(&[
-                "/i",
-                &msi_path.to_string_lossy(),
-                "/qb",
-                "/norestart"
-            ])
+        Command::new("powershell")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .args(&["-NoProfile", "-Command", &ps_command])
             .output()
     }).await;
 
-    if let Ok(Ok(out)) = msi_install_output {
-        if !out.status.success() {
+    match msi_install_output {
+        Ok(Ok(out)) if out.status.success() => Ok(()),
+        Ok(Ok(out)) => {
             warn!("GameInput install failed. Code: {}, STDERR: {}", out.status, String::from_utf8_lossy(&out.stderr));
-            return Err(ErrorKind::LauncherError("Отказ при установке GameInput Runtime.".into()).into());
+            Err(ErrorKind::LauncherError(format!(
+                "Отказ при установке GameInput Runtime (код {}). Либо UAC-запрос был отклонён, либо установщику не хватило прав даже с повышением - попробуйте установить GameInputRedist.msi вручную от имени администратора.",
+                out.status
+            )).into())
         }
+        Ok(Err(e)) => Err(ErrorKind::LauncherError(format!(
+            "Не удалось запустить установщик GameInput Runtime: {e}"
+        )).into()),
+        Err(e) => Err(ErrorKind::LauncherError(format!(
+            "Внутренняя ошибка при установке GameInput Runtime: {e}"
+        )).into()),
     }
-
-    Ok(())
 }
 
 pub async fn download_fallback_dll(filename: &str, target_path: &std::path::Path) -> crate::Result<()> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("BedringhLauncher")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let urls = [
-        format!("https://github.com/bedrock-repacker/unlocker-dlls/releases/latest/download/{}", filename),
-        format!("https://raw.githubusercontent.com/bedrock-repacker/unlocker-dlls/main/{}", filename),
+        format!("https://github.com/oskarlolpo/bedrock-repacker/releases/download/unlocker-dlls/{}", filename),
+        format!("https://github.com/oskarlolpo/unlocker-dlls/releases/latest/download/{}", filename),
+        format!("https://raw.githubusercontent.com/oskarlolpo/unlocker-dlls/main/{}", filename),
+        format!("https://github.com/oskarlolpo/bedrock-repacker/releases/latest/download/{}", filename),
+        format!("https://raw.githubusercontent.com/oskarlolpo/bedrock-repacker/main/{}", filename),
     ];
 
     for url in &urls {

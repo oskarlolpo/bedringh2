@@ -186,21 +186,21 @@
 								<span>{{ formatMessage(messages.categories) }}</span>
 							</div>
 							<div class="flex flex-col gap-1 max-h-[220px] overflow-y-auto pr-1">
-								<label 
+								<div 
 									v-for="cat in availableCategories" 
-									:key="cat.id ?? 'all'"
-									class="flex items-center gap-2 text-xs cursor-pointer py-1 px-2 rounded-lg transition-colors hover:bg-surface-2"
+									:key="cat.id"
+									class="flex items-center gap-2 text-xs cursor-pointer py-1 px-2 rounded-lg transition-colors hover:bg-surface-2 select-none"
 									:class="{ 'bg-surface-2 font-semibold text-brand': selectedCategoryId === cat.id }"
+									@click="toggleCategory(cat.id)"
 								>
 									<input 
 										type="checkbox"
 										:checked="selectedCategoryId === cat.id"
-										class="accent-brand rounded cursor-pointer"
-										@change="toggleCategory(cat.id)"
+										class="accent-brand rounded cursor-pointer pointer-events-none"
 									/>
 									<component :is="cat.icon" v-if="cat.icon" class="h-4 w-4 shrink-0 text-secondary" />
 									<span class="truncate">{{ cat.label }}</span>
-								</label>
+								</div>
 							</div>
 						</div>
 
@@ -626,7 +626,6 @@ const categoriesMap = computed<Record<number, { id: number; label: string; icon?
 		{ id: 8836, label: formatMessage(messages.catFood), icon: getCategoryIcon('food') },
 		{ id: 8833, label: formatMessage(messages.catHorror), icon: getCategoryIcon('skull') },
 		{ id: 8829, label: formatMessage(messages.catMagic), icon: getCategoryIcon('magic') },
-		{ id: 4986, label: formatMessage(messages.catMaps), icon: getCategoryIcon('map-pinned') },
 		{ id: 4991, label: formatMessage(messages.catMobs), icon: getCategoryIcon('mobs') },
 		{ id: 8835, label: formatMessage(messages.catMultiplayer), icon: getCategoryIcon('multiplayer') },
 		{ id: 8837, label: formatMessage(messages.catPerformance), icon: getCategoryIcon('optimization') },
@@ -635,10 +634,8 @@ const categoriesMap = computed<Record<number, { id: number; label: string; icon?
 		{ id: 4994, label: formatMessage(messages.catRealistic), icon: getCategoryIcon('realistic') },
 		{ id: 8827, label: formatMessage(messages.catRoleplay), icon: getCategoryIcon('theater') },
 		{ id: 4995, label: formatMessage(messages.catSimplistic), icon: getCategoryIcon('simplistic') },
-		{ id: 4989, label: formatMessage(messages.catSkins), icon: getCategoryIcon('palette') },
 		{ id: 8831, label: formatMessage(messages.catSurvival), icon: getCategoryIcon('shield') },
 		{ id: 8826, label: formatMessage(messages.catTechnology), icon: getCategoryIcon('technology') },
-		{ id: 4987, label: formatMessage(messages.catTextures), icon: getCategoryIcon('palette') },
 		{ id: 4997, label: formatMessage(messages.catThemed), icon: getCategoryIcon('themed') },
 		{ id: 8832, label: formatMessage(messages.catUtility), icon: getCategoryIcon('utility') },
 		{ id: 8830, label: formatMessage(messages.catVanillaPlus), icon: getCategoryIcon('vanilla-like') },

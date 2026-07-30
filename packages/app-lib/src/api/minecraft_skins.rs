@@ -333,6 +333,16 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
         .as_ref()
         .and_then(PendingEffectiveSkinChange::skin);
 
+    let top_custom_skin = if online_profile.is_none() && pending_skin.is_none() && !pending_unequip {
+        if let Ok(mut stream) = CustomMinecraftSkin::get_all(profile_id, &state.pool).await {
+            stream.next().await
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let fallback_default_skin = get_fallback_default_skin()?;
     let current_skin_texture_key = pending_skin.as_ref().map_or_else(
         || {
@@ -340,6 +350,8 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
                 Arc::clone(&fallback_default_skin.texture_key)
             } else if let Some(current_skin) = current_skin {
                 current_skin.texture_key()
+            } else if let Some(ref top) = top_custom_skin {
+                Arc::from(top.texture_key.as_str())
             } else {
                 Arc::clone(&fallback_default_skin.texture_key)
             }
@@ -352,6 +364,8 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
                 fallback_default_skin.variant
             } else if let Some(current_skin) = current_skin {
                 current_skin.variant
+            } else if let Some(ref top) = top_custom_skin {
+                top.variant
             } else {
                 fallback_default_skin.variant
             }
@@ -363,6 +377,8 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
             None
         } else if current_skin.is_some() {
             current_cape_id
+        } else if let Some(ref top) = top_custom_skin {
+            top.cape_id
         } else {
             None
         },

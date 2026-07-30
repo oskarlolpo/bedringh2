@@ -262,13 +262,40 @@ pub async fn download_single_file(
                                 .await?;
                         file.seek(SeekFrom::Start(start)).await?;
 
-                        while let Some(chunk) =
-                            resp.chunk().await.map_err(|e| {
-                                crate::Error::from(ErrorKind::FetchError(e))
-                            })?
-                        {
-                            file.write_all(&chunk).await?;
-                            let _ = tx.send(chunk.len() as f64).await;
+                        // If the connection drops mid-stream (common with several
+                        // parallel Range requests hitting a bare github.com redirect
+                        // URL), retry the whole chunk instead of failing the entire
+                        // download outright - a mid-stream error here used to
+                        // propagate immediately via `?` with no retry at all.
+                        let mut stream_failed = false;
+                        let mut bytes_written_this_attempt: u64 = 0;
+                        loop {
+                            match resp.chunk().await {
+                                Ok(Some(chunk)) => {
+                                    file.write_all(&chunk).await?;
+                                    bytes_written_this_attempt += chunk.len() as u64;
+                                    let _ = tx.send(chunk.len() as f64).await;
+                                }
+                                Ok(None) => break,
+                                Err(e) => {
+                                    if attempts >= 3 {
+                                        return Err(crate::Error::from(
+                                            ErrorKind::FetchError(e),
+                                        ));
+                                    }
+                                    stream_failed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if stream_failed {
+                            // Undo progress we already reported for this failed
+                            // attempt so the bar doesn't over-count on retry.
+                            let _ = tx.send(-(bytes_written_this_attempt as f64)).await;
+                            file.seek(SeekFrom::Start(start)).await?;
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            continue;
                         }
                         break;
                     }

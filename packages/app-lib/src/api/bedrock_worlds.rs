@@ -12,6 +12,7 @@ pub struct BedrockWorld {
     pub size_bytes: u64,
     pub last_played: u64,
     pub icon_path: Option<String>,
+    pub is_valid: bool,
 }
 
 pub async fn list_bedrock_worlds(profile_path: &str) -> Result<Vec<BedrockWorld>> {
@@ -74,12 +75,26 @@ pub async fn list_bedrock_worlds(profile_path: &str) -> Result<Vec<BedrockWorld>
             }
         }
         
+        // Minecraft requires a real LevelDB database (db/ folder with actual chunk
+        // files) to load a world - levelname.txt/world_icon.jpeg are purely cosmetic
+        // and their presence alone does NOT mean the world is actually loadable in-game.
+        let db_dir = path.join("db");
+        let has_level_dat = fs::metadata(path.join("level.dat")).await.is_ok();
+        let mut has_db_contents = false;
+        if let Ok(mut db_entries) = fs::read_dir(&db_dir).await {
+            if let Ok(Some(_)) = db_entries.next_entry().await {
+                has_db_contents = true;
+            }
+        }
+        let is_valid = has_level_dat && has_db_contents;
+
         worlds.push(BedrockWorld {
             folder_name,
             name,
             size_bytes,
             last_played,
             icon_path: icon_str,
+            is_valid,
         });
     }
     

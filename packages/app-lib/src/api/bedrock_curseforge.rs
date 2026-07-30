@@ -203,15 +203,55 @@ pub async fn get_addon_files(mod_id: i32) -> crate::Result<Vec<CurseForgeFile>> 
     Ok(resp.data)
 }
 
+fn build_download_client() -> &'static Client {
+    static DOWNLOAD_CLIENT: OnceLock<Client> = OnceLock::new();
+    DOWNLOAD_CLIENT.get_or_init(|| {
+        // Deliberately NOT reusing build_http_client() here: that client attaches
+        // an `x-api-key` header meant for api.curseforge.com. edge.forgecdn.net is a
+        // separate CDN host that doesn't expect that header, and sending it can
+        // cause the CDN/WAF to reject the request or return a non-file response,
+        // which then fails further down as a confusing "error decoding response body".
+        Client::builder()
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap()
+    })
+}
+
 pub async fn download_addon(url: &str) -> crate::Result<String> {
-    let client = build_http_client();
-    let resp = client.get(url).send().await?;
-    let bytes = resp.bytes().await?;
-    
+    let client = build_download_client();
+    let resp = client.get(url).send().await.map_err(|e| {
+        crate::ErrorKind::OtherError(format!(
+            "Failed to reach CurseForge CDN for download: {e}. The file host (edge.forgecdn.net) may be temporarily unavailable, or this download requires opening the mod's CurseForge page directly."
+        ))
+    })?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(crate::ErrorKind::OtherError(format!(
+            "CurseForge CDN returned an error status ({status}) while downloading the file. \
+             This can happen if the file was removed, or if the mod author has disabled third-party/direct downloads for this file."
+        ))
+        .into());
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| {
+        crate::ErrorKind::OtherError(format!(
+            "Failed to read the downloaded file's contents: {e}. The download may have been interrupted or the CDN returned an incomplete response."
+        ))
+    })?;
+
+    if bytes.is_empty() {
+        return Err(crate::ErrorKind::OtherError(
+            "CurseForge CDN returned an empty file body.".to_string(),
+        )
+        .into());
+    }
+
     let temp_dir = std::env::temp_dir().join("bedringh");
     tokio::fs::create_dir_all(&temp_dir).await?;
     let file_path = temp_dir.join(format!("{}.mcpack", uuid::Uuid::new_v4()));
-    
+
     tokio::fs::write(&file_path, bytes).await?;
     Ok(file_path.to_string_lossy().to_string())
 }

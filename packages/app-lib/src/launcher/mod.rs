@@ -322,6 +322,10 @@ pub async fn install_minecraft(
             };
 
             let filename = format!("bedrock-{}.{}", profile.game_version, extension);
+            let download_client = reqwest::Client::builder()
+                .user_agent("bedringh-launcher/1.0")
+                .build()
+                .unwrap_or_default();
             let downloaded_file =
                 crate::util::bedrock_fetch::download_bedrock_package(
                     &bedrock_version.identifier,
@@ -329,7 +333,7 @@ pub async fn install_minecraft(
                     &profile.name,
                     &profile.path,
                     &loading_bar,
-                    &reqwest::Client::new(),
+                    &download_client,
                     repairing,
                 )
                 .await?;
