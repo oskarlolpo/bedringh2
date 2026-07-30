@@ -31,34 +31,51 @@ use windows::core::{PCSTR, PWSTR};
 
 pub type InjectProgressCb = Arc<dyn Fn(String) + Send + Sync>;
 
-// 在你的启动器代码中修改
 pub async fn grant_all_application_packages_access(path: &Path) -> Result<()> {
-    // S-1-15-2-1: All Application Packages (所有应用程序包)
-    // S-1-5-32-545: Users (普通用户组)
+    // S-1-15-2-1: All Application Packages
+    // S-1-5-32-545: Users
 
-    let marker = path.join(".perms_applied");
-    if marker.exists() {
+    if !path.exists() {
         return Ok(());
     }
 
-    let output = tokio::process::Command::new("icacls")
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+    let is_dir = path.is_dir();
+    if is_dir {
+        let marker = path.join(".perms_applied");
+        if marker.exists() {
+            return Ok(());
+        }
+    }
+
+    let (perm1, perm2) = if is_dir {
+        ("*S-1-15-2-1:(OI)(CI)M", "*S-1-5-32-545:(OI)(CI)F")
+    } else {
+        ("*S-1-15-2-1:M", "*S-1-5-32-545:F")
+    };
+
+    let mut cmd = tokio::process::Command::new("icacls");
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
         .arg(path)
         .arg("/grant")
-        .arg("*S-1-15-2-1:(OI)(CI)M") // [安全修复] 降级为 Modify (M)，游戏只需读写，不需要完全控制
+        .arg(perm1)
         .arg("/grant")
-        .arg("*S-1-5-32-545:(OI)(CI)F") // [Bug修复] 给予用户组 Full (F) 权限，确保用户可以手动删除文件
-        .arg("/T") // 递归应用到子文件
-        .arg("/Q") // 静默模式
+        .arg(perm2);
+
+    if is_dir {
+        cmd.arg("/T");
+    }
+
+    let output = cmd
+        .arg("/Q")
         .output()
         .await
         .map_err(|e| eyre::eyre!("Failed to execute icacls: {}", e))?;
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        // 记录警告但不中断流程
         eprintln!("Warning: icacls warning for {:?}: {}", path, err);
-    } else {
+    } else if is_dir {
+        let marker = path.join(".perms_applied");
         let _ = tokio::fs::write(&marker, "").await;
     }
     Ok(())

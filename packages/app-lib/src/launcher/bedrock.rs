@@ -410,6 +410,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 tracing::error!("Failed to download xgameruntime.dll: {}", e);
             }
         }
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&xgameruntime_path).await;
 
         // BLoader is required for all launches unconditionally
         let injector_name = "BLoader.dll";
@@ -421,6 +422,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 tracing::error!("Failed to download BLoader.dll: {}", e);
             }
         }
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&injector_target_path).await;
 
         // Apply permissions required for game to run outside AppContainer
         emit_legacy_log(&profile.path, "Granting application package access permissions...");
