@@ -112,6 +112,7 @@ impl ProcessManager {
         post_process_init: impl AsyncFnOnce(
             &ProcessMetadata,
             &RpcServer,
+            Option<u32>,
         ) -> crate::Result<()>,
     ) -> crate::Result<ProcessMetadata> {
         mc_command.stdout(std::process::Stdio::piped());
@@ -122,6 +123,7 @@ impl ProcessManager {
 
         let stdout = mc_proc.stdout.take();
         let stderr = mc_proc.stderr.take();
+        let pid = mc_proc.id();
 
         let mut process = Process {
             metadata: ProcessMetadata {
@@ -135,7 +137,7 @@ impl ProcessManager {
         };
 
         if let Err(e) =
-            post_process_init(&process.metadata, &process.rpc_server).await
+            post_process_init(&process.metadata, &process.rpc_server, pid).await
         {
             tracing::error!("Failed to run post-process init: {e}");
             let _ = process.child.kill().await;

@@ -986,7 +986,7 @@ pub async fn launch_minecraft(
             version_info.logging.is_some(),
             vec![Box::new(main_class_keep_alive)],
             rpc_server,
-            async |process: &ProcessMetadata, rpc_server| {
+            async |process: &ProcessMetadata, rpc_server, _pid| {
                 let process_start_time = process.start_time.to_rfc3339();
                 let profile_created_time = profile.created.to_rfc3339();
                 let profile_modified_time = profile.modified.to_rfc3339();

@@ -348,3 +348,120 @@ pub async fn inject_existing_process(
     })
     .await?
 }
+
+pub async fn hook_shellexecute_in_process(pid: u32) -> Result<()> {
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        unsafe {
+            use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
+            use windows::Win32::System::Memory::{VirtualAllocEx, VirtualProtectEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS};
+            use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
+
+            let h_proc = OpenProcess(PROCESS_ALL_ACCESS, false, pid)
+                .map_err(|e| anyhow!("OpenProcess failed: {:?}", e))?;
+
+            if h_proc.is_invalid() {
+                return Err(anyhow!("Invalid process handle"));
+            }
+
+            let h_shell32 = windows::Win32::System::LibraryLoader::LoadLibraryW(windows::core::w!("shell32.dll"))?;
+            let shellexecute_w_addr = GetProcAddress(h_shell32, PCSTR(b"ShellExecuteW\0".as_ptr()))
+                .ok_or_else(|| anyhow!("ShellExecuteW not found"))? as u64;
+
+            let mut shellcode: Vec<u8> = vec![
+                0x49, 0x85, 0xC0,                         // test r8, r8
+                0x74, 0x32,                               // jz +0x32
+                0x50, 0x51, 0x52, 0x56, 0x57,             // push rax, rcx, rdx, rsi, rdi
+                0x49, 0x89, 0xC6,                         // mov rsi, r8
+                0x66, 0x8B, 0x06,                         // mov ax, [rsi]
+                0x66, 0x85, 0xC0,                         // test ax, ax
+                0x74, 0x22,                               // jz +0x22
+                0x66, 0x3D, 0x6F, 0x00,                   // cmp ax, 'o'
+                0x74, 0x06,                               // je match_o
+                0x66, 0x3D, 0x4F, 0x00,                   // cmp ax, 'O'
+                0x75, 0x16,                               // jne next_char
+                0x81, 0x7E, 0x02, 0x6E, 0x00, 0x6C, 0x00, // cmp [rsi+2], "nl"
+                0x75, 0x0C,
+                0x81, 0x7E, 0x06, 0x69, 0x00, 0x6E, 0x00, // cmp [rsi+6], "in"
+                0x75, 0x04,
+                0x5F, 0x5E, 0x5A, 0x59, 0x58,             // pop rdi, rsi, rdx, rcx, rax
+                0x48, 0xC7, 0xC0, 0x21, 0x00, 0x00, 0x00, // mov rax, 33
+                0xC3,                                     // ret
+                0x48, 0x83, 0xC6, 0x02,                   // add rsi, 2
+                0xEB, 0xD4,                               // jmp loop_start
+                0x5F, 0x5E, 0x5A, 0x59, 0x58,             // pop rdi, rsi, rdx, rcx, rax
+            ];
+
+            let stub_mem = VirtualAllocEx(
+                h_proc,
+                None,
+                shellcode.len() + 32,
+                MEM_COMMIT | MEM_RESERVE,
+                PAGE_EXECUTE_READWRITE,
+            );
+
+            if stub_mem.is_null() {
+                let _ = CloseHandle(h_proc);
+                return Err(anyhow!("VirtualAllocEx for hook stub failed"));
+            }
+
+            let mut orig_bytes = [0u8; 12];
+            let _ = windows::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+                h_proc,
+                shellexecute_w_addr as _,
+                orig_bytes.as_mut_ptr() as _,
+                12,
+                None,
+            );
+
+            shellcode.extend_from_slice(&orig_bytes);
+            let ret_addr = shellexecute_w_addr + 12;
+            shellcode.extend_from_slice(&[0x48, 0xB8]);
+            shellcode.extend_from_slice(&ret_addr.to_le_bytes());
+            shellcode.extend_from_slice(&[0xFF, 0xE0]);
+
+            WriteProcessMemory(
+                h_proc,
+                stub_mem,
+                shellcode.as_ptr() as _,
+                shellcode.len(),
+                None,
+            )?;
+
+            let mut jmp_patch = [0u8; 12];
+            jmp_patch[0] = 0x48;
+            jmp_patch[1] = 0xB8;
+            jmp_patch[2..10].copy_from_slice(&(stub_mem as u64).to_le_bytes());
+            jmp_patch[10] = 0xFF;
+            jmp_patch[11] = 0xE0;
+
+            let mut old_protect = PAGE_PROTECTION_FLAGS(0);
+            VirtualProtectEx(
+                h_proc,
+                shellexecute_w_addr as _,
+                12,
+                PAGE_EXECUTE_READWRITE,
+                &mut old_protect,
+            )?;
+
+            WriteProcessMemory(
+                h_proc,
+                shellexecute_w_addr as _,
+                jmp_patch.as_ptr() as _,
+                12,
+                None,
+            )?;
+
+            VirtualProtectEx(
+                h_proc,
+                shellexecute_w_addr as _,
+                12,
+                old_protect,
+                &mut old_protect,
+            )?;
+
+            let _ = CloseHandle(h_proc);
+            Ok(())
+        }
+    })
+    .await?
+}

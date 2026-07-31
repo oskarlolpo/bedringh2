@@ -513,8 +513,16 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 false,
                 keep_alive,
                 rpc_server,
-                async |metadata, _| {
+                async |metadata, _, pid| {
                     emit_legacy_log(&metadata.profile_path, "Minecraft.Windows.exe successfully launched");
+                    if gdk_unlocker_enabled {
+                        if let Some(pid) = pid {
+                            #[cfg(target_os = "windows")]
+                            if let Err(e) = crate::launcher::inject::hook_shellexecute_in_process(pid).await {
+                                tracing::warn!("Failed to apply ShellExecuteW in-memory hook to PID {}: {}", pid, e);
+                            }
+                        }
+                    }
                     Ok(())
                 },
             )
@@ -632,7 +640,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 false,
                 vec![Box::new(main_class_keep_alive), Box::new(junction_guard)],
                 rpc_server,
-                async |_, _| Ok(()),
+                async |_, _, _| Ok(()),
             )
             .await?;
 
