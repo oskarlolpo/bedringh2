@@ -342,7 +342,7 @@ import { ButtonStyled, EmptyState, ReadyTransition, ContentCardLayout, injectNot
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 
 import type { GameInstance } from '@/helpers/types'
 
