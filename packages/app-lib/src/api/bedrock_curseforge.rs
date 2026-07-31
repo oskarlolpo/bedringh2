@@ -97,24 +97,32 @@ pub struct GetModFilesResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CurseForgeMinecraftVersion {
-    pub id: i32,
-    pub game_version_id: Option<i32>,
-    pub version_string: String,
+pub struct CurseForgeGameVersionGroup {
+    pub r#type: Option<i32>,
+    #[serde(default)]
+    pub versions: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GetMinecraftVersionsResponse {
-    pub data: Vec<CurseForgeMinecraftVersion>,
+pub struct GetCurseForgeGameVersionsResponse {
+    pub data: Vec<CurseForgeGameVersionGroup>,
 }
 
 pub async fn get_curseforge_minecraft_versions() -> crate::Result<Vec<String>> {
     let client = build_http_client();
-    let url = format!("{}/minecraft/version", CURSEFORGE_API_BASE);
-    let resp = client.get(&url).send().await?.json::<GetMinecraftVersionsResponse>().await?;
-    let versions = resp.data.into_iter().map(|v| v.version_string).collect();
-    Ok(versions)
+    let url = format!("{}/games/{}/versions", CURSEFORGE_API_BASE, GAME_ID);
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(data) = resp.json::<GetCurseForgeGameVersionsResponse>().await {
+            let mut all_versions: Vec<String> = Vec::new();
+            for group in data.data {
+                all_versions.extend(group.versions);
+            }
+            if !all_versions.is_empty() {
+                return Ok(all_versions);
+            }
+        }
+    }
+    Ok(vec!["1.21.50".into(), "1.21.40".into(), "1.20.80".into(), "1.20.50".into()])
 }
 
 pub async fn search_addons(
@@ -164,7 +172,7 @@ pub async fn search_addons(
     if let Ok(resp) = client.get(&url).send().await {
         if let Ok(data) = resp.json::<SearchResponse>().await {
             let total = data.pagination.as_ref().map(|p| p.total_count).unwrap_or(data.data.len() as i32);
-            if !data.data.is_empty() || game_version.is_none() {
+            if !data.data.is_empty() {
                 return Ok(CurseForgeSearchResult {
                     data: data.data,
                     total_count: total,
@@ -174,11 +182,19 @@ pub async fn search_addons(
     }
 
     // Fallback search without strict gameVersion if strict search returned empty or failed
-    let resp = client.get(&base_url).send().await?.json::<SearchResponse>().await?;
-    let total = resp.pagination.as_ref().map(|p| p.total_count).unwrap_or(resp.data.len() as i32);
+    if let Ok(resp) = client.get(&base_url).send().await {
+        if let Ok(data) = resp.json::<SearchResponse>().await {
+            let total = data.pagination.as_ref().map(|p| p.total_count).unwrap_or(data.data.len() as i32);
+            return Ok(CurseForgeSearchResult {
+                data: data.data,
+                total_count: total,
+            });
+        }
+    }
+
     Ok(CurseForgeSearchResult {
-        data: resp.data,
-        total_count: total,
+        data: vec![],
+        total_count: 0,
     })
 }
 

@@ -152,6 +152,21 @@ impl ProcessManager {
 
         let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
 
+        if log_path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&log_path) {
+                if metadata.len() > 0 {
+                    let time = metadata
+                        .modified()
+                        .or_else(|_| metadata.created())
+                        .unwrap_or_else(|_| std::time::SystemTime::now());
+                    let datetime: chrono::DateTime<chrono::Local> = time.into();
+                    let archive_name = format!("{}.log", datetime.format("%Y-%m-%d_%H-%M-%S"));
+                    let archive_path = logs_folder.join(archive_name);
+                    let _ = std::fs::copy(&log_path, archive_path);
+                }
+            }
+        }
+
         clear_log_buffer(profile_path);
 
         {
@@ -664,6 +679,15 @@ pub fn emit_legacy_log(profile_path: &str, message: &str) {
     let message_str = translate_chinese_logs(message);
     let message = &message_str;
     push_log_line(profile_path, message.to_string());
+
+    if let Some(dirs) = crate::state::DirectoryInfo::global_handle_if_ready() {
+        let logs_folder = dirs.profile_logs_dir(profile_path);
+        let _ = std::fs::create_dir_all(&logs_folder);
+        let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
+        let now = chrono::Local::now();
+        let formatted = format!("[{}] [Bedrock/INFO]: {}\n", now.format("%H:%M:%S"), message);
+        let _ = Process::append_to_log_file(&log_path, &formatted);
+    }
 
     #[cfg(feature = "tauri")]
     {
