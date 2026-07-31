@@ -280,6 +280,12 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let _ = std::fs::write(&options_file, options_lines.join("\r\n"));
 
     log_metric("Granting application package access permissions to profile data...");
+    let settings_dir = state.directories.settings_dir.clone();
+    let config_dir = state.directories.config_dir.clone();
+    let profiles_dir = state.directories.profiles_dir();
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&settings_dir).await;
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&config_dir).await;
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&profiles_dir).await;
     let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_path).await;
     let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang).await;
 

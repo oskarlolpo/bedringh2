@@ -431,18 +431,27 @@ fn kind_to_dir(kind: &str) -> &'static str {
 pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_name: &str, enable: bool) -> Result<()> {
     let instance_path = crate::api::profile::get_full_path(profile_path).await?;
     let kind_dir = kind_to_dir(kind);
-    let base_dir = instance_path.join("com.mojang").join(kind_dir);
+    let com_mojang = instance_path.join("com.mojang");
+    let base_dir = com_mojang.join(kind_dir);
 
-    let current_path = base_dir.join(folder_name);
-    if !current_path.exists() {
+    let raw_name = folder_name.strip_suffix(".disabled").unwrap_or(folder_name);
+    let enabled_folder = base_dir.join(raw_name);
+    let disabled_folder = base_dir.join(format!("{}.disabled", raw_name));
+
+    let current_path = if enabled_folder.exists() {
+        enabled_folder
+    } else if disabled_folder.exists() {
+        disabled_folder
+    } else {
         return Err(ErrorKind::OtherError(format!("Addon folder not found: {}", folder_name)).into());
-    }
+    };
 
-    let is_currently_enabled = !folder_name.ends_with(".disabled");
-
-    if is_currently_enabled == enable {
-        return Ok(());
-    }
+    let target_folder_name = if enable {
+        raw_name.to_string()
+    } else {
+        format!("{}.disabled", raw_name)
+    };
+    let target_path = base_dir.join(&target_folder_name);
 
     if enable {
         let disabled_manifest = current_path.join("manifest.json.disabled");
@@ -456,16 +465,11 @@ pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_na
         }
     }
 
-    let new_folder_name = if enable {
-        folder_name.strip_suffix(".disabled").unwrap_or(folder_name).to_string()
-    } else {
-        format!("{}.disabled", folder_name)
-    };
+    if current_path != target_path {
+        fs::rename(current_path, target_path).await?;
+    }
 
-    let new_path = base_dir.join(&new_folder_name);
-    fs::rename(current_path, new_path).await?;
-
-    let _ = sync_valid_known_packs(&instance_path.join("com.mojang")).await;
+    let _ = sync_valid_known_packs(&com_mojang).await;
 
     Ok(())
 }
