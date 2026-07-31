@@ -1,6 +1,5 @@
 <template>
-	<ContentCardLayout>
-			<template #default>
+	<div class="flex flex-col gap-6 max-w-7xl mx-auto w-full">
 				<div class="flex items-center justify-between mb-4">
 					<h2 class="text-xl font-bold">{{ formatMessage(messages.bedrockTitle) }}</h2>
 					<div class="flex gap-2">
@@ -224,10 +223,9 @@
 								</label>
 							</div>
 						</div>
-					</div>
 				</div>
-			</template>
-		</ContentCardLayout>
+			</div>
+	</div>
 
 	<!-- Installed Add-on Detail Modal -->
 	<div 
@@ -338,7 +336,7 @@
 
 <script setup lang="ts">
 import { DownloadIcon, TrashIcon, GlobeIcon, getCategoryIcon } from '@modrinth/assets'
-import { ButtonStyled, EmptyState, ReadyTransition, ContentCardLayout, injectNotificationManager, defineMessages, useVIntl } from '@modrinth/ui'
+import { ButtonStyled, EmptyState, ReadyTransition, injectNotificationManager, defineMessages, useVIntl } from '@modrinth/ui'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
