@@ -338,6 +338,7 @@ fn main() {
                     .commands(&[
                         "get_curseforge_minecraft_versions",
                         "fetch_bedrock_addons",
+                        "list_bedrock_addons",
                         "check_bedrock_addon_updates",
                         "set_bedrock_addon_enabled",
                         "delete_bedrock_addon",
