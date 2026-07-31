@@ -412,6 +412,12 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         }
         let _ = crate::launcher::inject::grant_all_application_packages_access(&xgameruntime_path).await;
 
+        let sys32_xgameruntime = std::path::Path::new(r"C:\Windows\System32\xgameruntime.dll");
+        if xgameruntime_path.exists() {
+            let _ = tokio::fs::copy(&xgameruntime_path, sys32_xgameruntime).await;
+            let _ = crate::launcher::inject::grant_all_application_packages_access(sys32_xgameruntime).await;
+        }
+
         let store_dll_path = exe_dir.join("Windows.ApplicationModel.Store_x64.dll");
         let store_dll_alias = exe_dir.join("Windows.ApplicationModel.Store.dll");
         if !store_dll_path.exists() {
@@ -423,6 +429,12 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let _ = tokio::fs::copy(&store_dll_path, &store_dll_alias).await;
         let _ = crate::launcher::inject::grant_all_application_packages_access(&store_dll_path).await;
         let _ = crate::launcher::inject::grant_all_application_packages_access(&store_dll_alias).await;
+
+        let sys32_store = std::path::Path::new(r"C:\Windows\System32\Windows.ApplicationModel.Store.dll");
+        if store_dll_alias.exists() {
+            let _ = tokio::fs::copy(&store_dll_alias, sys32_store).await;
+            let _ = crate::launcher::inject::grant_all_application_packages_access(sys32_store).await;
+        }
 
         // BLoader is required for all launches unconditionally
         let injector_name = "BLoader.dll";
