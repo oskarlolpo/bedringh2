@@ -1024,66 +1024,74 @@ async function search(requestParams: string) {
 	}
 
 	let categoryId: number | null = null
+	let gameVersionFilter: string | null = null
 
-	// 1. Check new_filters parameter (Modrinth v3 search format: "categories = '8834'" or "categories IN ['8834']")
+	// 1. Direct query parameters
+	if (params.has('categoryId')) categoryId = parseInt(params.get('categoryId')!)
+	if (params.has('category_id')) categoryId = parseInt(params.get('category_id')!)
+	if (params.has('v')) gameVersionFilter = params.get('v')
+	if (params.has('version')) gameVersionFilter = params.get('version')
+	if (params.has('game_version')) gameVersionFilter = params.get('game_version')
+	if (params.has('gameVersion')) gameVersionFilter = params.get('gameVersion')
+
+	// 2. Check all 'f' query parameters (e.g. "categories:8834" or "versions:1.21.50" or "game_versions:1.21.50")
+	const fVals = params.getAll('f')
+	for (const fVal of fVals) {
+		const decoded = decodeURIComponent(fVal)
+		if (!categoryId) {
+			const catMatch = decoded.match(/(?:categories:|=|\bIN\b\s*\[?['"]?)(\d+)/i)
+			if (catMatch && catMatch[1]) {
+				const parsed = parseInt(catMatch[1])
+				if (!isNaN(parsed) && parsed > 100) categoryId = parsed
+			}
+		}
+		if (!gameVersionFilter) {
+			const verMatch = decoded.match(/(?:game_versions|versions|version):([^\s&,]+)/i)
+			if (verMatch && verMatch[1]) {
+				gameVersionFilter = verMatch[1].replace(/['"\[\]]/g, '')
+			}
+		}
+	}
+
+	// 3. Check new_filters parameter (e.g. "categories = '8834'", "categories IN ['8834']", "game_versions = '1.21.50'")
 	const newFilters = params.get('new_filters')
 	if (newFilters) {
-		const match = newFilters.match(/categories\s*(?:=|\bIN\b)\s*\[?['"]?(\d+)['"]?\]?/)
-		if (match && match[1]) {
-			const parsed = parseInt(match[1])
-			if (!isNaN(parsed)) categoryId = parsed
+		const decodedFilters = decodeURIComponent(newFilters)
+		if (!categoryId) {
+			const catMatch = decodedFilters.match(/categories\s*(?:=|\bIN\b)\s*\[?['"]?(\d+)['"]?/i)
+			if (catMatch && catMatch[1]) {
+				const parsed = parseInt(catMatch[1])
+				if (!isNaN(parsed) && parsed > 100) categoryId = parsed
+			}
 		}
-	}
-
-	// 2. Check f or facets parameter (legacy format: "categories:8834" or "8834")
-	if (!categoryId) {
-		const fVals = params.getAll('f')
-		for (const fVal of fVals) {
-			const match = fVal.match(/(?:categories:)?(\d+)/)
-			if (match && match[1]) {
-				const parsed = parseInt(match[1])
-				if (!isNaN(parsed)) {
-					categoryId = parsed
-					break
-				}
+		if (!gameVersionFilter) {
+			const verMatch = decodedFilters.match(/(?:game_versions|versions)\s*(?:=|\bIN\b)\s*\[?['"]?([0-9a-zA-Z\.\-_]+)['"]?/i)
+			if (verMatch && verMatch[1]) {
+				gameVersionFilter = verMatch[1]
 			}
 		}
 	}
 
+	// 4. Check facets JSON parameter
 	const facetsParam = params.get('facets')
-
-	// 3. Check facets JSON parameter
-	if (!categoryId && facetsParam) {
+	if (facetsParam) {
 		try {
 			const parsed = JSON.parse(facetsParam)
 			for (const group of parsed) {
 				const arr = Array.isArray(group) ? group : [group]
 				for (const item of arr) {
 					if (typeof item === 'string') {
-						const match = item.match(/(\d+)/)
-						if (match && match[1]) {
-							const parsedCat = parseInt(match[1])
-							if (!isNaN(parsedCat) && parsedCat > 100) {
-								categoryId = parsedCat
-								break
+						if (!categoryId) {
+							const catMatch = item.match(/categories:(\d+)/) || item.match(/^(\d+)$/)
+							if (catMatch && catMatch[1]) {
+								const parsedCat = parseInt(catMatch[1])
+								if (!isNaN(parsedCat) && parsedCat > 100) categoryId = parsedCat
 							}
 						}
-					}
-				}
-			}
-		} catch (e) {}
-	}
-
-	let gameVersionFilter: string | null = params.get('v') || null
-	if (!gameVersionFilter && facetsParam) {
-		try {
-			const parsed = JSON.parse(facetsParam)
-			for (const group of parsed) {
-				const arr = Array.isArray(group) ? group : [group]
-				for (const item of arr) {
-					if (typeof item === 'string') {
-						if (item.includes('versions:') || item.includes('game_versions:')) {
-							gameVersionFilter = item.split(':').pop() || null
+						if (!gameVersionFilter) {
+							if (item.includes('versions:') || item.includes('game_versions:')) {
+								gameVersionFilter = item.split(':').pop() || null
+							}
 						}
 					}
 				}

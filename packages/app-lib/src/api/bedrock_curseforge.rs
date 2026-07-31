@@ -181,6 +181,29 @@ pub async fn search_addons(
         }
     }
 
+    // Try major version fallback (e.g. "1.21.50" -> "1.21") if full version returns 0 items
+    if let Some(ref v) = game_version {
+        let parts: Vec<&str> = v.split('.').collect();
+        if parts.len() >= 2 {
+            let major_v = format!("{}.{}", parts[0], parts[1]);
+            if major_v != *v {
+                let mut major_url = base_url.clone();
+                major_url.push_str(&format!("&gameVersion={}", urlencoding::encode(&major_v)));
+                if let Ok(resp) = client.get(&major_url).send().await {
+                    if let Ok(data) = resp.json::<SearchResponse>().await {
+                        let total = data.pagination.as_ref().map(|p| p.total_count).unwrap_or(data.data.len() as i32);
+                        if !data.data.is_empty() {
+                            return Ok(CurseForgeSearchResult {
+                                data: data.data,
+                                total_count: total,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Fallback search without strict gameVersion if strict search returned empty or failed
     if let Ok(resp) = client.get(&base_url).send().await {
         if let Ok(data) = resp.json::<SearchResponse>().await {
