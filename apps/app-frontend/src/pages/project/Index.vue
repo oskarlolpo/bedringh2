@@ -708,14 +708,19 @@ async function fetchProjectData() {
 	isServerProject.value = projectV3.value?.minecraft_server != null
 	serverStatusOnline.value = !!projectV3.value?.minecraft_java_server?.ping?.data
 
+	breadcrumbs.setName('Project', data.value.title)
 	if (instance.value?.loader?.toLowerCase() === 'bedrock' || data.value?.is_curseforge) {
-		breadcrumbs.setBreadcrumbs([
-			{ name: instance.value?.name || 'Bedrock 1.26.20', link: instance.value ? `/instance/${instance.value.path}/content` : '/browse/bedrock/addon' },
-			{ name: 'Поиск проектов', link: projectBrowseBackUrl.value },
-			{ name: data.value.title },
-		])
-	} else {
-		breadcrumbs.setName('Project', data.value.title)
+		if (instance.value) {
+			breadcrumbs.setContext({
+				name: instance.value.name,
+				link: `/instance/${instance.value.path}/content`,
+			})
+		} else {
+			breadcrumbs.setContext({
+				name: 'Поиск проектов',
+				link: projectBrowseBackUrl.value,
+			})
+		}
 	}
 
 	fetchDeferredServerData(project)
