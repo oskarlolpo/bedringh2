@@ -506,7 +506,7 @@ const tabs = computed(() => {
 		},
 	];
 
-	if (instance.value?.loader === 'bedrock') {
+	if (instance.value?.loader?.toLowerCase() === 'bedrock') {
 		base.push({
 			label: 'Servers',
 			href: `${basePath.value}/servers`,
@@ -630,7 +630,7 @@ const handleOptionsClick = async (args: { option: string; item: unknown }) => {
 			await stopInstance('InstancePageContextMenu')
 			break
 		case 'add_content':
-			if (instance.value?.loader === 'bedrock') {
+			if (instance.value?.loader?.toLowerCase() === 'bedrock') {
 				await router.push({
 					path: `/instance/${encodeURIComponent(route.params.id as string)}/content`,
 				})

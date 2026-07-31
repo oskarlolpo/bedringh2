@@ -1,5 +1,5 @@
 <template>
-	<BedrockContent v-if="props.instance?.loader === 'bedrock'" :instance="props.instance" />
+	<BedrockContent v-if="props.instance?.loader?.toLowerCase() === 'bedrock'" :instance="props.instance" />
 	<ReadyTransition v-else :pending="loading">
 		<ContentPageLayout>
 			<template #modals>
@@ -363,7 +363,7 @@ async function getUpdaterProjectVersions(projectId: string, pinnedVersionId?: st
 async function handleBrowseContent() {
 	if (!props.instance) return
 	let path = `/browse/${props.instance.loader === 'vanilla' ? 'resourcepack' : 'mod'}`
-	if (props.instance.loader === 'bedrock') {
+	if (props.instance.loader?.toLowerCase() === 'bedrock') {
 		path = '/browse/bedrock/addon'
 	}
 	await router.push({

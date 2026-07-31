@@ -1,5 +1,5 @@
 <template>
-    <BedrockWorlds v-if="props.instance?.loader === 'bedrock'" :instance="props.instance" />
+    <BedrockWorlds v-if="props.instance?.loader?.toLowerCase() === 'bedrock'" :instance="props.instance" />
     <template v-else>
 	<AddServerModal
 		ref="addServerModal"
