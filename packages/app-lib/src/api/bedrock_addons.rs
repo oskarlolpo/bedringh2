@@ -449,18 +449,23 @@ pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_na
     let new_path = base_dir.join(&new_folder_name);
     fs::rename(current_path, new_path).await?;
 
+    let _ = sync_valid_known_packs(&instance_path.join("com.mojang")).await;
+
     Ok(())
 }
 
 pub async fn delete_bedrock_addon(profile_path: &str, kind: &str, folder_name: &str) -> Result<()> {
     let instance_path = crate::api::profile::get_full_path(profile_path).await?;
     let kind_dir = kind_to_dir(kind);
-    let base_dir = instance_path.join("com.mojang").join(kind_dir);
+    let com_mojang = instance_path.join("com.mojang");
+    let base_dir = com_mojang.join(kind_dir);
 
     let target_path = base_dir.join(folder_name);
     if target_path.exists() && target_path.is_dir() {
         fs::remove_dir_all(target_path).await?;
     }
+
+    let _ = sync_valid_known_packs(&com_mojang).await;
 
     Ok(())
 }

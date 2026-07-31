@@ -280,6 +280,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let _ = std::fs::write(&options_file, options_lines.join("\r\n"));
 
     log_metric("Granting application package access permissions to profile data...");
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_path).await;
     let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang).await;
 
     let target_games_dir = get_bedrock_target_dir(install_type).await?;
