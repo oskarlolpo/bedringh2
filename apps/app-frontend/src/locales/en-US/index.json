@@ -632,6 +632,9 @@
 	"app.resource-management.title": {
 		"message": "Memory and Cache Manager"
 	},
+	"app.settings.bedrock.gaming-services.btn": "Download Gaming Services in Store",
+	"app.settings.bedrock.gaming-services.desc": "Microsoft Gaming Services is required for Bedrock Minecraft to launch and load GDK runtime binaries (xgameruntime.dll). If game launch fails or complains about missing runtime components, download or repair Gaming Services via Microsoft Store.",
+	"app.settings.bedrock.gaming-services.title": "Gaming Services (System Dependency)",
 	"app.settings.bedrock.gdk-unlocker": "GDK Unlocker (Xbox App)",
 	"app.settings.bedrock.gdk-unlocker.desc": "Replaces the license verification process with custom DLLs for Xbox App instances.\\nAdds antivirus exceptions automatically to prevent the fix from being removed.",
 	"app.settings.bedrock.uwp-unlocker": "UWP Unlocker (Microsoft Store)",

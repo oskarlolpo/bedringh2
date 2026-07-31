@@ -632,6 +632,9 @@
 	"app.resource-management.title": {
 		"message": "Менеджер Памяти и Кеша"
 	},
+	"app.settings.bedrock.gaming-services.btn": "Скачать «Службы игр» в Microsoft Store",
+	"app.settings.bedrock.gaming-services.desc": "Компонент Microsoft «Службы игр» (Gaming Services) необходим для запуска Minecraft Bedrock и загрузки библиотек GDK (xgameruntime.dll). Если игра не запускается или выводится ошибка отсутствия системных DLL, установите или обновите Службы игр в Microsoft Store.",
+	"app.settings.bedrock.gaming-services.title": "Службы игр (Системный компонент)",
 	"app.settings.bedrock.gdk-unlocker": "Установка Анлокера GDK (Xbox App)",
 	"app.settings.bedrock.gdk-unlocker.desc": "Заменяет процесс проверки лицензии на кастомные DLLs для проверки игр Xbox App.\\nАвтоматически добавляет исключения в антивирус, чтобы фикс не удалялся.",
 	"app.settings.bedrock.uwp-unlocker": "Установка Анлокера UWP (Microsoft Store)",
