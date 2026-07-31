@@ -610,8 +610,8 @@ async function fetchProjectData() {
 						body: cfDescription || cfMod.summary || '',
 						downloads: cfMod.downloadCount || 0,
 						icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url,
-						categories: cfMod.categories?.map((c: any) => c.name || c.slug) || [],
-						versions: (cfFiles || []).map((f: any) => f.id.toString()),
+						categories: cfMod.categories?.map((c) => c.name || c.slug) || [],
+						versions: (cfFiles || []).map((f) => f.id.toString()),
 						author: authorName,
 						author_details: {
 							name: authorName,
@@ -626,7 +626,7 @@ async function fetchProjectData() {
 						game_versions: [],
 					}
 
-					versions.value = (cfFiles || []).map((f: any) => ({
+					versions.value = (cfFiles || []).map((f) => ({
 						id: f.id.toString(),
 						project_id: cfMod.id.toString(),
 						name: f.displayName || f.fileName,
