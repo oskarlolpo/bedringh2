@@ -666,34 +666,34 @@ impl Profile {
         for profile in &mut all {
             let path = get_full_path(&profile.path).await?;
 
-            for project_type in ProjectType::iterator() {
-                let folder = project_type.get_folder();
-                let path = path.join(folder);
+            let folders_to_scan = if profile.loader == ModLoader::Bedrock {
+                vec![
+                    "com.mojang/resource_packs".to_string(),
+                    "com.mojang/behavior_packs".to_string(),
+                    "com.mojang/skin_packs".to_string(),
+                ]
+            } else {
+                ProjectType::iterator().map(|p| p.get_folder().to_string()).collect()
+            };
 
-                if path.exists() {
-                    for subdirectory in std::fs::read_dir(&path)
-                        .map_err(|e| io::IOError::with_path(e, &path))?
-                    {
-                        let subdirectory =
-                            subdirectory.map_err(io::IOError::from)?.path();
-                        if subdirectory.is_file()
-                            && let Some(file_name) = subdirectory
-                                .file_name()
-                                .and_then(|x| x.to_str())
-                            && is_scannable_project_file(
-                                project_type,
-                                file_name,
-                            )
-                        {
-                            let file_size = subdirectory
-                                .metadata()
-                                .map_err(io::IOError::from)?
-                                .len();
+            for folder in &folders_to_scan {
+                let folder_path = path.join(folder);
 
-                            keys.push(format!(
-                                "{file_size}-{}/{folder}/{file_name}",
-                                profile.path
-                            ));
+                if folder_path.exists() {
+                    if let Ok(entries) = std::fs::read_dir(&folder_path) {
+                        for subdirectory in entries.flatten() {
+                            let sub_path = subdirectory.path();
+                            if sub_path.is_file() {
+                                if let Some(file_name) = sub_path.file_name().and_then(|x| x.to_str()) {
+                                    let file_size = sub_path.metadata().map(|m| m.len()).unwrap_or(0);
+                                    keys.push(format!("{file_size}-{}/{folder}/{file_name}", profile.path));
+                                }
+                            } else if sub_path.is_dir() {
+                                let file_size = 1024; // folder entry key
+                                if let Some(file_name) = sub_path.file_name().and_then(|x| x.to_str()) {
+                                    keys.push(format!("{file_size}-{}/{folder}/{file_name}", profile.path));
+                                }
+                            }
                         }
                     }
                 }

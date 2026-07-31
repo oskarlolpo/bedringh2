@@ -517,6 +517,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let mut command = Command::new(&exe_path_str);
         if let Some(parent) = exe_path.parent() {
             command.current_dir(parent);
+            let parent_str = parent.to_string_lossy();
+            let current_path = std::env::var("PATH").unwrap_or_default();
+            command.env("PATH", format!("{};{}", parent_str, current_path));
         }
 
         let keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>> = vec![
