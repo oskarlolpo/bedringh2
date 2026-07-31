@@ -402,7 +402,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     if let Some(exe_path) = target_exe_path {
         let exe_dir = exe_path.parent().unwrap();
-        // Deploy xgameruntime.dll unconditionally for all launches so Gaming Runtime is available
+        // Deploy xgameruntime.dll and Store DLL unconditionally for all launches so Gaming Runtime is available
         let xgameruntime_path = exe_dir.join("xgameruntime.dll");
         if !xgameruntime_path.exists() {
             emit_legacy_log(&profile.path, "Downloading xgameruntime.dll from GitHub releases...");
@@ -411,6 +411,15 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             }
         }
         let _ = crate::launcher::inject::grant_all_application_packages_access(&xgameruntime_path).await;
+
+        let store_dll_path = exe_dir.join("Windows.ApplicationModel.Store_x64.dll");
+        if !store_dll_path.exists() {
+            emit_legacy_log(&profile.path, "Downloading Windows.ApplicationModel.Store_x64.dll from GitHub releases...");
+            if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("Windows.ApplicationModel.Store_x64.dll", &store_dll_path).await {
+                tracing::error!("Failed to download Windows.ApplicationModel.Store_x64.dll: {}", e);
+            }
+        }
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&store_dll_path).await;
 
         // BLoader is required for all launches unconditionally
         let injector_name = "BLoader.dll";
@@ -462,7 +471,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             .copied()
             .unwrap_or(false);
 
-        let gdk_unlocker_files = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini"];
+        let gdk_unlocker_files = ["winmm.dll", "OnlineFix64.dll", "dlllist.txt", "OnlineFix.ini", "Windows.ApplicationModel.Store_x64.dll"];
 
         let mods_list: Vec<String> = Vec::new();
 
