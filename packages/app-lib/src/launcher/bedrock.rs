@@ -418,7 +418,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     log_metric("Preparing executable and DLL injections...");
 
-    let target_exe_path = if !install_type.is_uwp() && (is_gdk_unpacked || exe_path.exists()) {
+    let target_exe_path = if install_type.is_uwp() {
+        None
+    } else if is_gdk_unpacked || exe_path.exists() {
         Some(exe_path.clone())
     } else {
         exe_path_to_inject

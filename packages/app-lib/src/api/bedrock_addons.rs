@@ -292,7 +292,11 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
             let folder_name = entry.file_name().to_string_lossy().to_string();
             let is_enabled = !folder_name.ends_with(".disabled");
 
-            let manifest_path = path.join("manifest.json");
+            let manifest_path = if path.join("manifest.json").exists() {
+                path.join("manifest.json")
+            } else {
+                path.join("manifest.json.disabled")
+            };
             if !manifest_path.exists() {
                 continue;
             }
@@ -438,6 +442,18 @@ pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_na
 
     if is_currently_enabled == enable {
         return Ok(());
+    }
+
+    if enable {
+        let disabled_manifest = current_path.join("manifest.json.disabled");
+        if disabled_manifest.exists() {
+            let _ = fs::rename(&disabled_manifest, current_path.join("manifest.json")).await;
+        }
+    } else {
+        let active_manifest = current_path.join("manifest.json");
+        if active_manifest.exists() {
+            let _ = fs::rename(&active_manifest, current_path.join("manifest.json.disabled")).await;
+        }
     }
 
     let new_folder_name = if enable {
