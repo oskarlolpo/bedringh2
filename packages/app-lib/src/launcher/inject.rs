@@ -354,7 +354,7 @@ pub async fn hook_shellexecute_in_process(pid: u32) -> Result<()> {
         unsafe {
             use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
             use windows::Win32::System::Memory::{VirtualAllocEx, VirtualProtectEx, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS};
-            use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
+            use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 
             let h_proc = OpenProcess(PROCESS_ALL_ACCESS, false, pid)
                 .map_err(|e| anyhow!("OpenProcess failed: {:?}", e))?;

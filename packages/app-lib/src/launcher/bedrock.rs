@@ -228,8 +228,11 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     }
 
     log_metric("Syncing offline player nickname to options.txt...");
-    let active_account_name = state.auth.get_active_account().await
-        .map(|acc| acc.username)
+    let active_account_name = crate::state::Credentials::get_default_credential(&state.pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|cred| cred.offline_profile.name)
         .unwrap_or_else(|| profile.name.clone());
 
     let mcpe_dir = instance_mojang.join("minecraftpe");
