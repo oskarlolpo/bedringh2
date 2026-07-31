@@ -100,6 +100,7 @@ impl Drop for BedrockJunctionGuard {
 }
 
 pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
+    let launch_start_time = std::time::Instant::now();
     let state = State::get().await?;
     let instance_path = get_full_path(&profile.path).await?;
     let versions_dir = state
@@ -107,6 +108,13 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         .caches_dir()
         .join("versions")
         .join(format!("bedrock_{}", profile.game_version));
+
+    let log_metric = |msg: &str| {
+        let elapsed = launch_start_time.elapsed().as_secs_f64();
+        emit_legacy_log(&profile.path, &format!("[+{:>6.2}s] [METRICS] {}", elapsed, msg));
+    };
+
+    log_metric(&format!("Initializing Bedrock launch sequence for version '{}'...", profile.game_version));
 
     let is_gdk_unpacked = versions_dir.join("MicrosoftGame.config").exists();
 
@@ -126,6 +134,8 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 BedrockInstallationType::Uwp
             }
         };
+
+    log_metric(&format!("Installation mode resolved to: {:?}", install_type));
 
     let manifest_path = versions_dir.join("AppxManifest.xml");
     let mut pkg_name = if install_type.is_preview() {
@@ -166,7 +176,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     };
 
     if is_custom_unpacked {
-        emit_legacy_log(&profile.path, "Проверка установленной версии UWP (Hot-Swap)...");
+        log_metric("Checking UWP package registration status (Hot-Swap)...");
 
         let output = std::process::Command::new("powershell")
             .creation_flags(0x08000000)
@@ -181,7 +191,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         if install_location.to_lowercase().trim_end_matches('\\') != expected_location.to_lowercase().trim_end_matches('\\') {
             if install_location != "None" {
-                emit_legacy_log(&profile.path, "Удаление предыдущего UWP пакета (Hot-Swap)...");
+                log_metric("Removing previous UWP package...");
                 let _ = std::process::Command::new("powershell")
                     .creation_flags(0x08000000)
                     .args(&[
@@ -192,7 +202,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                     .output();
             }
 
-            emit_legacy_log(&profile.path, "Регистрация распакованного UWP пакета (Hot-Swap)...");
+            log_metric("Registering unpacked UWP package...");
             let install_output = std::process::Command::new("powershell")
                 .creation_flags(0x08000000)
                 .args(&[
@@ -204,10 +214,10 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
             if !install_output.status.success() {
                 let err_msg = String::from_utf8_lossy(&install_output.stderr);
-                emit_legacy_log(&profile.path, &format!("Ошибка регистрации: {}", err_msg));
+                log_metric(&format!("Package registration error: {}", err_msg));
             }
         } else {
-            emit_legacy_log(&profile.path, "UWP пакет уже зарегистрирован на текущую сборку.");
+            log_metric("UWP package already registered to current build.");
         }
     }
 
@@ -217,7 +227,50 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         fs::create_dir_all(&instance_mojang).await?;
     }
 
-    emit_legacy_log(&profile.path, "Granting application package access permissions to profile data...");
+    log_metric("Syncing offline player nickname to options.txt...");
+    let active_account_name = state.auth.get_active_account().await
+        .map(|acc| acc.username)
+        .unwrap_or_else(|| profile.name.clone());
+
+    let mcpe_dir = instance_mojang.join("minecraftpe");
+    if !mcpe_dir.exists() {
+        let _ = fs::create_dir_all(&mcpe_dir).await;
+    }
+    let options_file = mcpe_dir.join("options.txt");
+
+    let mut options_lines: Vec<String> = if options_file.exists() {
+        std::fs::read_to_string(&options_file)
+            .unwrap_or_default()
+            .lines()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let mut username_found = false;
+    for line in options_lines.iter_mut() {
+        if line.starts_with("mp_username:") {
+            let current_val = line.trim_start_matches("mp_username:").trim();
+            if current_val.is_empty() || current_val == "Player" {
+                *line = format!("mp_username:{}", active_account_name);
+                log_metric(&format!("Updated default offline nickname in options.txt to '{}'", active_account_name));
+            } else {
+                log_metric(&format!("Preserved existing in-game nickname: '{}'", current_val));
+            }
+            username_found = true;
+            break;
+        }
+    }
+
+    if !username_found {
+        options_lines.push(format!("mp_username:{}", active_account_name));
+        log_metric(&format!("Set offline nickname in options.txt to '{}'", active_account_name));
+    }
+
+    let _ = std::fs::write(&options_file, options_lines.join("\r\n"));
+
+    log_metric("Granting application package access permissions to profile data...");
     let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang).await;
 
     let target_games_dir = get_bedrock_target_dir(install_type).await?;
@@ -253,43 +306,23 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         match local_junction_output {
             Ok(out) if out.status.success() => {
-                emit_legacy_log(&profile.path, &format!("Local GDK data junction mounted: {}", local_mojang.display()));
+                log_metric(&format!("Local GDK data junction mounted: {}", local_mojang.display()));
             }
             Ok(out) => {
                 let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
                 let out_msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                emit_legacy_log(
-                    &profile.path,
-                    &format!(
-                        "WARNING: Failed to mount local GDK data junction ({}): {} {}. Installed content may not be visible in-game.",
-                        local_mojang.display(), err_msg, out_msg
-                    ),
-                );
+                log_metric(&format!("WARNING: Local GDK junction issue: {} {}", err_msg, out_msg));
             }
             Err(e) => {
-                emit_legacy_log(
-                    &profile.path,
-                    &format!(
-                        "WARNING: Failed to run mklink for local GDK data junction ({}): {}. Installed content may not be visible in-game.",
-                        local_mojang.display(), e
-                    ),
-                );
+                log_metric(&format!("WARNING: Local GDK junction error: {}", e));
             }
         }
 
-        // Verify the junction actually resolves to our instance folder before proceeding;
-        // if it doesn't, retry once after a fresh cleanup pass.
         let junction_ok = std::fs::symlink_metadata(&local_mojang)
             .map(|m| (m.file_attributes() & 0x00000400) != 0)
             .unwrap_or(false);
         if !junction_ok {
-            emit_legacy_log(
-                &profile.path,
-                &format!(
-                    "WARNING: Local GDK data junction verification failed at {} - retrying once.",
-                    local_mojang.display()
-                ),
-            );
+            log_metric(&format!("WARNING: Local GDK junction verification failed at {} - retrying.", local_mojang.display()));
             let _ = fs::remove_dir_all(&local_mojang).await;
             let retry_output = std::process::Command::new("cmd")
                 .creation_flags(0x08000000)
@@ -298,13 +331,10 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
                 .output();
             match retry_output {
                 Ok(out) if out.status.success() => {
-                    emit_legacy_log(&profile.path, "Local GDK data junction mounted on retry.");
+                    log_metric("Local GDK data junction mounted on retry.");
                 }
                 _ => {
-                    emit_legacy_log(
-                        &profile.path,
-                        "ERROR: Local GDK data junction could not be mounted after retry. Installed content will NOT appear in-game for this launch.",
-                    );
+                    log_metric("ERROR: Local GDK data junction could not be mounted after retry.");
                 }
             }
         }
@@ -340,14 +370,14 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         }
     }
 
-    emit_legacy_log(&profile.path, "Синхронизация скина для Bedrock...");
+    log_metric("Syncing custom skin pack...");
     let _ = sync_bedrock_custom_skin_pack(&instance_mojang).await;
     let _ = crate::api::bedrock_addons::sync_valid_known_packs(&instance_mojang).await;
 
-    emit_legacy_log(&profile.path, "Монтирование изолированной файловой системы профиля...");
+    log_metric("Mounting isolated profile filesystem...");
     use std::os::windows::process::CommandExt;
     let output = std::process::Command::new("cmd")
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .creation_flags(0x08000000)
         .arg("/c")
         .raw_arg(format!("mklink /J \"{}\" \"{}\"", mojang_dir.display(), instance_mojang.display()))
         .output()?;
@@ -376,7 +406,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let main_class_keep_alive = tempfile::tempdir()?;
     let rpc_server = crate::util::rpc::RpcServerBuilder::new().launch().await?;
 
-    emit_legacy_log(&profile.path, "Starting Minecraft Bedrock launch sequence...");
+    log_metric("Preparing executable and DLL injections...");
 
     let target_exe_path = if exe_path.exists() {
         Some(exe_path.clone())

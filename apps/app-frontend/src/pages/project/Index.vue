@@ -429,6 +429,9 @@ const projectGalleryHref = computed(() => buildProjectHref(`/project/${route.par
 const projectBrowseBackUrl = computed(() => {
 	const browsePath = route.query.b
 	if (typeof browsePath === 'string' && browsePath.startsWith('/browse/')) return browsePath
+	if (data.value?.is_curseforge || instance.value?.loader?.toLowerCase() === 'bedrock') {
+		return buildBrowseHref('/browse/bedrock/addon')
+	}
 	const type = data.value?.project_type ? `${data.value.project_type}` : 'mod'
 	return buildBrowseHref(`/browse/${type}`)
 })
@@ -555,15 +558,31 @@ function handleAddServerToInstance() {
 async function fetchProjectData() {
 	let project = null
 	let projectV3Result = null
-	const isNumericId = /^\d+$/.test(route.params.id)
+	const rawId = String(route.params.id || '')
+	const cleanId = rawId.replace(/^curseforge[-:]?/, '')
+	const digitsOnly = cleanId.replace(/[^0-9]/g, '')
+	const isNumericId = digitsOnly.length > 0 && digitsOnly === cleanId
 
 	if (!isNumericId) {
-		project = await get_project(route.params.id, 'must_revalidate').catch(() => null)
-		projectV3Result = await get_project_v3(route.params.id, 'must_revalidate').catch(() => null)
+		project = await get_project(rawId, 'must_revalidate').catch(() => null)
+		projectV3Result = await get_project_v3(rawId, 'must_revalidate').catch(() => null)
 	}
 
 	if (!project) {
-		const cfModId = parseInt(route.params.id)
+		let cfModId = isNumericId ? parseInt(digitsOnly, 10) : NaN
+		if (isNaN(cfModId)) {
+			try {
+				const searchRes = await invoke<any>('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
+					query: rawId,
+				}).catch(() => null)
+				if (searchRes?.data && searchRes.data.length > 0) {
+					cfModId = searchRes.data[0].id
+				}
+			} catch (e) {
+				console.error('Failed to search CurseForge by slug:', e)
+			}
+		}
+
 		if (!isNaN(cfModId)) {
 			try {
 				const [cfMod, cfFiles, cfDescription] = await Promise.all([
@@ -586,13 +605,13 @@ async function fetchProjectData() {
 						project_type: 'addon',
 						title: cfMod.name,
 						name: cfMod.name,
-						summary: cfMod.summary,
-						description: cfDescription || cfMod.summary,
-						body: cfDescription || cfMod.summary,
-						downloads: cfMod.downloadCount,
+						summary: cfMod.summary || '',
+						description: cfDescription || cfMod.summary || '',
+						body: cfDescription || cfMod.summary || '',
+						downloads: cfMod.downloadCount || 0,
 						icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url,
-						categories: cfMod.categories?.map((c) => c.name || c.slug),
-						versions: (cfFiles || []).map((f) => f.id.toString()),
+						categories: cfMod.categories?.map((c: any) => c.name || c.slug) || [],
+						versions: (cfFiles || []).map((f: any) => f.id.toString()),
 						author: authorName,
 						author_details: {
 							name: authorName,
@@ -600,14 +619,20 @@ async function fetchProjectData() {
 						},
 						website_url: cfMod.websiteUrl || `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`,
 						is_curseforge: true,
+						gallery: [],
+						client_side: 'required',
+						server_side: 'optional',
+						loaders: ['bedrock'],
+						game_versions: [],
 					}
 
-					versions.value = (cfFiles || []).map((f) => ({
+					versions.value = (cfFiles || []).map((f: any) => ({
 						id: f.id.toString(),
 						project_id: cfMod.id.toString(),
 						name: f.displayName || f.fileName,
-						version_number: f.displayName,
+						version_number: f.displayName || f.fileName,
 						game_versions: f.gameVersions || [],
+						loaders: ['bedrock'],
 						files: [
 							{
 								id: f.id.toString(),
@@ -683,7 +708,15 @@ async function fetchProjectData() {
 	isServerProject.value = projectV3.value?.minecraft_server != null
 	serverStatusOnline.value = !!projectV3.value?.minecraft_java_server?.ping?.data
 
-	breadcrumbs.setName('Project', data.value.title)
+	if (instance.value?.loader?.toLowerCase() === 'bedrock' || data.value?.is_curseforge) {
+		breadcrumbs.setBreadcrumbs([
+			{ name: instance.value?.name || 'Bedrock 1.26.20', link: instance.value ? `/instance/${instance.value.path}/content` : '/browse/bedrock/addon' },
+			{ name: 'Поиск проектов', link: projectBrowseBackUrl.value },
+			{ name: data.value.title },
+		])
+	} else {
+		breadcrumbs.setName('Project', data.value.title)
+	}
 
 	fetchDeferredServerData(project)
 }
