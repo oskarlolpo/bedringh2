@@ -3,6 +3,7 @@ use crate::api::profile::get_full_path;
 use crate::error::{ErrorKind, Result};
 use crate::state::{ProcessMetadata, Profile};
 use std::os::windows::fs::MetadataExt;
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::process::Command;
@@ -87,17 +88,55 @@ pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Re
     Ok(uwp_games_dir)
 }
 
+async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    tokio::fs::create_dir_all(dst).await?;
+    let mut entries = tokio::fs::read_dir(src).await?;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let ty = entry.file_type().await?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            Box::pin(copy_dir_all(&src_path, &dst_path)).await?;
+        } else {
+            let _ = tokio::fs::copy(&src_path, &dst_path).await?;
+        }
+    }
+    Ok(())
+}
+
 struct BedrockJunctionGuard {
     profile_path: String,
     mojang_dir: PathBuf,
+    instance_mojang: PathBuf,
     backup_dir: PathBuf,
+    is_uwp: bool,
 }
 
 impl Drop for BedrockJunctionGuard {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir(&self.mojang_dir);
-        if self.backup_dir.exists() {
-            let _ = std::fs::rename(&self.backup_dir, &self.mojang_dir);
+        if self.is_uwp {
+            let mojang = self.mojang_dir.clone();
+            let inst = self.instance_mojang.clone();
+            let _ = std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+                rt.block_on(async {
+                    let worlds_src = mojang.join("minecraftWorlds");
+                    let worlds_dst = inst.join("minecraftWorlds");
+                    if worlds_src.exists() {
+                        let _ = copy_dir_all(&worlds_src, &worlds_dst).await;
+                    }
+                    let opt_src = mojang.join("options.txt");
+                    let opt_dst = inst.join("options.txt");
+                    if opt_src.exists() {
+                        let _ = tokio::fs::copy(&opt_src, &opt_dst).await;
+                    }
+                });
+            });
+        } else {
+            let _ = std::fs::remove_dir(&self.mojang_dir);
+            if self.backup_dir.exists() {
+                let _ = std::fs::rename(&self.backup_dir, &self.mojang_dir);
+            }
         }
         crate::state::emit_legacy_log(&self.profile_path, "Восстановление оригинальных системных сохранений...");
     }
@@ -395,26 +434,35 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let _ = crate::api::bedrock_addons::sync_valid_known_packs(&instance_mojang).await;
 
     log_metric("Mounting isolated profile filesystem...");
-    use std::os::windows::process::CommandExt;
-    let output = std::process::Command::new("cmd")
-        .creation_flags(0x08000000)
-        .arg("/c")
-        .raw_arg(format!("mklink /J \"{}\" \"{}\"", mojang_dir.display(), instance_mojang.display()))
-        .output()?;
+    if install_type.is_uwp() {
+        if !mojang_dir.exists() {
+            let _ = fs::create_dir_all(&mojang_dir).await;
+        }
+        let _ = copy_dir_all(&instance_mojang, &mojang_dir).await;
+    } else {
+        use std::os::windows::process::CommandExt;
+        let output = std::process::Command::new("cmd")
+            .creation_flags(0x08000000)
+            .arg("/c")
+            .raw_arg(format!("mklink /J \"{}\" \"{}\"", mojang_dir.display(), instance_mojang.display()))
+            .output()?;
 
-    if !output.status.success() {
-        let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let out_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Err(
-            ErrorKind::LauncherError(format!("Не удалось примонтировать файловую систему профиля: {} {}", err_msg, out_msg)).into()
-        );
+        if !output.status.success() {
+            let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let out_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            return Err(
+                ErrorKind::LauncherError(format!("Не удалось примонтировать файловую систему профиля: {} {}", err_msg, out_msg)).into()
+            );
+        }
     }
     let _ = crate::launcher::inject::grant_all_application_packages_access(&mojang_dir).await;
 
     let junction_guard = BedrockJunctionGuard {
         profile_path: profile.path.clone(),
         mojang_dir,
+        instance_mojang: instance_mojang.clone(),
         backup_dir: actual_backup_dir,
+        is_uwp: install_type.is_uwp(),
     };
 
     crate::api::profile::edit(&profile.path, |prof| {
