@@ -332,7 +332,82 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
         }
     }
 
+    let _ = sync_valid_known_packs(&base_dir).await;
+
     Ok(addons)
+}
+
+pub async fn sync_valid_known_packs(com_mojang: &std::path::Path) -> Result<()> {
+    if !com_mojang.exists() {
+        return Ok(());
+    }
+
+    let mut known_packs: Vec<serde_json::Value> = Vec::new();
+    let mut global_resources: Vec<serde_json::Value> = Vec::new();
+
+    for kind in &["behavior_packs", "resource_packs", "skin_packs"] {
+        let packs_dir = com_mojang.join(kind);
+        if !packs_dir.exists() {
+            continue;
+        }
+
+        let mut entries = match fs::read_dir(&packs_dir).await {
+            Ok(iter) => iter,
+            Err(_) => continue,
+        };
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let folder_name = entry.file_name().to_string_lossy().to_string();
+            if folder_name.ends_with(".disabled") {
+                continue;
+            }
+
+            let manifest_path = path.join("manifest.json");
+            if !manifest_path.exists() {
+                continue;
+            }
+
+            if let Ok(content) = fs::read_to_string(&manifest_path).await {
+                let cleaned = clean_json_content(&content);
+                if let Ok(manifest) = serde_json::from_str::<BedrockManifest>(&cleaned) {
+                    let rel_path = format!("{}/{}", kind, folder_name);
+                    let ver_vec = parse_version_vec(&manifest.header.version);
+                    let version_str = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
+
+                    known_packs.push(serde_json::json!({
+                        "path": rel_path,
+                        "uuid": manifest.header.uuid,
+                        "version": version_str,
+                    }));
+
+                    if *kind == "resource_packs" {
+                        let ver_array = if ver_vec.is_empty() { vec![1, 0, 0] } else { ver_vec };
+                        global_resources.push(serde_json::json!({
+                            "pack_id": manifest.header.uuid,
+                            "version": ver_array,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    let known_json_path = com_mojang.join("valid_known_packs.json");
+    if let Ok(pretty) = serde_json::to_string_pretty(&known_packs) {
+        let _ = fs::write(&known_json_path, pretty).await;
+    }
+
+    let global_json_path = com_mojang.join("global_resource_packs.json");
+    if let Ok(pretty) = serde_json::to_string_pretty(&global_resources) {
+        let _ = fs::write(&global_json_path, pretty).await;
+    }
+
+    Ok(())
 }
 
 fn kind_to_dir(kind: &str) -> &'static str {

@@ -359,6 +359,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     emit_legacy_log(&profile.path, "Синхронизация скина для Bedrock...");
     let _ = sync_bedrock_custom_skin_pack(&instance_mojang).await;
+    let _ = crate::api::bedrock_addons::sync_valid_known_packs(&instance_mojang).await;
 
     emit_legacy_log(&profile.path, "Монтирование изолированной файловой системы профиля...");
     use std::os::windows::process::CommandExt;
