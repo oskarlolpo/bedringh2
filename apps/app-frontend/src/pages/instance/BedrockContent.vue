@@ -66,7 +66,7 @@ async function fetchAddons() {
 	try {
 		loading.value = true
 		const list = await invoke<BedrockAddon[]>('plugin:bedrock-addons|list_bedrock_addons', {
-			instancePath: props.instance.path,
+			profilePath: props.instance.path,
 		})
 		rawAddons.value = list || []
 	} catch (e) {
@@ -115,11 +115,14 @@ const contentItems = computed<ContentItem[]>(() => {
 async function toggleAddon(item: ContentItem) {
 	if (!props.instance?.path) return
 	try {
+		const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
+		const kind = rawAddon?.kind || 'behavior'
 		const targetState = !item.enabled
 		await invoke('plugin:bedrock-addons|set_bedrock_addon_enabled', {
-			instancePath: props.instance.path,
+			profilePath: props.instance.path,
+			kind,
 			folderName: item.file_name,
-			enabled: targetState,
+			enable: targetState,
 		})
 		await fetchAddons()
 	} catch (e) {
@@ -130,8 +133,11 @@ async function toggleAddon(item: ContentItem) {
 async function deleteAddon(item: ContentItem) {
 	if (!props.instance?.path) return
 	try {
+		const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
+		const kind = rawAddon?.kind || 'behavior'
 		await invoke('plugin:bedrock-addons|delete_bedrock_addon', {
-			instancePath: props.instance.path,
+			profilePath: props.instance.path,
+			kind,
 			folderName: item.file_name,
 		})
 		await fetchAddons()
@@ -153,9 +159,9 @@ async function installFromFile() {
 	for (const file of filePaths) {
 		const path = (file as { path?: string }).path ?? file
 		try {
-			await invoke('plugin:bedrock-addons|install_bedrock_addon', {
-				instancePath: props.instance.path,
-				filePath: path,
+			await invoke('plugin:bedrock-addons|install_bedrock_addon_from_file', {
+				profilePath: props.instance.path,
+				archivePath: path,
 			})
 			count++
 		} catch (e) {
