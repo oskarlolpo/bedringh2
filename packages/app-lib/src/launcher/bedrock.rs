@@ -38,6 +38,26 @@ impl BedrockInstallationType {
 }
 
 pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Result<PathBuf> {
+    if install_type.is_gdk() {
+        let appdata = std::env::var("APPDATA").unwrap_or_else(|_| {
+            let mut path = dirs::home_dir().unwrap_or_default();
+            path.push("AppData");
+            path.push("Roaming");
+            path.to_string_lossy().into_owned()
+        });
+
+        let gdk_games_dir = PathBuf::from(appdata)
+            .join("Minecraft Bedrock")
+            .join("users")
+            .join("shared")
+            .join("games");
+
+        if !gdk_games_dir.exists() {
+            let _ = fs::create_dir_all(&gdk_games_dir).await;
+        }
+        return Ok(gdk_games_dir);
+    }
+
     let local_appdata = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
         let mut path = dirs::home_dir().unwrap_or_default();
         path.push("AppData");

@@ -817,17 +817,23 @@ async function installCfMod(cfMod: any) {
 }
 
 async function fetchAddons() {
+	if (!props.instance?.path) return
 	loading.value = true
 	try {
 		addons.value = await invoke('plugin:bedrock-addons|list_bedrock_addons', {
 			profilePath: props.instance.path
 		})
 	} catch (e) {
+		console.error('Failed to list bedrock addons:', e)
 		notifications.handleError(e as Error)
 	} finally {
 		loading.value = false
 	}
 }
+
+watch(() => props.instance?.path, (newPath) => {
+	if (newPath) fetchAddons()
+}, { immediate: true })
 
 async function toggleAddon(addon: BedrockAddon) {
 	try {
@@ -903,7 +909,7 @@ async function installFromFile() {
 }
 
 onMounted(async () => {
-	fetchAddons()
+	await fetchAddons()
 	searchCurseForge()
 	try {
 		const versions: string[] = await invoke('plugin:bedrock-addons|get_curseforge_minecraft_versions')
@@ -912,6 +918,8 @@ onMounted(async () => {
 		}
 	} catch (e) {
 		console.warn('Failed to load CurseForge versions', e)
+	} finally {
+		loading.value = false
 	}
 })
 </script>
