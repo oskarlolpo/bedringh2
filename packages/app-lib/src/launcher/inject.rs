@@ -54,9 +54,8 @@ pub async fn grant_all_application_packages_access(path: &Path) -> Result<()> {
         .arg("/grant")
         .arg(perm2);
 
-    if is_dir {
-        cmd.arg("/T");
-    }
+    // Note: Do not pass /T (recursive) for directories, as (OI)(CI) sets container inheritance
+    // instantly (<10ms) without traversing tens of thousands of asset files.
 
     let output = cmd
         .arg("/Q")

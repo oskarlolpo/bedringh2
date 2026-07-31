@@ -116,7 +116,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     log_metric(&format!("Initializing Bedrock launch sequence for version '{}'...", profile.game_version));
 
-    let is_gdk_unpacked = versions_dir.join("MicrosoftGame.config").exists();
+    let is_gdk_unpacked = versions_dir.join("MicrosoftGame.config").exists()
+        || versions_dir.join("gdk_config.json").exists()
+        || versions_dir.join("Microsoft.GamePackageInfo.xml").exists();
 
     let install_type =
         if profile.game_version.to_lowercase().contains("preview")
@@ -411,7 +413,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
     log_metric("Preparing executable and DLL injections...");
 
-    let target_exe_path = if exe_path.exists() {
+    let target_exe_path = if !install_type.is_uwp() && (is_gdk_unpacked || exe_path.exists()) {
         Some(exe_path.clone())
     } else {
         exe_path_to_inject
