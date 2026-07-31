@@ -116,8 +116,23 @@ const [categoriesRes, loadersRes, rawBedrockVersionsRes] = await Promise.all([
 
 const categories = ref(categoriesRes)
 const loaders = ref(loadersRes)
+
+function sortVersionsDesc(v1: string, v2: string): number {
+	const p1 = (v1 || '').split('.').map((p) => parseInt(p, 10) || 0)
+	const p2 = (v2 || '').split('.').map((p) => parseInt(p, 10) || 0)
+	const len = Math.max(p1.length, p2.length)
+	for (let i = 0; i < len; i++) {
+		const a = p1[i] ?? 0
+		const b = p2[i] ?? 0
+		if (a !== b) return b - a
+	}
+	return 0
+}
+
+const sortedVersions = ((rawBedrockVersionsRes as string[]) || []).slice().sort(sortVersionsDesc)
+
 const availableGameVersions = ref<Labrinth.Tags.v2.GameVersion[]>(
-	((rawBedrockVersionsRes as string[]) || []).map((v: string) => ({
+	sortedVersions.map((v: string) => ({
 		version: v,
 		version_type: 'release',
 		date: new Date().toISOString(),
@@ -1035,11 +1050,12 @@ async function search(requestParams: string) {
 		}
 	}
 
+	const facetsParam = params.get('facets')
+
 	// 3. Check facets JSON parameter
-	if (!categoryId && params.get('facets')) {
-		const facetsStr = params.get('facets')
+	if (!categoryId && facetsParam) {
 		try {
-			const parsed = JSON.parse(facetsStr!)
+			const parsed = JSON.parse(facetsParam)
 			for (const group of parsed) {
 				const arr = Array.isArray(group) ? group : [group]
 				for (const item of arr) {
@@ -1059,11 +1075,12 @@ async function search(requestParams: string) {
 	}
 
 	let gameVersionFilter: string | null = params.get('v') || null
-	if (!gameVersionFilter && facetsStr) {
+	if (!gameVersionFilter && facetsParam) {
 		try {
-			const parsed = JSON.parse(facetsStr)
+			const parsed = JSON.parse(facetsParam)
 			for (const group of parsed) {
-				for (const item of group) {
+				const arr = Array.isArray(group) ? group : [group]
+				for (const item of arr) {
 					if (typeof item === 'string') {
 						if (item.includes('versions:') || item.includes('game_versions:')) {
 							gameVersionFilter = item.split(':').pop() || null

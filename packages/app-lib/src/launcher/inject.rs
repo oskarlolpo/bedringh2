@@ -40,17 +40,10 @@ pub async fn grant_all_application_packages_access(path: &Path) -> Result<()> {
     }
 
     let is_dir = path.is_dir();
-    if is_dir {
-        let marker = path.join(".perms_applied");
-        if marker.exists() {
-            return Ok(());
-        }
-    }
-
     let (perm1, perm2) = if is_dir {
-        ("*S-1-15-2-1:(OI)(CI)M", "*S-1-5-32-545:(OI)(CI)F")
+        ("*S-1-15-2-1:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)F")
     } else {
-        ("*S-1-15-2-1:M", "*S-1-5-32-545:F")
+        ("*S-1-15-2-1:F", "*S-1-5-32-545:F")
     };
 
     let mut cmd = tokio::process::Command::new("icacls");
@@ -74,9 +67,6 @@ pub async fn grant_all_application_packages_access(path: &Path) -> Result<()> {
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         eprintln!("Warning: icacls warning for {:?}: {}", path, err);
-    } else if is_dir {
-        let marker = path.join(".perms_applied");
-        let _ = tokio::fs::write(&marker, "").await;
     }
     Ok(())
 }

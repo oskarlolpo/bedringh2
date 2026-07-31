@@ -413,13 +413,16 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let _ = crate::launcher::inject::grant_all_application_packages_access(&xgameruntime_path).await;
 
         let store_dll_path = exe_dir.join("Windows.ApplicationModel.Store_x64.dll");
+        let store_dll_alias = exe_dir.join("Windows.ApplicationModel.Store.dll");
         if !store_dll_path.exists() {
             emit_legacy_log(&profile.path, "Downloading Windows.ApplicationModel.Store_x64.dll from GitHub releases...");
             if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("Windows.ApplicationModel.Store_x64.dll", &store_dll_path).await {
                 tracing::error!("Failed to download Windows.ApplicationModel.Store_x64.dll: {}", e);
             }
         }
+        let _ = tokio::fs::copy(&store_dll_path, &store_dll_alias).await;
         let _ = crate::launcher::inject::grant_all_application_packages_access(&store_dll_path).await;
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&store_dll_alias).await;
 
         // BLoader is required for all launches unconditionally
         let injector_name = "BLoader.dll";
