@@ -819,7 +819,7 @@ async function installCfMod(cfMod: any) {
 async function fetchAddons() {
 	loading.value = true
 	try {
-		addons.value = await invoke('plugin:bedrock-addons|fetch_bedrock_addons', {
+		addons.value = await invoke('plugin:bedrock-addons|list_bedrock_addons', {
 			profilePath: props.instance.path
 		})
 	} catch (e) {
