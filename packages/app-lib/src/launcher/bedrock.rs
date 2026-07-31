@@ -283,11 +283,15 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let settings_dir = state.directories.settings_dir.clone();
     let config_dir = state.directories.config_dir.clone();
     let profiles_dir = state.directories.profiles_dir();
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&settings_dir).await;
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&config_dir).await;
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&profiles_dir).await;
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_path).await;
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang).await;
+    let instance_path_clone = instance_path.clone();
+    let instance_mojang_clone = instance_mojang.clone();
+    tokio::spawn(async move {
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&settings_dir).await;
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&config_dir).await;
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&profiles_dir).await;
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_path_clone).await;
+        let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang_clone).await;
+    });
 
     let target_games_dir = get_bedrock_target_dir(install_type).await?;
     let _ = crate::launcher::inject::grant_all_application_packages_access(&target_games_dir).await;
