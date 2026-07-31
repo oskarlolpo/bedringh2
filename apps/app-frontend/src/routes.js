@@ -5,6 +5,7 @@ import * as Hosting from '@/pages/hosting/manage'
 import * as Instance from '@/pages/instance'
 import * as Library from '@/pages/library'
 import * as Project from '@/pages/project'
+import { get as getInstance } from '@/helpers/profile'
 
 /**
  * Configures application routing. Add page to pages/index and then add to route table here.
@@ -240,6 +241,18 @@ export default new createRouter({
 					meta: {
 						useRootContext: true,
 						breadcrumb: [{ name: '?Instance', link: '/instance/{id}/' }, { name: 'Content' }],
+					},
+					async beforeEnter(to) {
+						try {
+							const instance = await getInstance(to.params.id)
+							if (instance?.loader?.toLowerCase() === 'bedrock') {
+								return { path: `/instance/${encodeURIComponent(to.params.id)}/content`, replace: true }
+							}
+						} catch {
+							// If we can't determine the loader, fall through to the
+							// default (Java) content page rather than blocking navigation.
+						}
+						return true
 					},
 				},
 				{

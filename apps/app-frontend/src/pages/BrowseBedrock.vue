@@ -1039,7 +1039,7 @@ async function search(requestParams: string) {
 	for (const fVal of fVals) {
 		const decoded = decodeURIComponent(fVal)
 		if (!categoryId) {
-			const catMatch = decoded.match(/(?:categories:|=|\bIN\b\s*\[?['"]?)(\d+)/i)
+			const catMatch = decoded.match(/(?:categories:|=|\bIN\b\s*\[?[`'"]?)(\d+)/i)
 			if (catMatch && catMatch[1]) {
 				const parsed = parseInt(catMatch[1])
 				if (!isNaN(parsed) && parsed > 100) categoryId = parsed
@@ -1048,24 +1048,24 @@ async function search(requestParams: string) {
 		if (!gameVersionFilter) {
 			const verMatch = decoded.match(/(?:game_versions|versions|version):([^\s&,]+)/i)
 			if (verMatch && verMatch[1]) {
-				gameVersionFilter = verMatch[1].replace(/['"\[\]]/g, '')
+				gameVersionFilter = verMatch[1].replace(/['"`\[\]]/g, '')
 			}
 		}
 	}
 
-	// 3. Check new_filters parameter (e.g. "categories = '8834'", "categories IN ['8834']", "game_versions = '1.21.50'")
+	// 3. Check new_filters parameter (e.g. "categories = `8834`", "categories IN [`8834`]", "game_versions = `1.21.50`")
 	const newFilters = params.get('new_filters')
 	if (newFilters) {
 		const decodedFilters = decodeURIComponent(newFilters)
 		if (!categoryId) {
-			const catMatch = decodedFilters.match(/categories\s*(?:=|\bIN\b)\s*\[?['"]?(\d+)['"]?/i)
+			const catMatch = decodedFilters.match(/categories\s*(?:=|\bIN\b)\s*\[?[`'"]?(\d+)[`'"]?/i)
 			if (catMatch && catMatch[1]) {
 				const parsed = parseInt(catMatch[1])
 				if (!isNaN(parsed) && parsed > 100) categoryId = parsed
 			}
 		}
 		if (!gameVersionFilter) {
-			const verMatch = decodedFilters.match(/(?:game_versions|versions)\s*(?:=|\bIN\b)\s*\[?['"]?([0-9a-zA-Z\.\-_]+)['"]?/i)
+			const verMatch = decodedFilters.match(/(?:game_versions|versions)\s*(?:=|\bIN\b)\s*\[?[`'"]?([0-9a-zA-Z\.\-_]+)[`'"]?/i)
 			if (verMatch && verMatch[1]) {
 				gameVersionFilter = verMatch[1]
 			}
