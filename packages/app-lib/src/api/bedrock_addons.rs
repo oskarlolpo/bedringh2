@@ -310,7 +310,13 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
                     let version_str = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
                     let icon_file = path.join("pack_icon.png");
                     let icon_path = if icon_file.exists() {
-                        Some(icon_file.to_string_lossy().to_string())
+                        if let Ok(bytes) = fs::read(&icon_file).await {
+                            use base64::Engine;
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                            Some(format!("data:image/png;base64,{}", b64))
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
