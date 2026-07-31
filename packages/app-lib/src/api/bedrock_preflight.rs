@@ -209,6 +209,9 @@ pub async fn check_and_install_gameinput(loading_bar: &LoadingBarId) -> crate::R
 }
 
 pub async fn download_fallback_dll(filename: &str, target_path: &std::path::Path) -> crate::Result<()> {
+    if target_path.exists() {
+        return Ok(());
+    }
     let client = reqwest::Client::builder()
         .user_agent("BedringhLauncher")
         .build()

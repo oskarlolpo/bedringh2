@@ -390,6 +390,7 @@ pub async fn sync_valid_known_packs(com_mojang: &std::path::Path) -> Result<()> 
                     let version_str = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
 
                     known_packs.push(serde_json::json!({
+                        "file_system": "user",
                         "path": rel_path,
                         "uuid": manifest.header.uuid,
                         "version": version_str,
