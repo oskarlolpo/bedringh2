@@ -4,7 +4,6 @@ use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
-use std::os::windows::process::CommandExt;
 use std::sync::Arc;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::Diagnostics::Debug::{

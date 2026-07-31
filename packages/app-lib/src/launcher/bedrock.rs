@@ -35,6 +35,10 @@ impl BedrockInstallationType {
     pub fn is_gdk(&self) -> bool {
         matches!(self, Self::Gdk | Self::GdkPreview)
     }
+
+    pub fn is_uwp(&self) -> bool {
+        matches!(self, Self::Uwp | Self::UwpPreview)
+    }
 }
 
 pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Result<PathBuf> {
