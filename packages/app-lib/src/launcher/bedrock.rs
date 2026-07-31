@@ -37,67 +37,30 @@ impl BedrockInstallationType {
     }
 }
 
-async fn get_bedrock_target_dir(
-    install_type: BedrockInstallationType,
-) -> Result<PathBuf> {
-    if install_type.is_gdk() {
-        let appdata = std::env::var("APPDATA").unwrap_or_else(|_| {
-            let mut path = dirs::home_dir().unwrap();
-            path.push("AppData");
-            path.push("Roaming");
-            path.to_string_lossy().into_owned()
-        });
+pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Result<PathBuf> {
+    let local_appdata = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
+        let mut path = dirs::home_dir().unwrap_or_default();
+        path.push("AppData");
+        path.push("Local");
+        path.to_string_lossy().into_owned()
+    });
 
-        let infix = if install_type.is_preview() {
-            "Minecraft Bedrock Preview"
-        } else {
-            "Minecraft Bedrock"
-        };
-
-        let users_dir = PathBuf::from(appdata).join(infix).join("Users");
-        if !users_dir.exists() {
-            fs::create_dir_all(&users_dir).await?;
-        }
-
-        // For GDK, there's usually a user-specific folder with a UID.
-        // We'll just find the first directory inside "Users" or default to "Default"
-        let mut entries = fs::read_dir(&users_dir).await?;
-        let mut user_id_folder = "Default".to_string();
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    user_id_folder = name.to_string();
-                    break;
-                }
-            }
-        }
-
-        let gdk_games_dir = users_dir.join(&user_id_folder).join("games");
-        if !gdk_games_dir.exists() {
-            fs::create_dir_all(&gdk_games_dir).await?;
-        }
-        Ok(gdk_games_dir)
+    let pkg_folder = if install_type.is_preview() {
+        "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe"
     } else {
-        let local_appdata =
-            std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
-                let mut path = dirs::home_dir().unwrap();
-                path.push("AppData");
-                path.push("Local");
-                path.to_string_lossy().into_owned()
-            });
+        "Microsoft.MinecraftUWP_8wekyb3d8bbwe"
+    };
 
-        let uwp_games_dir = PathBuf::from(local_appdata)
-            .join("Packages")
-            .join(install_type.package_family())
-            .join("LocalState")
-            .join("games");
+    let uwp_games_dir = PathBuf::from(local_appdata)
+        .join("Packages")
+        .join(pkg_folder)
+        .join("LocalState")
+        .join("games");
 
-        if !uwp_games_dir.exists() {
-            fs::create_dir_all(&uwp_games_dir).await?;
-        }
-        Ok(uwp_games_dir)
+    if !uwp_games_dir.exists() {
+        let _ = fs::create_dir_all(&uwp_games_dir).await;
     }
+    Ok(uwp_games_dir)
 }
 
 struct BedrockJunctionGuard {
