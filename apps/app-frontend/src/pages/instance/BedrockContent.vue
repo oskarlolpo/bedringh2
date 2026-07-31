@@ -1,6 +1,5 @@
 <template>
-	<ReadyTransition :pending="loading">
-		<ContentCardLayout>
+	<ContentCardLayout>
 			<template #default>
 				<div class="flex items-center justify-between mb-4">
 					<h2 class="text-xl font-bold">{{ formatMessage(messages.bedrockTitle) }}</h2>
@@ -229,7 +228,6 @@
 				</div>
 			</template>
 		</ContentCardLayout>
-	</ReadyTransition>
 
 	<!-- Installed Add-on Detail Modal -->
 	<div 
