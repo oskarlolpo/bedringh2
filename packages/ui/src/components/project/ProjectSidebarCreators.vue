@@ -21,17 +21,17 @@
 				<hr v-if="sortedMembers.length > 0" class="w-full border-button-border my-0.5" />
 			</template>
 			<AutoLink
-				v-for="member in sortedMembers"
-				:key="`member-${member.id}`"
+				v-for="(member, idx) in sortedMembers"
+				:key="`member-${member.id || member.user?.id || idx}`"
 				class="flex gap-2 items-center w-fit text-primary leading-[1.2] group"
-				:to="userLink(member.user.username)"
+				:to="userLink(member.user?.username || '')"
 				:target="linkTarget ?? null"
 			>
-				<Avatar :src="member.user.avatar_url" :alt="member.user.username" size="32px" circle />
+				<Avatar :src="member.user?.avatar_url" :alt="member.user?.username || ''" size="32px" circle />
 				<div class="flex flex-col">
 					<span class="flex w-full flex-nowrap items-center gap-1 group-hover:underline">
 						<span class="min-w-0 overflow-hidden font-normal text-contrast truncate">{{
-							member.user.username
+							member.user?.username || 'Unknown'
 						}}</span>
 						<CrownIcon
 							v-if="member.is_owner"
@@ -57,14 +57,14 @@ import Avatar from '../base/Avatar.vue'
 const { formatMessage } = useVIntl()
 
 type TeamMember = {
-	id: string
-	role: string
-	is_owner: boolean
-	accepted: boolean
-	user: {
-		id: string
-		username: string
-		avatar_url: string
+	id?: string
+	role?: string
+	is_owner?: boolean
+	accepted?: boolean
+	user?: {
+		id?: string
+		username?: string
+		avatar_url?: string
 	}
 }
 
@@ -87,23 +87,23 @@ const props = defineProps<{
 // The rest of the members should be sorted by role, then by name
 const sortedMembers = computed(() => {
 	const acceptedMembers = (props.members ?? []).filter(
-		(x) => x.accepted === undefined || x.accepted,
+		(x) => x && x.user && (x.accepted === undefined || x.accepted),
 	)
 	const owner = acceptedMembers.find((x) =>
 		props.organization
 			? props.organization.members.some(
-					(orgMember) => orgMember.user.id === x.user.id && orgMember.is_owner,
+					(orgMember) => orgMember.user?.id === x.user?.id && orgMember.is_owner,
 				)
 			: x.is_owner,
 	)
 
-	const rest = acceptedMembers.filter((x) => !owner || x.user.id !== owner.user.id) || []
+	const rest = acceptedMembers.filter((x) => !owner || (x.user?.id && owner.user?.id ? x.user.id !== owner.user.id : x !== owner)) || []
 
 	rest.sort((a, b) => {
 		if (a.role === b.role) {
-			return a.user.username.localeCompare(b.user.username)
+			return (a.user?.username || '').localeCompare(b.user?.username || '')
 		} else {
-			return a.role.localeCompare(b.role)
+			return (a.role || '').localeCompare(b.role || '')
 		}
 	})
 

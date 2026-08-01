@@ -236,16 +236,21 @@
 				/>
 				<RouterView
 					v-if="route.path.startsWith('/project')"
-					:key="data.body"
-					:project="data"
-					:versions="versions"
-					:members="members"
-					:instance="instance"
-					:install="install"
-					:installed="installed"
-					:installing="installing"
-					:installed-version="installedVersion"
-				/>
+					v-slot="{ Component }"
+				>
+					<component
+						:is="Component"
+						:key="route.fullPath"
+						:project="data"
+						:versions="versions"
+						:members="members"
+						:instance="instance"
+						:install="install"
+						:installed="installed"
+						:installing="installing"
+						:installed-version="installedVersion"
+					/>
+				</RouterView>
 			</template>
 			<template v-else> Project data couldn't not be loaded. </template>
 		</div>
@@ -718,13 +723,15 @@ async function fetchProjectData() {
 
 					members.value = [
 						{
+							id: 'cf_' + authorName,
+							role: 'Creator',
+							is_owner: true,
 							user: {
 								id: 'cf_' + authorName,
 								username: authorName,
 								name: authorName,
 								avatar_url: authorAvatar,
 							},
-							role: 'Creator',
 						},
 					]
 				}
@@ -778,13 +785,15 @@ async function fetchProjectData() {
 
 		members.value = [
 			{
+				id: 'cf_' + authorName,
+				role: 'Creator',
+				is_owner: true,
 				user: {
 					id: 'cf_' + authorName,
 					username: authorName,
 					name: authorName,
 					avatar_url: avatarUrl,
 				},
-				role: 'Creator',
 			},
 		]
 	}
