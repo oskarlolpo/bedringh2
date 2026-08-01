@@ -295,7 +295,9 @@ async function refreshInstalledProjectIds() {
 		profilePath: route.query.i as string,
 	}).catch(() => [])
 
-	const bedrockIds = bedrockAddons.map((a: any) => a.folder_name)
+	const bedrockIds = bedrockAddons
+		.map((a: any) => (a.curseforge_mod_id != null ? String(a.curseforge_mod_id) : null))
+		.filter((id: string | null): id is string => id !== null)
 	const combinedIds = Array.from(new Set([...ids, ...bedrockIds]))
 	debugLog('installedProjectIds loaded', { count: combinedIds.length })
 	installedProjectIds.value = combinedIds
@@ -468,11 +470,6 @@ window.addEventListener('online', () => {
 })
 
 const messages = defineMessages({
-	addonsProjectType: { id: 'app.bedrock.project_type.addons', defaultMessage: 'Аддоны' },
-	resourcePacksProjectType: { id: 'app.bedrock.project_type.resourcepacks', defaultMessage: 'Текстур-паки' },
-	worldsProjectType: { id: 'app.bedrock.project_type.worlds', defaultMessage: 'Миры' },
-	skinsProjectType: { id: 'app.bedrock.project_type.skins', defaultMessage: 'Скины' },
-	scriptsProjectType: { id: 'app.bedrock.project_type.scripts', defaultMessage: 'Скрипты' },
 	catWeaponsArmor: { id: 'app.bedrock.category.weapons-armor', defaultMessage: 'Armor, Tools & Weapons' },
 	catCosmetics: { id: 'app.bedrock.category.cosmetics', defaultMessage: 'Cosmetics' },
 	catDataPacks: { id: 'app.bedrock.category.data-packs', defaultMessage: 'Data Packs' },
@@ -971,6 +968,7 @@ function getCardActions(
 								await invoke('plugin:bedrock-addons|download_and_install_bedrock_curseforge_addon', {
 									profilePath: instance.value.path,
 									downloadUrl,
+									curseforgeModId: modId,
 								})
 								onSearchResultsInstalled([projectResult.project_id])
 							} else {

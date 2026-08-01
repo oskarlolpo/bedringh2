@@ -699,6 +699,7 @@ export function createContentInstall(opts: {
 						await invoke('plugin:bedrock-addons|download_and_install_bedrock_curseforge_addon', {
 							profilePath: instancePath,
 							downloadUrl: targetFile.downloadUrl,
+							curseforgeModId: modId,
 						})
 						callback(String(targetFile.id), [project.id])
 						return

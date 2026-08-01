@@ -54,19 +54,20 @@
 						<ButtonStyled
 							circular
 							size="large"
-							:color="isTranslated ? 'brand' : 'surface'"
+							:color="isTranslated ? 'brand' : 'standard'"
 						>
 							<button
-								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+								v-tooltip="isTranslated ? formatMessage(messages.showOriginal) : formatMessage(messages.translateProject)"
+								:aria-label="isTranslated ? formatMessage(messages.showOriginal) : formatMessage(messages.translateProject)"
+								:disabled="isTranslating"
 								@click="toggleTranslation({ value: data })"
 							>
-								<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
+								<SpinnerIcon v-if="isTranslating" class="animate-spin size-5" />
 								<svg
 									v-else
 									xmlns="http://www.w3.org/2000/svg"
-									width="20"
-									height="20"
+									width="22"
+									height="22"
 									viewBox="0 0 24 24"
 									fill="none"
 									stroke="currentColor"
@@ -218,17 +219,17 @@
 				<NavTabs
 					:links="[
 						{
-							label: formatMessage(commonMessages.descriptionTabLabel),
+							label: 'Description',
 							href: projectDescriptionHref,
 						},
 						{
-							label: formatMessage(commonMessages.versionsTabLabel),
+							label: 'Versions',
 							href: versionsHref,
 							subpages: ['version'],
 							shown: projectV3?.minecraft_server == null,
 						},
 						{
-							label: formatMessage(commonMessages.galleryTabLabel),
+							label: 'Gallery',
 							href: projectGalleryHref,
 							shown: data.gallery.length > 0,
 						},
@@ -236,7 +237,6 @@
 				/>
 				<RouterView
 					v-if="route.path.startsWith('/project')"
-					:key="data.body"
 					:project="data"
 					:versions="versions"
 					:members="members"
@@ -375,6 +375,14 @@ const messages = defineMessages({
 	backToBrowse: {
 		id: 'app.project.install-context.back-to-browse',
 		defaultMessage: 'Back to discover',
+	},
+	translateProject: {
+		id: 'app.project.translate-project',
+		defaultMessage: 'Translate this page',
+	},
+	showOriginal: {
+		id: 'app.project.show-original',
+		defaultMessage: 'Show original',
 	},
 	installContentToInstance: {
 		id: 'app.project.install-context.install-content-to-instance',
@@ -615,25 +623,10 @@ async function fetchProjectData() {
 				if (cfMod) {
 					let authorName = 'CurseForge Creator'
 					let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`
-					let authorAvatar = cfMod.authors?.[0]?.avatarUrl || cfMod.authors?.[0]?.avatar_url || cfMod.logo?.thumbnailUrl || cfMod.logo?.url
 					if (cfMod.authors && cfMod.authors.length > 0) {
 						authorName = cfMod.authors[0].name
 						authorUrl = cfMod.authors[0].url || authorUrl
 					}
-
-					const rawSum = cfMod.summary || ''
-					const cleanSummary = rawSum
-						.replace(/<script[\s\S]*?<\/script>/gi, '')
-						.replace(/<style[\s\S]*?<\/style>/gi, '')
-						.replace(/<[^>]+>/g, ' ')
-						.replace(/&nbsp;/gi, ' ')
-						.replace(/&amp;/gi, '&')
-						.replace(/&lt;/gi, '<')
-						.replace(/&gt;/gi, '>')
-						.replace(/&quot;/gi, '"')
-						.replace(/&#39;/gi, "'")
-						.replace(/\s+/g, ' ')
-						.trim()
 
 					project = {
 						id: cfMod.id.toString(),
@@ -641,23 +634,21 @@ async function fetchProjectData() {
 						project_type: 'addon',
 						title: cfMod.name,
 						name: cfMod.name,
-						summary: cleanSummary,
-						description: cfDescription || cleanSummary,
-						body: cfDescription || cleanSummary,
+						summary: cfMod.summary ? cfMod.summary.replace(/<[^>]*>/g, '') : '',
+						description: cfMod.summary ? cfMod.summary.replace(/<[^>]*>/g, '') : '',
+						body: cfDescription || (cfMod.summary ? cfMod.summary.replace(/<[^>]*>/g, '') : ''),
 						downloads: cfMod.downloadCount || 0,
 						followers: 0,
 						icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url,
 						categories: cfMod.categories?.map((c) => c.name || c.slug) || [],
-						additional_categories: [],
 						versions: (cfFiles || []).map((f) => f.id.toString()),
 						author: authorName,
 						author_details: {
 							name: authorName,
-							avatar_url: authorAvatar,
 							link: authorUrl,
 						},
-						published: cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
-						created: cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
+						published: cfMod.dateCreated || cfMod.dateModified || cfMod.dateReleased || new Date().toISOString(),
+						created: cfMod.dateCreated || cfMod.dateModified || cfMod.dateReleased || new Date().toISOString(),
 						updated: cfMod.dateModified || cfMod.dateCreated || cfMod.dateReleased || new Date().toISOString(),
 						approved: cfMod.dateReleased || cfMod.dateCreated || cfMod.dateModified || new Date().toISOString(),
 						license: { id: 'Custom', name: 'Custom License', url: '' },
@@ -685,8 +676,8 @@ async function fetchProjectData() {
 						],
 						date_published: f.fileDate
 							? new Date(f.fileDate).toISOString()
-							: cfMod.dateCreated
-							? new Date(cfMod.dateCreated).toISOString()
+							: f.dateCreated
+							? new Date(f.dateCreated).toISOString()
 							: new Date().toISOString(),
 					}))
 
@@ -696,7 +687,6 @@ async function fetchProjectData() {
 								id: 'cf_' + authorName,
 								username: authorName,
 								name: authorName,
-								avatar_url: authorAvatar,
 							},
 							role: 'Creator',
 						},

@@ -16,6 +16,7 @@ pub struct BedrockAddon {
     pub icon_path: Option<String>,
     pub has_update: Option<bool>,
     pub latest_version: Option<String>,
+    pub curseforge_mod_id: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -325,6 +326,14 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
                         None
                     };
 
+                    let curseforge_mod_id = match fs::read_to_string(path.join(".bedrin-meta.json")).await {
+                        Ok(meta_str) => serde_json::from_str::<serde_json::Value>(&meta_str)
+                            .ok()
+                            .and_then(|v| v.get("curseforge_mod_id").and_then(|id| id.as_i64()))
+                            .map(|id| id as i32),
+                        Err(_) => None,
+                    };
+
                     addons.push(BedrockAddon {
                         uuid: manifest.header.uuid,
                         name: manifest.header.name,
@@ -336,6 +345,7 @@ pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>
                         icon_path,
                         has_update: None,
                         latest_version: None,
+                        curseforge_mod_id,
                     });
                 }
             }
@@ -491,7 +501,7 @@ pub async fn delete_bedrock_addon(profile_path: &str, kind: &str, folder_name: &
     Ok(())
 }
 
-pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &str) -> Result<()> {
+pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &str, curseforge_mod_id: Option<i32>) -> Result<()> {
     // We will use async_zip to extract the package.
     use async_zip::tokio::read::fs::ZipFileReader;
     let file_path = PathBuf::from(archive_path);
@@ -634,6 +644,16 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
 
             // Move pack_dir to target_path safely
             let _ = move_or_copy_dir(&pack_dir, &target_path).await;
+
+            // Remember which CurseForge mod this came from (if any) so the browse
+            // page can correctly show "Installed" after a reload, instead of only
+            // remembering it for the current session.
+            if let Some(mod_id) = curseforge_mod_id {
+                let meta = serde_json::json!({ "curseforge_mod_id": mod_id });
+                if let Ok(meta_str) = serde_json::to_string(&meta) {
+                    let _ = fs::write(target_path.join(".bedrin-meta.json"), meta_str).await;
+                }
+            }
 
             // Register pack in existing worlds (skin packs aren't referenced per-world)
             if !is_skin {

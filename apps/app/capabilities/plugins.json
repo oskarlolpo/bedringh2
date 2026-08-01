@@ -43,6 +43,9 @@
 					"url": "https://api.purpurmc.org/*"
 				},
 				{
+					"url": "https://translate.googleapis.com/*"
+				},
+				{
 					"url": "http://localhost:8000/*"
 				},
 				{

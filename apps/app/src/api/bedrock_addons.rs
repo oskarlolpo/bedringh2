@@ -56,8 +56,8 @@ pub async fn delete_bedrock_addon(profile_path: String, kind: String, folder_nam
 }
 
 #[tauri::command]
-pub async fn install_bedrock_addon_from_file(profile_path: String, archive_path: String) -> Result<()> {
-    Ok(theseus::bedrock_addons::install_bedrock_addon_from_file(&profile_path, &archive_path).await?)
+pub async fn install_bedrock_addon_from_file(profile_path: String, archive_path: String, curseforge_mod_id: Option<i32>) -> Result<()> {
+    Ok(theseus::bedrock_addons::install_bedrock_addon_from_file(&profile_path, &archive_path, curseforge_mod_id).await?)
 }
 
 #[tauri::command]
@@ -100,9 +100,9 @@ pub async fn get_bedrock_curseforge_addon_files(mod_id: i32) -> Result<Vec<these
 }
 
 #[tauri::command]
-pub async fn download_and_install_bedrock_curseforge_addon(profile_path: String, download_url: String) -> Result<()> {
+pub async fn download_and_install_bedrock_curseforge_addon(profile_path: String, download_url: String, curseforge_mod_id: Option<i32>) -> Result<()> {
     let file_path = theseus::bedrock_curseforge::download_addon(&download_url).await?;
-    theseus::bedrock_addons::install_bedrock_addon_from_file(&profile_path, &file_path).await?;
+    theseus::bedrock_addons::install_bedrock_addon_from_file(&profile_path, &file_path, curseforge_mod_id).await?;
     // Cleanup downloaded file
     let _ = tokio::fs::remove_file(file_path).await;
     Ok(())
