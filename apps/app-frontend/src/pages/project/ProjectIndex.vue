@@ -192,7 +192,7 @@
 									},
 									{
 										id: 'open-in-browser',
-										link: `https://modrinth.com/${data.project_type}/${data.slug}`,
+										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/${data?.project_type || 'mod'}/${data?.slug || ''}`,
 										external: true,
 									},
 									{
@@ -202,7 +202,7 @@
 										id: 'report',
 										color: 'red',
 										hoverFilled: true,
-										link: `https://modrinth.com/report?item=project&itemID=${data.id}`,
+										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/report?item=project&itemID=${data?.id || ''}`,
 									},
 								]"
 								aria-label="More options"
@@ -425,7 +425,7 @@ serverInstallContent.watchServerContextChanges()
 await serverInstallContent.initServerContext()
 
 const instanceFilters = computed(() => {
-	if (!instance.value) {
+	if (!instance.value || !data.value) {
 		return {}
 	}
 
@@ -434,7 +434,7 @@ const instanceFilters = computed(() => {
 		if (instance.value.loader !== 'vanilla') {
 			loaders.push(instance.value.loader)
 		}
-		if (instance.value.loader === 'vanilla' || data.value.loaders.includes('datapack')) {
+		if (instance.value.loader === 'vanilla' || (data.value.loaders || []).includes('datapack')) {
 			loaders.push('datapack')
 		}
 	}

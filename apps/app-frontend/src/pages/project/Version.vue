@@ -230,7 +230,9 @@ const props = defineProps({
 })
 
 const version = ref(props.versions.find((version) => version.id === route.params.version))
-breadcrumbs.setName('Version', version.value.name)
+if (version.value?.name) {
+	breadcrumbs.setName('Version', version.value.name)
+}
 
 watch(
 	() => props.versions,
@@ -238,13 +240,15 @@ watch(
 		if (route.params.version) {
 			version.value = props.versions.find((version) => version.id === route.params.version)
 			await refreshDisplayDependencies()
-			breadcrumbs.setName('Version', version.value.name)
+			if (version.value?.name) {
+				breadcrumbs.setName('Version', version.value.name)
+			}
 		}
 	},
 )
 
 const author = computed(() =>
-	props.members ? props.members.find((member) => member.user.id === version.value.author_id) : null,
+	props.members && version.value ? props.members.find((member) => member.user?.id === version.value.author_id) : null,
 )
 
 const displayDependencies = ref({})
