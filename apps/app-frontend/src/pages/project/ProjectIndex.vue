@@ -231,7 +231,7 @@
 						{
 							label: 'Gallery',
 							href: projectGalleryHref,
-							shown: data.gallery.length > 0,
+							shown: (data?.gallery?.length ?? 0) > 0,
 						},
 					]"
 				/>

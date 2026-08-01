@@ -22,6 +22,12 @@ import { useRouter } from 'vue-router'
 
 import type { GameInstance } from '@/helpers/types'
 
+import {
+	loadBedrockMetadataMap,
+	autoResolveAddonMetadata,
+	metadataVersion,
+} from '@/composables/use-bedrock-metadata'
+
 const props = defineProps<{
 	instance: GameInstance
 }>()
@@ -69,6 +75,7 @@ async function fetchAddons() {
 			profilePath: props.instance.path,
 		})
 		rawAddons.value = list || []
+		autoResolveAddonMetadata(props.instance.path, rawAddons.value)
 	} catch (e) {
 		console.error('Failed to list bedrock addons:', e)
 		handleError(e as Error)
@@ -90,26 +97,45 @@ onMounted(() => {
 })
 
 const contentItems = computed<ContentItem[]>(() => {
-	return rawAddons.value.map((addon) => ({
-		id: addon.folder_name,
-		file_name: addon.folder_name,
-		file_path: addon.folder_name,
-		enabled: addon.is_enabled,
-		has_update: addon.has_update ?? false,
-		update_version_id: null,
-		project_type: addon.kind === 'resource' ? 'resourcepack' : addon.kind === 'skin' ? 'skinpack' : 'mod',
-		project: {
+	// Access metadataVersion to ensure reactivity when background metadata resolution completes
+	const _v = metadataVersion.value
+	const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
+
+	return rawAddons.value.map((addon) => {
+		const cleanTitle = addon.name.replace(/§[0-9a-fk-or]/gi, '').trim()
+		const cleanKey = cleanTitle.toLowerCase()
+		const meta = metaMap[cleanKey] || metaMap[addon.folder_name.toLowerCase()]
+		const authorName = meta?.author || 'CurseForge Creator'
+		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || addon.icon_path
+		const projectId = meta?.projectId || addon.folder_name
+
+		return {
 			id: addon.folder_name,
-			slug: addon.folder_name,
-			title: addon.name.replace(/§[0-9a-fk-or]/gi, '').trim(),
-			icon_url: addon.icon_path || undefined,
-		},
-		version: {
-			id: addon.uuid,
-			version_number: addon.version || '1.0.0',
 			file_name: addon.folder_name,
-		},
-	}))
+			file_path: addon.folder_name,
+			enabled: addon.is_enabled,
+			has_update: addon.has_update ?? false,
+			update_version_id: null,
+			project_type: addon.kind === 'resource' ? 'resourcepack' : addon.kind === 'skin' ? 'skinpack' : 'mod',
+			owner: {
+				name: authorName,
+				avatar_url: avatarUrl,
+				type: 'user',
+			},
+			project: {
+				id: projectId,
+				slug: meta?.slug || addon.folder_name,
+				title: cleanTitle,
+				icon_url: meta?.iconUrl || addon.icon_path || undefined,
+				author: authorName,
+			},
+			version: {
+				id: addon.uuid,
+				version_number: addon.version || '1.0.0',
+				file_name: addon.folder_name,
+			},
+		}
+	})
 })
 
 async function toggleAddon(item: ContentItem) {
@@ -201,24 +227,25 @@ provideContentManager({
 	browse: handleBrowseContent,
 	uploadFiles: installFromFile,
 	hasUpdateSupport: false,
-	mapToTableItem: (item: ContentItem): ContentCardTableItem => ({
-		id: item.id,
-		project: item.project ?? { id: item.id, slug: item.id, title: item.file_name, icon_url: undefined },
-		projectLink:
-			item.project?.id && /^\d+$/.test(item.project.id)
-				? { path: `/project/${item.project.id}`, query: { i: props.instance.path } }
+	mapToTableItem: (item: ContentItem): ContentCardTableItem => {
+		const targetId = item.project?.id || item.id
+		return {
+			id: item.id,
+			project: item.project ?? { id: item.id, slug: item.id, title: item.file_name, icon_url: undefined },
+			projectLink: {
+				path: `/project/${encodeURIComponent(targetId)}`,
+				query: { i: props.instance.path },
+			},
+			version: item.version,
+			enabled: item.enabled,
+			hasUpdate: item.has_update,
+			owner: item.owner
+				? {
+						...item.owner,
+						ownerLink: item.owner.avatar_url || `https://modrinth.com/user/${item.owner.name}`,
+					}
 				: undefined,
-		version: item.version,
-		enabled: item.enabled,
-		hasUpdate: item.has_update,
-		owner: item.owner
-			? {
-					...item.owner,
-					ownerLink: item.owner.type === 'organization'
-						? `https://modrinth.com/organization/${item.owner.name}`
-						: `https://modrinth.com/user/${item.owner.name}`,
-				}
-			: undefined,
-	}),
+		}
+	},
 })
 </script>

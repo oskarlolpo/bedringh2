@@ -230,7 +230,7 @@
 						{
 							label: formatMessage(commonMessages.galleryTabLabel),
 							href: projectGalleryHref,
-							shown: data.gallery.length > 0,
+							shown: (data?.gallery?.length ?? 0) > 0,
 						},
 					]"
 				/>
