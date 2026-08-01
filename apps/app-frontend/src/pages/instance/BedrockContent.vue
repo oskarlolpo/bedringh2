@@ -105,7 +105,7 @@ const contentItems = computed<ContentItem[]>(() => {
 		const cleanTitle = addon.name.replace(/§[0-9a-fk-or]/gi, '').trim()
 		const cleanKey = cleanTitle.toLowerCase()
 		const meta = metaMap[cleanKey] || metaMap[addon.folder_name.toLowerCase()]
-		const authorName = meta?.author || (meta?.is_curseforge ? 'CurseForge Creator' : 'PnTMC')
+		const authorName = meta?.author || undefined
 		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || addon.icon_path
 		const projectId = meta?.projectId || addon.folder_name
 
@@ -117,11 +117,13 @@ const contentItems = computed<ContentItem[]>(() => {
 			has_update: addon.has_update ?? false,
 			update_version_id: null,
 			project_type: addon.kind === 'resource' ? 'resourcepack' : addon.kind === 'skin' ? 'skinpack' : 'mod',
-			owner: {
-				name: authorName,
-				avatar_url: avatarUrl,
-				type: 'user',
-			},
+			owner: authorName
+				? {
+						name: authorName,
+						avatar_url: avatarUrl,
+						type: 'user',
+					}
+				: undefined,
 			project: {
 				id: projectId,
 				slug: meta?.slug || addon.folder_name,
@@ -236,8 +238,7 @@ provideContentManager({
 		const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
 		const cleanKey = (item.project?.title || item.file_name).replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()
 		const meta = metaMap[cleanKey] || metaMap[item.file_name.toLowerCase()]
-		const isCurseForge = meta?.is_curseforge
-		const memberLink = isCurseForge && item.owner?.name ? `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}` : undefined
+		const memberLink = meta?.projectUrl || (item.owner?.name ? `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}` : undefined)
 
 		return {
 			id: item.id,

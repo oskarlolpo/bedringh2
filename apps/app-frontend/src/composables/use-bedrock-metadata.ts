@@ -8,6 +8,7 @@ export interface BedrockAddonMeta {
 	avatarUrl?: string
 	iconUrl?: string
 	projectUrl?: string
+	is_curseforge?: boolean
 }
 
 export const metadataVersion = ref(0)
@@ -81,6 +82,7 @@ export async function autoResolveAddonMetadata(profilePath: string, addons: Arra
 					avatarUrl: authorAvatar,
 					iconUrl: hit.logo?.thumbnailUrl || hit.logo?.url || addon.icon_path,
 					projectUrl: authorUrl,
+					is_curseforge: true,
 				}
 
 				map[cleanKey] = meta

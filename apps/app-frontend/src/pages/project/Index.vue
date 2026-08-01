@@ -59,7 +59,7 @@
 							<button
 								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
 								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-								@click="toggleTranslation({ value: data })"
+								@click="toggleTranslation(data)"
 							>
 								<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
 								<svg
@@ -745,7 +745,7 @@ async function fetchProjectData() {
 		const rawName = decodeURIComponent(String(route.params.id || ''))
 		const metaMap = route.query.i ? loadBedrockMetadataMap(String(route.query.i)) : {}
 		const meta = metaMap[rawName.toLowerCase()] || metaMap[rawName.replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()]
-		const authorName = meta?.author || (meta?.is_curseforge ? 'CurseForge Creator' : 'PnTMC')
+		const authorName = meta?.author || undefined
 		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || undefined
 		const cleanTitle = meta?.name || meta?.title || meta?.slug || rawName.replace(/§[0-9a-fk-or]/gi, '').trim()
 
@@ -765,11 +765,13 @@ async function fetchProjectData() {
 			additional_categories: [],
 			versions: meta?.version ? [meta.version] : ['1.0.0'],
 			author: authorName,
-			author_details: {
-				name: authorName,
-				avatar_url: avatarUrl,
-				link: meta?.projectUrl || (meta?.is_curseforge ? `https://www.curseforge.com/members/${encodeURIComponent(authorName)}` : ''),
-			},
+			author_details: authorName
+				? {
+						name: authorName,
+						avatar_url: avatarUrl,
+						link: meta?.projectUrl || (meta?.is_curseforge ? `https://www.curseforge.com/members/${encodeURIComponent(authorName)}` : ''),
+					}
+				: undefined,
 			published: meta?.published || new Date().toISOString(),
 			created: meta?.created || new Date().toISOString(),
 			updated: meta?.updated || new Date().toISOString(),
@@ -784,19 +786,21 @@ async function fetchProjectData() {
 			game_versions: meta?.game_versions || [],
 		}
 
-		members.value = [
-			{
-				id: 'cf_' + authorName,
-				role: 'Creator',
-				is_owner: true,
-				user: {
-					id: 'cf_' + authorName,
-					username: authorName,
-					name: authorName,
-					avatar_url: avatarUrl,
-				},
-			},
-		]
+		members.value = authorName
+			? [
+					{
+						id: 'author_' + authorName,
+						role: 'Creator',
+						is_owner: true,
+						user: {
+							id: 'author_' + authorName,
+							username: authorName,
+							name: authorName,
+							avatar_url: avatarUrl,
+						},
+					},
+				]
+			: []
 	}
 
 	if (!project) {
@@ -808,14 +812,20 @@ async function fetchProjectData() {
 	projectV3.value = projectV3Result
 
 	if (!project.is_curseforge) {
-		;[versions.value, members.value, categories.value, instance.value, instanceProjects.value] =
-			await Promise.all([
-				get_version_many(project.versions, 'must_revalidate').catch(handleError),
-				get_team(project.team).catch(handleError),
-				get_categories().catch(handleError),
-				route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
-				route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
-			])
+		const fetches: Promise<any>[] = [
+			get_version_many(project.versions, 'must_revalidate').catch(handleError),
+			project.team ? get_team(project.team).catch(handleError) : Promise.resolve(members.value),
+			get_categories().catch(handleError),
+			route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
+			route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
+		]
+
+		const [vRes, mRes, cRes, iRes, ipRes] = await Promise.all(fetches)
+		versions.value = vRes || []
+		if (mRes) members.value = mRes
+		categories.value = cRes || []
+		instance.value = iRes
+		instanceProjects.value = ipRes
 
 		versions.value = (versions.value || []).sort(
 			(a, b) => dayjs(b.date_published) - dayjs(a.date_published),
