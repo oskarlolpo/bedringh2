@@ -1,16 +1,16 @@
 <template>
 	<ContentPageHeader>
 		<template #icon>
-			<Avatar :src="project.icon_url" :alt="project.title" size="96px" />
+			<Avatar :src="project?.icon_url" :alt="project?.title" size="96px" />
 		</template>
 		<template #title>
-			{{ project.title }}
+			{{ project?.title }}
 		</template>
 		<template #title-suffix>
-			<ProjectStatusBadge v-if="member || project.status !== 'approved'" :status="project.status" />
+			<ProjectStatusBadge v-if="member || (project?.status && project.status !== 'approved')" :status="project?.status" />
 		</template>
 		<template #summary>
-			{{ project.description }}
+			{{ project?.description }}
 		</template>
 		<template #stats>
 			<div class="flex items-center gap-3 flex-wrap gap-y-0">
@@ -27,36 +27,36 @@
 						v-tooltip="
 							capitalizeString(
 								formatMessage(commonMessages.projectDownloads, {
-									count: project.downloads,
+									count: project?.downloads ?? 0,
 								}),
 							)
 						"
 						class="flex items-center gap-2 font-semibold cursor-help"
 					>
 						<DownloadIcon class="h-6 w-6 text-secondary" />
-						{{ formatCompactNumber(project.downloads) }}
+						{{ formatCompactNumber(project?.downloads ?? 0) }}
 					</div>
 					<div
 						v-tooltip="
 							capitalizeString(
 								formatMessage(commonMessages.projectFollowers, {
-									count: project.followers,
+									count: project?.followers ?? 0,
 								}),
 							)
 						"
 						class="flex items-center gap-2 cursor-help"
-						:class="{ 'md:border-r': project.categories.length > 0 }"
+						:class="{ 'md:border-r': (project?.categories?.length ?? 0) > 0 }"
 					>
 						<HeartIcon class="h-6 w-6 text-secondary" />
 						<span class="font-semibold">
-							{{ formatCompactNumber(project.followers) }}
+							{{ formatCompactNumber(project?.followers ?? 0) }}
 						</span>
 					</div>
 				</template>
-				<div v-if="project.categories.length > 0" class="hidden items-center gap-2 md:flex">
+				<div v-if="(project?.categories?.length ?? 0) > 0" class="hidden items-center gap-2 md:flex">
 					<div class="flex flex-wrap gap-2">
 						<TagItem
-							v-for="(category, index) in project.categories"
+							v-for="(category, index) in (project?.categories ?? [])"
 							:key="index"
 							:action="() => router.push(`${searchUrl}?f=categories:${category}`)"
 						>
@@ -104,7 +104,7 @@ const props = withDefaults(
 )
 
 const searchUrl = computed(
-	() => `/discover/${isServerProject.value ? 'servers' : `${props.project.project_type}s`}`,
+	() => `/discover/${isServerProject.value ? 'servers' : `${props.project?.project_type ?? 'mod'}s`}`,
 )
 
 const isServerProject = computed(() => !!props.projectV3?.minecraft_server)

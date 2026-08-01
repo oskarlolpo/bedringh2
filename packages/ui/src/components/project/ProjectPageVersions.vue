@@ -349,7 +349,7 @@ const props = withDefaults(
 function getModpackLoaders(version: VersionWithDisplayUrlEnding): string[] {
 	const loaders = Array.isArray(version.loaders) ? version.loaders : []
 
-	if (props.project.project_type !== 'modpack') {
+	if (props.project?.project_type !== 'modpack') {
 		return loaders
 	}
 
@@ -367,7 +367,7 @@ function getGameVersions(version: VersionWithDisplayUrlEnding): string[] {
 
 function hasNoModLoader(loaders: string[]): boolean {
 	return (
-		(props.project.project_type === 'modpack' &&
+		(props.project?.project_type === 'modpack' &&
 			loaders.length === 1 &&
 			loaders[0] === 'minecraft') ||
 		loaders.length === 0

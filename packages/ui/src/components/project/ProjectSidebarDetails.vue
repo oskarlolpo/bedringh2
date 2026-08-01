@@ -8,9 +8,9 @@
 					<IntlFormatted :message-id="messages.licensed">
 						<template #license>
 							<a
-								v-if="project.license.url"
+								v-if="project?.license?.url"
 								class="text-link hover:underline"
-								:href="project.license.url"
+								:href="project?.license?.url"
 								:target="linkTarget"
 								rel="noopener nofollow ugc"
 							>
@@ -19,8 +19,8 @@
 							</a>
 							<span
 								v-else-if="
-									project.license.id === 'LicenseRef-All-Rights-Reserved' ||
-									!project.license.id.includes('LicenseRef')
+									project?.license?.id === 'LicenseRef-All-Rights-Reserved' ||
+									!project?.license?.id?.includes('LicenseRef')
 								"
 							>
 								{{ licenseIdDisplay }}
@@ -112,20 +112,20 @@ const props = defineProps<{
 }>()
 
 const createdDate = computed(() =>
-	props.project.published ? formatRelativeTime(props.project.published) : 'unknown',
+	props.project?.published ? formatRelativeTime(props.project.published) : 'unknown',
 )
 const submittedDate = computed(() =>
-	props.project.queued ? formatRelativeTime(props.project.queued) : 'unknown',
+	props.project?.queued ? formatRelativeTime(props.project.queued) : 'unknown',
 )
 const publishedDate = computed(() =>
-	props.project.approved ? formatRelativeTime(props.project.approved) : 'unknown',
+	props.project?.approved ? formatRelativeTime(props.project.approved) : 'unknown',
 )
 const updatedDate = computed(() =>
-	props.project.updated ? formatRelativeTime(props.project.updated) : 'unknown',
+	props.project?.updated ? formatRelativeTime(props.project.updated) : 'unknown',
 )
 
 const licenseIdDisplay = computed(() => {
-	const id = props.project.license.id
+	const id = props.project?.license?.id ?? 'Custom'
 
 	if (id === 'LicenseRef-All-Rights-Reserved') {
 		return 'ARR'

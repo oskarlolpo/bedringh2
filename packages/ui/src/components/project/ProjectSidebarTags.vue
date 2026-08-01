@@ -53,7 +53,7 @@ const messages = defineMessages({
 })
 
 const allTags = computed(() => [
-	...props.project.categories,
-	...props.project.additional_categories,
+	...(props.project?.categories ?? []),
+	...(props.project?.additional_categories ?? []),
 ])
 </script>
