@@ -611,7 +611,26 @@ async function fetchProjectData() {
 	}
 
 	if (!project) {
-		const cfModId = parseInt(route.params.id)
+		const rawId = String(route.params.id || '')
+		const cleanId = rawId.replace(/^curseforge[-:]?/, '')
+		const digitsOnly = cleanId.replace(/[^0-9]/g, '')
+		const isNumericId = digitsOnly.length > 0 && digitsOnly === cleanId
+		let cfModId = isNumericId ? parseInt(digitsOnly, 10) : NaN
+
+		if (isNaN(cfModId)) {
+			try {
+				const searchRes = await invoke<any>('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
+					query: rawId,
+				}).catch(() => null)
+				const list = Array.isArray(searchRes) ? searchRes : (searchRes?.data || [])
+				if (list.length > 0) {
+					cfModId = list[0].id
+				}
+			} catch (e) {
+				console.error('Failed to search CurseForge by slug:', e)
+			}
+		}
+
 		if (!isNaN(cfModId)) {
 			try {
 				const [cfMod, cfFiles, cfDescription] = await Promise.all([
@@ -641,6 +660,7 @@ async function fetchProjectData() {
 						followers: 0,
 						icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url,
 						categories: cfMod.categories?.map((c) => c.name || c.slug) || [],
+						additional_categories: [],
 						versions: (cfFiles || []).map((f) => f.id.toString()),
 						author: authorName,
 						author_details: {

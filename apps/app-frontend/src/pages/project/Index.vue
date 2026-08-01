@@ -615,8 +615,9 @@ async function fetchProjectData() {
 				const searchRes = await invoke<any>('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 					query: rawId,
 				}).catch(() => null)
-				if (searchRes?.data && searchRes.data.length > 0) {
-					cfModId = searchRes.data[0].id
+				const list = Array.isArray(searchRes) ? searchRes : (searchRes?.data || [])
+				if (list.length > 0) {
+					cfModId = list[0].id
 				}
 			} catch (e) {
 				console.error('Failed to search CurseForge by slug:', e)
