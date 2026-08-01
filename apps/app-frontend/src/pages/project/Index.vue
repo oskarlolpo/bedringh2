@@ -812,7 +812,7 @@ async function fetchProjectData() {
 	projectV3.value = projectV3Result
 
 	if (!project.is_curseforge) {
-		const fetches: Promise<any>[] = [
+		const fetches = [
 			get_version_many(project.versions, 'must_revalidate').catch(handleError),
 			project.team ? get_team(project.team).catch(handleError) : Promise.resolve(members.value),
 			get_categories().catch(handleError),
