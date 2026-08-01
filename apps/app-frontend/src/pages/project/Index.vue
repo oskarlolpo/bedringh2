@@ -828,13 +828,13 @@ async function fetchProjectData() {
 	}
 
 	if (instanceProjects.value && data.value) {
-		const targetId = String(data.value.id)
+		const targetId = String(data.value.id || '')
 		const targetSlug = String(data.value.slug || '').toLowerCase()
 		const installedFile = Object.values(instanceProjects.value).find(
 			(x) =>
-				x.metadata &&
+				x?.metadata &&
 				(String(x.metadata.project_id) === targetId ||
-					String(x.metadata.project_id).toLowerCase() === targetSlug ||
+					String(x.metadata.project_id || '').toLowerCase() === targetSlug ||
 					String(x.metadata.slug || '').toLowerCase() === targetSlug),
 		)
 		if (installedFile) {
@@ -849,9 +849,9 @@ async function fetchProjectData() {
 				profilePath: instance.value.path,
 			}).catch(() => [])
 			if (bedrockAddons && bedrockAddons.length > 0) {
-				const projectTitleNorm = data.value.title.toLowerCase().trim()
+				const projectTitleNorm = (data.value.title || '').toLowerCase().trim()
 				const projectSlugNorm = (data.value.slug || '').toLowerCase().trim()
-				const projectIdNorm = String(data.value.id).toLowerCase().trim()
+				const projectIdNorm = String(data.value.id || '').toLowerCase().trim()
 				const isInstalledInBedrock = bedrockAddons.some((addon) => {
 					const nameNorm = (addon.name || '').toLowerCase().trim()
 					const subPathNorm = (addon.sub_path || '').toLowerCase().trim()
@@ -869,14 +869,16 @@ async function fetchProjectData() {
 		}
 	}
 
-	if (project.organization) {
+	if (project?.organization) {
 		organization.value = await get_organization(project.organization).catch(handleError)
 	}
 
 	isServerProject.value = projectV3.value?.minecraft_server != null
 	serverStatusOnline.value = !!projectV3.value?.minecraft_java_server?.ping?.data
 
-	breadcrumbs.setName('Project', data.value.title)
+	if (data.value?.title) {
+		breadcrumbs.setName('Project', data.value.title)
+	}
 	if (instance.value?.loader?.toLowerCase() === 'bedrock' || data.value?.is_curseforge) {
 		if (instance.value) {
 			breadcrumbs.setContext({

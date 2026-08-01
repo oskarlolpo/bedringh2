@@ -229,7 +229,7 @@ const props = defineProps({
 	},
 })
 
-const version = ref(props.versions.find((version) => version.id === route.params.version))
+const version = ref((props.versions || []).find((v) => v.id === route.params.version))
 if (version.value?.name) {
 	breadcrumbs.setName('Version', version.value.name)
 }
@@ -237,8 +237,8 @@ if (version.value?.name) {
 watch(
 	() => props.versions,
 	async () => {
-		if (route.params.version) {
-			version.value = props.versions.find((version) => version.id === route.params.version)
+		if (route.params.version && props.versions) {
+			version.value = props.versions.find((v) => v.id === route.params.version)
 			await refreshDisplayDependencies()
 			if (version.value?.name) {
 				breadcrumbs.setName('Version', version.value.name)
@@ -251,11 +251,11 @@ const author = computed(() =>
 	props.members && version.value ? props.members.find((member) => member.user?.id === version.value.author_id) : null,
 )
 
-const displayDependencies = ref({})
+const displayDependencies = ref([])
 
 function buildProjectHref(path) {
 	const params = new URLSearchParams()
-	for (const [key, val] of Object.entries(route.query)) {
+	for (const [key, val] of Object.entries(route.query || {})) {
 		if (Array.isArray(val)) {
 			for (const v of val) params.append(key, v)
 		} else if (val) {
@@ -267,39 +267,41 @@ function buildProjectHref(path) {
 }
 
 async function refreshDisplayDependencies() {
+	if (!version.value?.dependencies || !Array.isArray(version.value.dependencies)) {
+		displayDependencies.value = []
+		return
+	}
 	const projectIds = new Set()
 	const versionIds = new Set()
-	if (version.value.dependencies) {
-		for (const dependency of version.value.dependencies) {
-			if (dependency.project_id) {
-				projectIds.add(dependency.project_id)
-			}
-			if (dependency.version_id) {
-				versionIds.add(dependency.version_id)
-			}
+	for (const dependency of version.value.dependencies) {
+		if (dependency.project_id) {
+			projectIds.add(dependency.project_id)
+		}
+		if (dependency.version_id) {
+			versionIds.add(dependency.version_id)
 		}
 	}
 	const [projectDeps, versionDeps] = await Promise.all([
-		get_project_many([...projectIds]),
-		get_version_many([...versionIds]),
+		get_project_many([...projectIds]).catch(() => []),
+		get_version_many([...versionIds]).catch(() => []),
 	])
 
 	const dependencies = {
-		projects: projectDeps,
-		versions: versionDeps,
+		projects: projectDeps || [],
+		versions: versionDeps || [],
 	}
 
-	displayDependencies.value = version.value.dependencies.map((dependency) => {
-		const version = dependencies.versions.find((obj) => obj.id === dependency.version_id)
-		if (version) {
+	displayDependencies.value = (version.value.dependencies || []).map((dependency) => {
+		const v = dependencies.versions.find((obj) => obj.id === dependency.version_id)
+		if (v) {
 			const project = dependencies.projects.find(
-				(obj) => obj.id === version.project_id || obj.id === dependency.project_id,
+				(obj) => obj.id === v.project_id || obj.id === dependency.project_id,
 			)
 			return {
 				icon: project?.icon_url,
-				title: project?.title || project?.name,
-				subtitle: `Version ${version.version_number} is ${dependency.dependency_type}`,
-				link: buildProjectHref(`/project/${project.slug}/version/${version.id}`),
+				title: project?.title || project?.name || 'Dependency',
+				subtitle: `Version ${v.version_number} is ${dependency.dependency_type}`,
+				link: project ? buildProjectHref(`/project/${project.slug || project.id}/version/${v.id}`) : null,
 			}
 		} else {
 			const project = dependencies.projects.find((obj) => obj.id === dependency.project_id)
@@ -307,14 +309,14 @@ async function refreshDisplayDependencies() {
 			if (project) {
 				return {
 					icon: project?.icon_url,
-					title: project?.title || project?.name,
+					title: project?.title || project?.name || 'Dependency',
 					subtitle: `${dependency.dependency_type}`,
-					link: buildProjectHref(`/project/${project.slug}`),
+					link: buildProjectHref(`/project/${project.slug || project.id}`),
 				}
 			} else {
 				return {
 					icon: null,
-					title: dependency.file_name,
+					title: dependency.file_name || 'Dependency',
 					subtitle: `Added via overrides`,
 					link: null,
 				}
