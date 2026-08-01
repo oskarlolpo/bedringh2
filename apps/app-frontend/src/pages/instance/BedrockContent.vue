@@ -242,6 +242,7 @@ provideContentManager({
 			owner: item.owner
 				? {
 						...item.owner,
+						link: `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}`,
 						ownerLink: `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}`,
 					}
 				: undefined,

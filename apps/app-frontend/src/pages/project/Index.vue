@@ -286,6 +286,7 @@
 </template>
 
 <script setup>
+import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
 import {
 	BookmarkIcon,
 	CheckIcon,
@@ -731,6 +732,61 @@ async function fetchProjectData() {
 				console.error('Failed to load CurseForge mod:', e)
 			}
 		}
+	}
+
+	if (!project) {
+		const rawName = decodeURIComponent(String(route.params.id || ''))
+		const metaMap = route.query.i ? loadBedrockMetadataMap(String(route.query.i)) : {}
+		const meta = metaMap[rawName.toLowerCase()] || metaMap[rawName.replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()]
+		const authorName = meta?.author || 'CurseForge Creator'
+		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || undefined
+
+		project = {
+			id: rawName,
+			slug: meta?.slug || rawName,
+			project_type: 'addon',
+			title: meta?.slug ? meta.slug : rawName.replace(/§[0-9a-fk-or]/gi, '').trim(),
+			name: rawName,
+			summary: 'Bedrock Addon',
+			description: 'Bedrock Addon',
+			body: 'Bedrock Addon',
+			downloads: 0,
+			followers: 0,
+			icon_url: avatarUrl,
+			categories: [],
+			additional_categories: [],
+			versions: ['1.0.0'],
+			author: authorName,
+			author_details: {
+				name: authorName,
+				avatar_url: avatarUrl,
+				link: meta?.projectUrl || `https://www.curseforge.com/members/${encodeURIComponent(authorName)}`,
+			},
+			published: new Date().toISOString(),
+			created: new Date().toISOString(),
+			updated: new Date().toISOString(),
+			approved: new Date().toISOString(),
+			license: { id: 'Custom', name: 'Custom License', url: '' },
+			website_url: meta?.projectUrl || '',
+			is_curseforge: true,
+			gallery: [],
+			client_side: 'required',
+			server_side: 'optional',
+			loaders: ['bedrock'],
+			game_versions: [],
+		}
+
+		members.value = [
+			{
+				user: {
+					id: 'cf_' + authorName,
+					username: authorName,
+					name: authorName,
+					avatar_url: avatarUrl,
+				},
+				role: 'Creator',
+			},
+		]
 	}
 
 	if (!project) {
