@@ -242,7 +242,7 @@ provideContentManager({
 			owner: item.owner
 				? {
 						...item.owner,
-						ownerLink: item.owner.avatar_url || `https://modrinth.com/user/${item.owner.name}`,
+						ownerLink: `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}`,
 					}
 				: undefined,
 		}

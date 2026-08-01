@@ -619,7 +619,7 @@ async function fetchProjectData() {
 
 		if (isNaN(cfModId)) {
 			try {
-				const searchRes = await invoke<any>('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
+				const searchRes = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 					query: rawId,
 				}).catch(() => null)
 				const list = Array.isArray(searchRes) ? searchRes : (searchRes?.data || [])

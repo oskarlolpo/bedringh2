@@ -643,9 +643,9 @@ export function createContentInstall(opts: {
 			if (!isNaN(cfModId) && cfModId > 0) {
 				try {
 					const [cfMod, cfFiles, cfDesc] = await Promise.all([
-						invoke<any>('plugin:bedrock-addons|get_bedrock_curseforge_addon', { modId: cfModId }).catch(() => null),
-						invoke<any>('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId: cfModId }).catch(() => []),
-						invoke<any>('plugin:bedrock-addons|get_bedrock_curseforge_addon_description', { modId: cfModId }).catch(() => ''),
+						invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon', { modId: cfModId }).catch(() => null),
+						invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId: cfModId }).catch(() => []),
+						invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_description', { modId: cfModId }).catch(() => ''),
 					])
 					if (cfMod) {
 						let authorName = 'CurseForge Creator'

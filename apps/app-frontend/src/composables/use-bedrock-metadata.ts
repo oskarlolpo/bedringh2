@@ -58,7 +58,7 @@ export async function autoResolveAddonMetadata(profilePath: string, addons: Arra
 		if (map[cleanKey] && map[cleanKey].author && map[cleanKey].projectId) continue
 
 		try {
-			const searchRes = await invoke<any>('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
+			const searchRes = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 				query: cleanName,
 			}).catch(() => null)
 
