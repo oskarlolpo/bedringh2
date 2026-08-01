@@ -24,16 +24,20 @@ export function useCompactNumber() {
 	const { locale } = injectI18n()
 
 	function formatCompactNumber(value: number | bigint): string {
-		if (value < 10_000) {
-			const standardFormatter = getStandardFormatter(locale.value)
-			return standardFormatter.format(value)
+		if (value === undefined || value === null || typeof value === 'symbol' || Number.isNaN(Number(value))) {
+			return '0'
 		}
-		if (value < 1_000_000) {
+		const num = Number(value)
+		if (num < 10_000) {
+			const standardFormatter = getStandardFormatter(locale.value)
+			return standardFormatter.format(num)
+		}
+		if (num < 1_000_000) {
 			const oneDigitCompactFormatter = getCompactFormatter(locale.value, 1)
-			return oneDigitCompactFormatter.format(value)
+			return oneDigitCompactFormatter.format(num)
 		}
 		const twoDigitsCompactFormatter = getCompactFormatter(locale.value, 2)
-		return twoDigitsCompactFormatter.format(value)
+		return twoDigitsCompactFormatter.format(num)
 	}
 
 	function formatCompactNumberPlural(value: number | bigint): number | bigint {

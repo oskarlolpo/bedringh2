@@ -101,7 +101,7 @@ const contentItems = computed<ContentItem[]>(() => {
 		project: {
 			id: addon.folder_name,
 			slug: addon.folder_name,
-			title: addon.name,
+			title: addon.name.replace(/§[0-9a-fk-or]/gi, '').trim(),
 			icon_url: addon.icon_path || undefined,
 		},
 		version: {
@@ -204,9 +204,21 @@ provideContentManager({
 	mapToTableItem: (item: ContentItem): ContentCardTableItem => ({
 		id: item.id,
 		project: item.project ?? { id: item.id, slug: item.id, title: item.file_name, icon_url: undefined },
+		projectLink:
+			item.project?.id && /^\d+$/.test(item.project.id)
+				? { path: `/project/${item.project.id}`, query: { i: props.instance.path } }
+				: undefined,
 		version: item.version,
 		enabled: item.enabled,
 		hasUpdate: item.has_update,
+		owner: item.owner
+			? {
+					...item.owner,
+					ownerLink: item.owner.type === 'organization'
+						? `https://modrinth.com/organization/${item.owner.name}`
+						: `https://modrinth.com/user/${item.owner.name}`,
+				}
+			: undefined,
 	}),
 })
 </script>

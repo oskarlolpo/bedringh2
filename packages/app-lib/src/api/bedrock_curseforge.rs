@@ -26,6 +26,7 @@ pub struct CurseForgeAuthor {
     pub id: i32,
     pub name: String,
     pub url: String,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -43,6 +44,9 @@ pub struct CurseForgeMod {
     #[serde(default)]
     pub authors: Vec<CurseForgeAuthor>,
     pub website_url: Option<String>,
+    pub date_created: Option<String>,
+    pub date_modified: Option<String>,
+    pub date_released: Option<String>,
     #[serde(default)]
     pub latest_files: Vec<CurseForgeFile>,
 }
@@ -55,6 +59,7 @@ pub struct CurseForgeFile {
     pub file_name: String,
     pub file_length: u64,
     pub download_url: Option<String>,
+    pub file_date: Option<String>,
     #[serde(default)]
     pub game_versions: Vec<String>,
 }

@@ -49,7 +49,43 @@
 				v-if="projectInstallContext"
 				class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 p-3 border-surface-5"
 			>
-				<BrowseInstallHeader :install-context="projectInstallContext" />
+				<BrowseInstallHeader :install-context="projectInstallContext">
+					<template #actions>
+						<ButtonStyled
+							circular
+							size="large"
+							:color="isTranslated ? 'brand' : 'surface'"
+						>
+							<button
+								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+								@click="toggleTranslation({ value: data })"
+							>
+								<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
+								<svg
+									v-else
+									xmlns="http://www.w3.org/2000/svg"
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
+								>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+									<path d="M4 5h7" />
+									<path d="M7 4c0 4.846 0 7 .5 8" />
+									<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
+									<path d="M12 20l4 -9l4 9" />
+									<path d="M19.1 18h-6.2" />
+								</svg>
+							</button>
+						</ButtonStyled>
+					</template>
+				</BrowseInstallHeader>
 			</div>
 			<InstanceIndicator v-if="instance && !projectInstallContext" :instance="instance" />
 			<template v-if="data">
@@ -182,17 +218,17 @@
 				<NavTabs
 					:links="[
 						{
-							label: 'Description',
+							label: formatMessage(commonMessages.descriptionTabLabel),
 							href: projectDescriptionHref,
 						},
 						{
-							label: 'Versions',
+							label: formatMessage(commonMessages.versionsTabLabel),
 							href: versionsHref,
 							subpages: ['version'],
 							shown: projectV3?.minecraft_server == null,
 						},
 						{
-							label: 'Gallery',
+							label: formatMessage(commonMessages.galleryTabLabel),
 							href: projectGalleryHref,
 							shown: data.gallery.length > 0,
 						},
@@ -200,6 +236,7 @@
 				/>
 				<RouterView
 					v-if="route.path.startsWith('/project')"
+					:key="data.body"
 					:project="data"
 					:versions="versions"
 					:members="members"
@@ -317,9 +354,12 @@ import { getServerLatency } from '@/helpers/worlds'
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
+import { useProjectTranslation } from '@/composables/use-project-translation'
 import { useBreadcrumbs } from '@/store/breadcrumbs'
 import { getServerAddress } from '@/store/install.js'
 import { useTheming } from '@/store/state.js'
+
+const { isTranslated, isTranslating, toggleTranslation } = useProjectTranslation()
 
 dayjs.extend(relativeTime)
 
@@ -594,10 +634,25 @@ async function fetchProjectData() {
 				if (cfMod) {
 					let authorName = 'CurseForge Creator'
 					let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`
+					let authorAvatar = cfMod.authors?.[0]?.avatarUrl || cfMod.authors?.[0]?.avatar_url || cfMod.logo?.thumbnailUrl || cfMod.logo?.url
 					if (cfMod.authors && cfMod.authors.length > 0) {
 						authorName = cfMod.authors[0].name
 						authorUrl = cfMod.authors[0].url || authorUrl
 					}
+
+					const rawSum = cfMod.summary || ''
+					const cleanSummary = rawSum
+						.replace(/<script[\s\S]*?<\/script>/gi, '')
+						.replace(/<style[\s\S]*?<\/style>/gi, '')
+						.replace(/<[^>]+>/g, ' ')
+						.replace(/&nbsp;/gi, ' ')
+						.replace(/&amp;/gi, '&')
+						.replace(/&lt;/gi, '<')
+						.replace(/&gt;/gi, '>')
+						.replace(/&quot;/gi, '"')
+						.replace(/&#39;/gi, "'")
+						.replace(/\s+/g, ' ')
+						.trim()
 
 					project = {
 						id: cfMod.id.toString(),
@@ -605,18 +660,26 @@ async function fetchProjectData() {
 						project_type: 'addon',
 						title: cfMod.name,
 						name: cfMod.name,
-						summary: cfMod.summary || '',
-						description: cfDescription || cfMod.summary || '',
-						body: cfDescription || cfMod.summary || '',
+						summary: cleanSummary,
+						description: cfDescription || cleanSummary,
+						body: cfDescription || cleanSummary,
 						downloads: cfMod.downloadCount || 0,
+						followers: 0,
 						icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url,
 						categories: cfMod.categories?.map((c) => c.name || c.slug) || [],
+						additional_categories: [],
 						versions: (cfFiles || []).map((f) => f.id.toString()),
 						author: authorName,
 						author_details: {
 							name: authorName,
+							avatar_url: authorAvatar,
 							link: authorUrl,
 						},
+						published: cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
+						created: cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
+						updated: cfMod.dateModified || cfMod.dateCreated || cfMod.dateReleased || new Date().toISOString(),
+						approved: cfMod.dateReleased || cfMod.dateCreated || cfMod.dateModified || new Date().toISOString(),
+						license: { id: 'Custom', name: 'Custom License', url: '' },
 						website_url: cfMod.websiteUrl || `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`,
 						is_curseforge: true,
 						gallery: [],
@@ -631,7 +694,9 @@ async function fetchProjectData() {
 						project_id: cfMod.id.toString(),
 						name: f.displayName || f.fileName,
 						version_number: f.displayName || f.fileName,
-						game_versions: f.gameVersions || [],
+						version_type: 'release',
+						downloads: f.downloadCount ?? cfMod.downloadCount ?? 0,
+						game_versions: (f.gameVersions || []).map((v) => v.replace(/^MC\s*/i, '')),
 						loaders: ['bedrock'],
 						files: [
 							{
@@ -642,7 +707,11 @@ async function fetchProjectData() {
 								primary: true,
 							},
 						],
-						date_published: new Date().toISOString(),
+						date_published: f.fileDate
+							? new Date(f.fileDate).toISOString()
+							: cfMod.dateCreated
+							? new Date(cfMod.dateCreated).toISOString()
+							: new Date().toISOString(),
 					}))
 
 					members.value = [
@@ -651,6 +720,7 @@ async function fetchProjectData() {
 								id: 'cf_' + authorName,
 								username: authorName,
 								name: authorName,
+								avatar_url: authorAvatar,
 							},
 							role: 'Creator',
 						},
@@ -691,13 +761,45 @@ async function fetchProjectData() {
 		])
 	}
 
-	if (instanceProjects.value) {
+	if (instanceProjects.value && data.value) {
+		const targetId = String(data.value.id)
+		const targetSlug = String(data.value.slug || '').toLowerCase()
 		const installedFile = Object.values(instanceProjects.value).find(
-			(x) => x.metadata && x.metadata.project_id === data.value.id,
+			(x) =>
+				x.metadata &&
+				(String(x.metadata.project_id) === targetId ||
+					String(x.metadata.project_id).toLowerCase() === targetSlug ||
+					String(x.metadata.slug || '').toLowerCase() === targetSlug),
 		)
 		if (installedFile) {
 			installed.value = true
-			installedVersion.value = installedFile.metadata.version_id
+			installedVersion.value = installedFile.metadata?.version_id
+		}
+	}
+
+	if (instance.value && data.value) {
+		try {
+			const bedrockAddons = await invoke('plugin:bedrock-addons|list_bedrock_addons', {
+				profilePath: instance.value.path,
+			}).catch(() => [])
+			if (bedrockAddons && bedrockAddons.length > 0) {
+				const projectTitleNorm = data.value.title.toLowerCase().trim()
+				const projectSlugNorm = (data.value.slug || '').toLowerCase().trim()
+				const projectIdNorm = String(data.value.id).toLowerCase().trim()
+				const isInstalledInBedrock = bedrockAddons.some((addon) => {
+					const nameNorm = (addon.name || '').toLowerCase().trim()
+					const subPathNorm = (addon.sub_path || '').toLowerCase().trim()
+					return (
+						(nameNorm && (nameNorm.includes(projectTitleNorm) || projectTitleNorm.includes(nameNorm))) ||
+						(subPathNorm && (subPathNorm.includes(projectSlugNorm) || subPathNorm.includes(projectIdNorm)))
+					)
+				})
+				if (isInstalledInBedrock) {
+					installed.value = true
+				}
+			}
+		} catch (e) {
+			console.error('Error checking Bedrock installed status:', e)
 		}
 	}
 

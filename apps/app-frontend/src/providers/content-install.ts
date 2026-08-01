@@ -1,7 +1,7 @@
 import type { Labrinth } from '@modrinth/api-client'
 import type { ContentInstallInstance, ContentInstallProjectInfo, ContentItem } from '@modrinth/ui'
 import { createContext, defineMessage, useVIntl } from '@modrinth/ui'
-import { convertFileSrc } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import dayjs from 'dayjs'
 import { nextTick, type Ref, ref } from 'vue'
@@ -636,9 +636,75 @@ export function createContentInstall(opts: {
 		createInstanceCallback: (profile: string) => void = () => {},
 		hints?: { preferredLoader?: string; preferredGameVersion?: string; showProjectInfo?: boolean },
 	) {
-		const project: Labrinth.Projects.v2.Project | null = await get_project(projectId, 'must_revalidate').catch(() => null)
+		let project: Labrinth.Projects.v2.Project | null = await get_project(projectId, 'must_revalidate').catch(() => null)
+		if (!project) {
+			const cleanId = String(projectId).replace(/^curseforge[-:]?/, '')
+			const cfModId = parseInt(cleanId)
+			if (!isNaN(cfModId) && cfModId > 0) {
+				try {
+					const [cfMod, cfFiles, cfDesc] = await Promise.all([
+						invoke<any>('plugin:bedrock-addons|get_bedrock_curseforge_addon', { modId: cfModId }).catch(() => null),
+						invoke<any>('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId: cfModId }).catch(() => []),
+						invoke<any>('plugin:bedrock-addons|get_bedrock_curseforge_addon_description', { modId: cfModId }).catch(() => ''),
+					])
+					if (cfMod) {
+						let authorName = 'CurseForge Creator'
+						let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`
+						if (cfMod.authors && cfMod.authors.length > 0) {
+							authorName = cfMod.authors[0].name
+							authorUrl = cfMod.authors[0].url || authorUrl
+						}
+						project = {
+							id: String(cfMod.id),
+							slug: cfMod.slug,
+							title: cfMod.name,
+							description: cfDesc || (cfMod.summary ? cfMod.summary.replace(/<[^>]*>/g, '') : ''),
+							body: cfDesc || (cfMod.summary ? cfMod.summary.replace(/<[^>]*>/g, '') : ''),
+							icon_url: cfMod.logo?.thumbnailUrl || cfMod.logo?.url || '',
+							project_type: 'mod',
+							client_side: 'required',
+							server_side: 'optional',
+							downloads: cfMod.downloadCount || 0,
+							followers: 0,
+							categories: cfMod.categories?.map((c: any) => c.name || c.slug) || [],
+							versions: (cfFiles || []).map((f: any) => String(f.id)),
+							license: { id: 'Custom', name: 'Custom License', url: '' },
+							published: cfMod.dateCreated || cfMod.dateModified || new Date().toISOString(),
+							updated: cfMod.dateModified || cfMod.dateCreated || new Date().toISOString(),
+							approved: cfMod.dateReleased || cfMod.dateCreated || new Date().toISOString(),
+							is_curseforge: true,
+							website_url: cfMod.websiteUrl || `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`,
+							author_details: {
+								name: authorName,
+								link: authorUrl,
+							},
+						} as any
+					}
+				} catch (e) {
+					console.error('Failed to resolve CurseForge project for installation:', e)
+				}
+			}
+		}
 		if (!project) {
 			throw new Error(`Project not found: ${projectId}`)
+		}
+
+		if ((project as any).is_curseforge && instancePath) {
+			const modId = parseInt(project.id)
+			if (!isNaN(modId)) {
+				const files: any[] = await invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId })
+				if (files && files.length > 0) {
+					const targetFile = versionId ? files.find((f: any) => String(f.id) === String(versionId)) || files[0] : files[0]
+					if (targetFile?.downloadUrl) {
+						await invoke('plugin:bedrock-addons|download_and_install_bedrock_curseforge_addon', {
+							profilePath: instancePath,
+							downloadUrl: targetFile.downloadUrl,
+						})
+						callback(String(targetFile.id), [project.id])
+						return
+					}
+				}
+			}
 		}
 
 		if (project.project_type === 'modpack') {

@@ -6,7 +6,7 @@
 				<BookTextIcon aria-hidden="true" />
 				<div>
 					<IntlFormatted :message-id="messages.licensed">
-						<template #~license>
+						<template #license>
 							<a
 								v-if="project.license.url"
 								class="text-link hover:underline"

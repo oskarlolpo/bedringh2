@@ -31,40 +31,33 @@ use windows::core::{PCSTR, PWSTR};
 pub type InjectProgressCb = Arc<dyn Fn(String) + Send + Sync>;
 
 pub async fn grant_all_application_packages_access(path: &Path) -> Result<()> {
-    // S-1-15-2-1: All Application Packages
-    // S-1-5-32-545: Users
+    grant_all_application_packages_access_multiple(&[path]).await
+}
 
-    if !path.exists() {
+pub async fn grant_all_application_packages_access_multiple(paths: &[&Path]) -> Result<()> {
+    let valid_paths: Vec<&Path> = paths.iter().filter(|p| p.exists()).copied().collect();
+    if valid_paths.is_empty() {
         return Ok(());
     }
 
-    let is_dir = path.is_dir();
-    let (perm1, perm2) = if is_dir {
-        ("*S-1-15-2-1:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)F")
-    } else {
-        ("*S-1-15-2-1:F", "*S-1-5-32-545:F")
-    };
+    for path in valid_paths {
+        let is_dir = path.is_dir();
+        let (perm1, perm2) = if is_dir {
+            ("*S-1-15-2-1:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)F")
+        } else {
+            ("*S-1-15-2-1:F", "*S-1-5-32-545:F")
+        };
 
-    let mut cmd = tokio::process::Command::new("icacls");
-    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .arg(path)
-        .arg("/grant")
-        .arg(perm1)
-        .arg("/grant")
-        .arg(perm2);
+        let mut cmd = tokio::process::Command::new("icacls");
+        cmd.creation_flags(0x08000000)
+            .arg(path)
+            .arg("/grant")
+            .arg(perm1)
+            .arg("/grant")
+            .arg(perm2)
+            .arg("/Q");
 
-    // Note: Do not pass /T (recursive) for directories, as (OI)(CI) sets container inheritance
-    // instantly (<10ms) without traversing tens of thousands of asset files.
-
-    let output = cmd
-        .arg("/Q")
-        .output()
-        .await
-        .map_err(|e| eyre::eyre!("Failed to execute icacls: {}", e))?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        eprintln!("Warning: icacls warning for {:?}: {}", path, err);
+        let _ = cmd.output().await;
     }
     Ok(())
 }

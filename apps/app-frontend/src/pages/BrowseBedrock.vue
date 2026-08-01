@@ -290,11 +290,15 @@ async function refreshInstalledProjectIds() {
 		return
 	}
 
-	const ids = await getInstalledProjectIds(route.query.i as string).catch(handleError)
-	if (!ids) return
+	const ids = (await getInstalledProjectIds(route.query.i as string).catch(handleError)) || []
+	const bedrockAddons = await invoke<any[]>('plugin:bedrock-addons|list_bedrock_addons', {
+		profilePath: route.query.i as string,
+	}).catch(() => [])
 
-	debugLog('installedProjectIds loaded', { count: ids.length })
-	installedProjectIds.value = ids
+	const bedrockIds = bedrockAddons.map((a: any) => a.folder_name)
+	const combinedIds = Array.from(new Set([...ids, ...bedrockIds]))
+	debugLog('installedProjectIds loaded', { count: combinedIds.length })
+	installedProjectIds.value = combinedIds
 }
 
 async function initInstanceContext() {
@@ -464,6 +468,11 @@ window.addEventListener('online', () => {
 })
 
 const messages = defineMessages({
+	addonsProjectType: { id: 'app.bedrock.project_type.addons', defaultMessage: 'Аддоны' },
+	resourcePacksProjectType: { id: 'app.bedrock.project_type.resourcepacks', defaultMessage: 'Текстур-паки' },
+	worldsProjectType: { id: 'app.bedrock.project_type.worlds', defaultMessage: 'Миры' },
+	skinsProjectType: { id: 'app.bedrock.project_type.skins', defaultMessage: 'Скины' },
+	scriptsProjectType: { id: 'app.bedrock.project_type.scripts', defaultMessage: 'Скрипты' },
 	catWeaponsArmor: { id: 'app.bedrock.category.weapons-armor', defaultMessage: 'Armor, Tools & Weapons' },
 	catCosmetics: { id: 'app.bedrock.category.cosmetics', defaultMessage: 'Cosmetics' },
 	catDataPacks: { id: 'app.bedrock.category.data-packs', defaultMessage: 'Data Packs' },

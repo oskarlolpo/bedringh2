@@ -791,6 +791,10 @@ export const financialMessages = defineMessages({
 
 const PROJECT_TYPE_ALIASES: Record<string, string> = {
 	shaderpack: 'shader',
+	skin: 'skinpack',
+	skinpack: 'skinpack',
+	'skin-pack': 'skinpack',
+	'skin-packs': 'skinpack',
 }
 
 export function normalizeProjectType(type: string): string {
@@ -832,6 +836,10 @@ export const commonProjectTypeCategoryMessages = defineMessages({
 		id: 'project-type.project.category',
 		defaultMessage: 'Projects',
 	},
+	skinpack: {
+		id: 'app.bedrock.category.skin-packs',
+		defaultMessage: 'Skin Packs',
+	},
 })
 
 export const commonProjectTypeTitleMessages = defineMessages({
@@ -867,6 +875,10 @@ export const commonProjectTypeTitleMessages = defineMessages({
 		id: 'project-type.project.capital',
 		defaultMessage: '{count, plural, one {Project} other {Projects}}',
 	},
+	skinpack: {
+		id: 'app.bedrock.category.skin-packs',
+		defaultMessage: '{count, plural, one {Skin Pack} other {Skin Packs}}',
+	},
 })
 
 export const commonProjectTypeSentenceMessages = defineMessages({
@@ -901,6 +913,10 @@ export const commonProjectTypeSentenceMessages = defineMessages({
 	project: {
 		id: 'project-type.project.lowercase',
 		defaultMessage: '{count, plural, one {project} other {projects}}',
+	},
+	skinpack: {
+		id: 'app.bedrock.category.skin-packs',
+		defaultMessage: '{count, plural, one {skin pack} other {skin packs}}',
 	},
 })
 
@@ -1304,6 +1320,10 @@ export const projectCompatibilityMessages = defineMessages({
 	minecraftJava: {
 		id: `project.about.compatibility.game.minecraftJava`,
 		defaultMessage: 'Minecraft: Java Edition',
+	},
+	minecraftBedrock: {
+		id: `project.about.compatibility.game.minecraftBedrock`,
+		defaultMessage: 'Minecraft: Bedrock Edition',
 	},
 	platforms: {
 		id: `project.about.compatibility.platforms`,

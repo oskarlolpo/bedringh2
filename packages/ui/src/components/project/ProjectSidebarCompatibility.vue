@@ -3,7 +3,7 @@
 		<h2 class="text-lg m-0">{{ formatMessage(messages.title) }}</h2>
 		<section class="flex flex-col gap-2">
 			<h3 class="text-primary !font-normal text-base m-0">
-				{{ formatMessage(messages.minecraftJava) }}
+				{{ isBedrock ? formatMessage(messages.minecraftBedrock) : formatMessage(messages.minecraftJava) }}
 			</h3>
 			<div class="flex flex-wrap gap-1">
 				<TagItem
@@ -137,6 +137,14 @@ const props = defineProps<{
 	}
 	projectV3?: Labrinth.Projects.v3.Project
 }>()
+
+const isBedrock = computed(
+	() =>
+		props.project?.loaders?.includes('bedrock') ||
+		props.project?.project_type === 'addon' ||
+		props.project?.actualProjectType === 'addon' ||
+		props.projectV3?.project_types?.includes('addon'),
+)
 
 const noModpackLoader = computed(
 	() =>
