@@ -40,25 +40,48 @@ export function useProjectTranslation() {
 		if (!content || !content.trim()) return { text: content, anyOk: false }
 
 		let anyOk = false
-		const blocks = content.split(/(?=<p|<div|<h[1-6]|<li|\n\n)/gi)
-		const translatedBlocks = await Promise.all(
-			blocks.map(async (block) => {
-				if (!block.trim()) return block
-				const cleanText = block.replace(/<[^>]*>/g, '').trim()
-				if (!cleanText) return block
-				const { text: translatedText, ok } = await translateChunk(cleanText)
-				if (ok) anyOk = true
-				if (!/<[a-z][\s\S]*>/i.test(block)) {
-					return translatedText
-				}
-				return block.replace(/(>)([^<]+)(<)/g, (_, p1, p2, p3) => {
-					if (!p2.trim()) return `${p1}${p2}${p3}`
-					return `${p1}${translatedText}${p3}`
-				})
-			}),
-		)
+		if (!/<[a-z][\s\S]*>/i.test(content)) {
+			const paragraphs = content.split('\n\n')
+			const translatedParas = await Promise.all(
+				paragraphs.map(async (p) => {
+					if (!p.trim()) return p
+					const { text: tr, ok } = await translateChunk(p)
+					if (ok) anyOk = true
+					return tr
+				}),
+			)
+			return { text: translatedParas.join('\n\n'), anyOk }
+		}
 
-		return { text: translatedBlocks.join(''), anyOk }
+		const matches: string[] = []
+		content.replace(/(>)([^<]+)(<)/g, (_, _p1, p2) => {
+			if (p2 && p2.trim()) {
+				matches.push(p2)
+			}
+			return ''
+		})
+
+		const translationsMap = new Map<string, string>()
+		for (const textSnippet of matches) {
+			if (!translationsMap.has(textSnippet)) {
+				const trimmed = textSnippet.trim()
+				const { text: tr, ok } = await translateChunk(trimmed)
+				if (ok) {
+					anyOk = true
+					const leadingSpace = textSnippet.match(/^\s*/)?.[0] || ''
+					const trailingSpace = textSnippet.match(/\s*$/)?.[0] || ''
+					translationsMap.set(textSnippet, `${leadingSpace}${tr}${trailingSpace}`)
+				}
+			}
+		}
+
+		const resultHtml = content.replace(/(>)([^<]+)(<)/g, (full, p1, p2, p3) => {
+			if (!p2 || !p2.trim()) return full
+			const translated = translationsMap.get(p2)
+			return translated ? `${p1}${translated}${p3}` : full
+		})
+
+		return { text: resultHtml, anyOk }
 	}
 
 	async function toggleTranslation(projectRef: { value: any }) {

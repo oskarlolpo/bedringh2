@@ -107,6 +107,18 @@ export const commonMessages = defineMessages({
 		id: 'label.description',
 		defaultMessage: 'Description',
 	},
+	descriptionTabLabel: {
+		id: 'label.description-tab',
+		defaultMessage: 'Description',
+	},
+	versionsTabLabel: {
+		id: 'label.versions-tab',
+		defaultMessage: 'Versions',
+	},
+	galleryTabLabel: {
+		id: 'label.gallery-tab',
+		defaultMessage: 'Gallery',
+	},
 	detailsLabel: {
 		id: 'label.details',
 		defaultMessage: 'Details',

@@ -218,17 +218,17 @@
 				<NavTabs
 					:links="[
 						{
-							label: formatMessage(commonMessages.descriptionTabLabel),
+							label: formatMessage(commonMessages?.descriptionTabLabel) || 'Description',
 							href: projectDescriptionHref,
 						},
 						{
-							label: formatMessage(commonMessages.versionsTabLabel),
+							label: formatMessage(commonMessages?.versionsTabLabel) || 'Versions',
 							href: versionsHref,
 							subpages: ['version'],
 							shown: projectV3?.minecraft_server == null,
 						},
 						{
-							label: formatMessage(commonMessages.galleryTabLabel),
+							label: formatMessage(commonMessages?.galleryTabLabel) || 'Gallery',
 							href: projectGalleryHref,
 							shown: (data?.gallery?.length ?? 0) > 0,
 						},
@@ -745,42 +745,43 @@ async function fetchProjectData() {
 		const rawName = decodeURIComponent(String(route.params.id || ''))
 		const metaMap = route.query.i ? loadBedrockMetadataMap(String(route.query.i)) : {}
 		const meta = metaMap[rawName.toLowerCase()] || metaMap[rawName.replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()]
-		const authorName = meta?.author || 'CurseForge Creator'
+		const authorName = meta?.author || (meta?.is_curseforge ? 'CurseForge Creator' : 'PnTMC')
 		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || undefined
+		const cleanTitle = meta?.name || meta?.title || meta?.slug || rawName.replace(/§[0-9a-fk-or]/gi, '').trim()
 
 		project = {
 			id: rawName,
 			slug: meta?.slug || rawName,
 			project_type: 'addon',
-			title: meta?.slug ? meta.slug : rawName.replace(/§[0-9a-fk-or]/gi, '').trim(),
-			name: rawName,
-			summary: 'Bedrock Addon',
-			description: 'Bedrock Addon',
-			body: 'Bedrock Addon',
-			downloads: 0,
-			followers: 0,
+			title: cleanTitle,
+			name: cleanTitle,
+			summary: meta?.summary || meta?.description || 'Bedrock Addon',
+			description: meta?.description || meta?.summary || 'Bedrock Addon',
+			body: meta?.body || meta?.description || meta?.summary || 'Bedrock Addon',
+			downloads: meta?.downloads ?? 0,
+			followers: meta?.followers ?? 0,
 			icon_url: avatarUrl,
-			categories: [],
+			categories: meta?.categories || [],
 			additional_categories: [],
-			versions: ['1.0.0'],
+			versions: meta?.version ? [meta.version] : ['1.0.0'],
 			author: authorName,
 			author_details: {
 				name: authorName,
 				avatar_url: avatarUrl,
-				link: meta?.projectUrl || `https://www.curseforge.com/members/${encodeURIComponent(authorName)}`,
+				link: meta?.projectUrl || (meta?.is_curseforge ? `https://www.curseforge.com/members/${encodeURIComponent(authorName)}` : ''),
 			},
-			published: new Date().toISOString(),
-			created: new Date().toISOString(),
-			updated: new Date().toISOString(),
+			published: meta?.published || new Date().toISOString(),
+			created: meta?.created || new Date().toISOString(),
+			updated: meta?.updated || new Date().toISOString(),
 			approved: new Date().toISOString(),
 			license: { id: 'Custom', name: 'Custom License', url: '' },
 			website_url: meta?.projectUrl || '',
-			is_curseforge: true,
-			gallery: [],
+			is_curseforge: !!meta?.is_curseforge,
+			gallery: meta?.gallery || [],
 			client_side: 'required',
 			server_side: 'optional',
 			loaders: ['bedrock'],
-			game_versions: [],
+			game_versions: meta?.game_versions || [],
 		}
 
 		members.value = [

@@ -10,7 +10,7 @@
 			<ProjectStatusBadge v-if="member || (project?.status && project.status !== 'approved')" :status="project?.status" />
 		</template>
 		<template #summary>
-			{{ project?.description }}
+			{{ cleanSummary(project?.description) }}
 		</template>
 		<template #stats>
 			<div class="flex items-center gap-3 flex-wrap gap-y-0">
@@ -112,4 +112,16 @@ const javaServer = computed(() => props.projectV3?.minecraft_java_server)
 const javaServerPingData = computed(() => props.projectV3?.minecraft_java_server?.ping?.data)
 const playersOnline = computed(() => javaServerPingData.value?.players_online ?? 0)
 const statusOnline = computed(() => !!javaServerPingData.value)
+
+function cleanSummary(text?: string): string {
+	if (!text) return ''
+	return text
+		.replace(/<[^>]*>/g, ' ')
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/\s+/g, ' ')
+		.trim()
+}
 </script>

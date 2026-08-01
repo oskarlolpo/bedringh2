@@ -12,8 +12,18 @@ import { list } from '@/helpers/profile'
 const { handleError } = injectNotificationManager()
 
 const recentInstances = ref([])
+let unlistenProfile = null
+
+onUnmounted(() => {
+	if (unlistenProfile) {
+		unlistenProfile()
+	}
+})
+
 const getInstances = async () => {
 	const profiles = await list().catch(handleError)
+
+	if (!Array.isArray(profiles)) return
 
 	recentInstances.value = profiles
 		.sort((a, b) => {
@@ -37,14 +47,12 @@ const getInstances = async () => {
 
 await getInstances()
 
-const unlistenProfile = await profile_listener(async (event) => {
+profile_listener(async (event) => {
 	if (event.event !== 'synced') {
 		await getInstances()
 	}
-})
-
-onUnmounted(() => {
-	unlistenProfile()
+}).then((unlisten) => {
+	unlistenProfile = unlisten
 })
 </script>
 
@@ -66,7 +74,7 @@ onUnmounted(() => {
 		</NavButton>
 	</div>
 	<div
-		v-if="instances && recentInstances.length > 0"
+		v-if="recentInstances.length > 0"
 		class="h-px w-6 mx-auto my-2 bg-divider"
 	></div>
 </template>

@@ -67,10 +67,10 @@ interface BedrockAddon {
 const loading = ref(true)
 const rawAddons = ref<BedrockAddon[]>([])
 
-async function fetchAddons() {
+async function fetchAddons(showSpinner = true) {
 	if (!props.instance?.path) return
 	try {
-		loading.value = true
+		if (showSpinner) loading.value = true
 		const list = await invoke<BedrockAddon[]>('plugin:bedrock-addons|list_bedrock_addons', {
 			profilePath: props.instance.path,
 		})
@@ -80,20 +80,20 @@ async function fetchAddons() {
 		console.error('Failed to list bedrock addons:', e)
 		handleError(e as Error)
 	} finally {
-		loading.value = false
+		if (showSpinner) loading.value = false
 	}
 }
 
 watch(
 	() => props.instance?.path,
 	(newPath) => {
-		if (newPath) fetchAddons()
+		if (newPath) fetchAddons(true)
 	},
 	{ immediate: true },
 )
 
 onMounted(() => {
-	fetchAddons()
+	fetchAddons(true)
 })
 
 const contentItems = computed<ContentItem[]>(() => {
@@ -105,7 +105,7 @@ const contentItems = computed<ContentItem[]>(() => {
 		const cleanTitle = addon.name.replace(/§[0-9a-fk-or]/gi, '').trim()
 		const cleanKey = cleanTitle.toLowerCase()
 		const meta = metaMap[cleanKey] || metaMap[addon.folder_name.toLowerCase()]
-		const authorName = meta?.author || 'CurseForge Creator'
+		const authorName = meta?.author || (meta?.is_curseforge ? 'CurseForge Creator' : 'PnTMC')
 		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || addon.icon_path
 		const projectId = meta?.projectId || addon.folder_name
 
@@ -144,13 +144,16 @@ async function toggleAddon(item: ContentItem) {
 		const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
 		const kind = rawAddon?.kind || 'behavior'
 		const targetState = !item.enabled
+		if (rawAddon) {
+			rawAddon.is_enabled = targetState
+		}
 		await invoke('plugin:bedrock-addons|set_bedrock_addon_enabled', {
 			profilePath: props.instance.path,
 			kind,
 			folderName: item.file_name,
 			enable: targetState,
 		})
-		await fetchAddons()
+		await fetchAddons(false)
 	} catch (e) {
 		handleError(e as Error)
 	}
@@ -161,12 +164,13 @@ async function deleteAddon(item: ContentItem) {
 	try {
 		const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
 		const kind = rawAddon?.kind || 'behavior'
+		rawAddons.value = rawAddons.value.filter((a) => a.folder_name !== item.file_name)
 		await invoke('plugin:bedrock-addons|delete_bedrock_addon', {
 			profilePath: props.instance.path,
 			kind,
 			folderName: item.file_name,
 		})
-		await fetchAddons()
+		await fetchAddons(false)
 	} catch (e) {
 		handleError(e as Error)
 	}
@@ -194,7 +198,7 @@ async function installFromFile() {
 			handleError(e as Error)
 		}
 	}
-	await fetchAddons()
+	await fetchAddons(false)
 	if (count > 0) {
 		addNotification({
 			type: 'success',
@@ -223,12 +227,18 @@ provideContentManager({
 	contentTypeLabel: computed(() => 'Bedrock Add-ons'),
 	toggleEnabled: toggleAddon,
 	deleteItem: deleteAddon,
-	refresh: fetchAddons,
+	refresh: () => fetchAddons(true),
 	browse: handleBrowseContent,
 	uploadFiles: installFromFile,
 	hasUpdateSupport: false,
 	mapToTableItem: (item: ContentItem): ContentCardTableItem => {
 		const targetId = item.project?.id || item.id
+		const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
+		const cleanKey = (item.project?.title || item.file_name).replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()
+		const meta = metaMap[cleanKey] || metaMap[item.file_name.toLowerCase()]
+		const isCurseForge = meta?.is_curseforge
+		const memberLink = isCurseForge && item.owner?.name ? `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}` : undefined
+
 		return {
 			id: item.id,
 			project: item.project ?? { id: item.id, slug: item.id, title: item.file_name, icon_url: undefined },
@@ -242,8 +252,8 @@ provideContentManager({
 			owner: item.owner
 				? {
 						...item.owner,
-						link: `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}`,
-						ownerLink: `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}`,
+						link: memberLink,
+						ownerLink: memberLink,
 					}
 				: undefined,
 		}
