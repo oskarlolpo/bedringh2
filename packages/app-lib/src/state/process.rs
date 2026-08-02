@@ -119,6 +119,11 @@ impl ProcessManager {
         mc_command.stderr(std::process::Stdio::piped());
         mc_command.stdin(std::process::Stdio::piped());
 
+        // Restore corrupted worlds from backup if any crash occurred previously
+        let _ = crate::api::bedrock_worlds::verify_and_restore_corrupted_worlds(profile_path).await;
+        // Make an automatic pre-launch backup snapshot of worlds
+        let _ = crate::api::bedrock_worlds::auto_backup_bedrock_worlds(profile_path).await;
+
         let mut mc_proc = mc_command.spawn().map_err(IOError::from)?;
 
         let stdout = mc_proc.stdout.take();
@@ -276,7 +281,8 @@ impl ProcessManager {
 
     pub async fn kill(&self, id: Uuid) -> crate::Result<()> {
         if let Some(mut process) = self.processes.get_mut(&id) {
-            process.child.kill().await?;
+            let child_pid = process.child.id();
+            let _ = process.child.kill().await;
 
             if let Ok(Some(prof)) =
                 crate::api::profile::get(&process.metadata.profile_path).await
@@ -285,18 +291,13 @@ impl ProcessManager {
                     #[cfg(target_os = "windows")]
                     {
                         use std::os::windows::process::CommandExt;
-                        let _ = std::process::Command::new("taskkill")
-                            .creation_flags(0x08000000)
-                            .args(&["/IM", "Minecraft.Windows.exe", "/F", "/T"])
-                            .status();
-                        let _ = std::process::Command::new("taskkill")
-                            .creation_flags(0x08000000)
-                            .args(&["/IM", "GameLaunchHelper.exe", "/F", "/T"])
-                            .status();
-                        let _ = std::process::Command::new("taskkill")
-                            .creation_flags(0x08000000)
-                            .args(&["/IM", "Minecraft.exe", "/F", "/T"])
-                            .status();
+                        if let Some(pid) = child_pid {
+                            let pid_str = pid.to_string();
+                            let _ = std::process::Command::new("taskkill")
+                                .creation_flags(0x08000000)
+                                .args(&["/PID", &pid_str, "/F", "/T"])
+                                .status();
+                        }
                     }
                 }
             }

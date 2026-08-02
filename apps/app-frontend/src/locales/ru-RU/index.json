@@ -47,6 +47,9 @@
 	"app.appearance-settings.accent-color.blue": {
 		"message": "Синий"
 	},
+	"app.appearance-settings.accent-color.cyan": {
+		"message": "Бирюзовый"
+	},
 	"app.appearance-settings.accent-color.description": {
 		"message": "Выберите предпочтительный цвет акцента для интерфейса."
 	},
@@ -56,14 +59,23 @@
 	"app.appearance-settings.accent-color.orange": {
 		"message": "Оранжевый"
 	},
+	"app.appearance-settings.accent-color.pink": {
+		"message": "Розовый"
+	},
 	"app.appearance-settings.accent-color.purple": {
 		"message": "Фиолетовый"
 	},
 	"app.appearance-settings.accent-color.red": {
 		"message": "Красный"
 	},
+	"app.appearance-settings.accent-color.teal": {
+		"message": "Морская волна"
+	},
 	"app.appearance-settings.accent-color.title": {
 		"message": "Цвет акцента"
+	},
+	"app.appearance-settings.accent-color.yellow": {
+		"message": "Жёлтый"
 	},
 	"app.appearance-settings.advanced-rendering.description": {
 		"message": "Включает продвинутые эффекты вроде размытия, но может снизить производительность на устройствах без аппаратного ускорения."

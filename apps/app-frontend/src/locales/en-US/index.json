@@ -44,11 +44,38 @@
 	"app.action-bar.view-logs": {
 		"message": "View logs"
 	},
+	"app.appearance-settings.accent-color.blue": {
+		"message": "Blue"
+	},
+	"app.appearance-settings.accent-color.cyan": {
+		"message": "Cyan"
+	},
 	"app.appearance-settings.accent-color.description": {
 		"message": "Select your preferred accent color for the UI."
 	},
+	"app.appearance-settings.accent-color.green": {
+		"message": "Green"
+	},
+	"app.appearance-settings.accent-color.orange": {
+		"message": "Orange"
+	},
+	"app.appearance-settings.accent-color.pink": {
+		"message": "Pink"
+	},
+	"app.appearance-settings.accent-color.purple": {
+		"message": "Purple"
+	},
+	"app.appearance-settings.accent-color.red": {
+		"message": "Red"
+	},
+	"app.appearance-settings.accent-color.teal": {
+		"message": "Teal"
+	},
 	"app.appearance-settings.accent-color.title": {
 		"message": "Accent Color"
+	},
+	"app.appearance-settings.accent-color.yellow": {
+		"message": "Yellow"
 	},
 	"app.appearance-settings.advanced-rendering.description": {
 		"message": "Enables advanced rendering such as blur effects that may cause performance issues without hardware-accelerated rendering."

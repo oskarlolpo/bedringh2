@@ -212,3 +212,139 @@ pub async fn import_bedrock_world(profile_path: &str, archive_path: &str) -> Res
     
     Ok(())
 }
+
+/// Creates automatic backup snapshots of Bedrock worlds before launching the game.
+/// Stores up to 5 latest snapshots per world to prevent data corruption from crashes/power loss.
+pub async fn auto_backup_bedrock_worlds(profile_path: &str) -> Result<()> {
+    let instance_path = match crate::api::profile::get_full_path(profile_path).await {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
+
+    let worlds_dir = instance_path.join("com.mojang").join("minecraftWorlds");
+    if !worlds_dir.exists() {
+        return Ok(());
+    }
+
+    let backups_base_dir = instance_path.join("auto_world_backups");
+    let _ = fs::create_dir_all(&backups_base_dir).await;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+
+    let mut entries = match fs::read_dir(&worlds_dir).await {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let world_path = entry.path();
+        if !world_path.is_dir() {
+            continue;
+        }
+
+        let folder_name = entry.file_name().to_string_lossy().to_string();
+        let world_backup_dir = backups_base_dir.join(&folder_name);
+        let current_backup_path = world_backup_dir.join(format!("backup_{}", timestamp));
+
+        // Copy world recursively to backup
+        if let Err(e) = copy_dir_all(&world_path, &current_backup_path).await {
+            tracing::warn!("Failed auto-backup for world {folder_name}: {e}");
+            continue;
+        }
+
+        // Keep only 5 newest backups
+        if let Ok(mut backup_entries) = fs::read_dir(&world_backup_dir).await {
+            let mut list = Vec::new();
+            while let Ok(Some(b_entry)) = backup_entries.next_entry().await {
+                if b_entry.path().is_dir() {
+                    list.push(b_entry.path());
+                }
+            }
+            if list.len() > 5 {
+                list.sort();
+                for old in list.iter().take(list.len() - 5) {
+                    let _ = fs::remove_dir_all(old).await;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Checks if any Bedrock world was corrupted during a crash (missing db files)
+/// and automatically restores the latest safe backup if available.
+pub async fn verify_and_restore_corrupted_worlds(profile_path: &str) -> Result<()> {
+    let instance_path = match crate::api::profile::get_full_path(profile_path).await {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
+
+    let worlds_dir = instance_path.join("com.mojang").join("minecraftWorlds");
+    let backups_base_dir = instance_path.join("auto_world_backups");
+
+    if !worlds_dir.exists() || !backups_base_dir.exists() {
+        return Ok(());
+    }
+
+    let mut entries = match fs::read_dir(&worlds_dir).await {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let world_path = entry.path();
+        if !world_path.is_dir() {
+            continue;
+        }
+
+        let folder_name = entry.file_name().to_string_lossy().to_string();
+        let db_dir = world_path.join("db");
+        let has_level_dat = fs::metadata(world_path.join("level.dat")).await.is_ok();
+        let mut has_db_contents = false;
+
+        if let Ok(mut db_entries) = fs::read_dir(&db_dir).await {
+            if let Ok(Some(_)) = db_entries.next_entry().await {
+                has_db_contents = true;
+            }
+        }
+
+        // If world is corrupted (missing level.dat or empty db)
+        if !has_level_dat || !has_db_contents {
+            let world_backup_dir = backups_base_dir.join(&folder_name);
+            if world_backup_dir.exists() {
+                if let Ok(mut backup_entries) = fs::read_dir(&world_backup_dir).await {
+                    let mut list = Vec::new();
+                    while let Ok(Some(b_entry)) = backup_entries.next_entry().await {
+                        if b_entry.path().is_dir() {
+                            list.push(b_entry.path());
+                        }
+                    }
+                    if let Some(latest_backup) = list.into_iter().max() {
+                        tracing::info!("Restoring corrupted world {folder_name} from safe backup {:?}", latest_backup);
+                        let _ = fs::remove_dir_all(&world_path).await;
+                        let _ = copy_dir_all(&latest_backup, &world_path).await;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst).await?;
+    let mut entries = fs::read_dir(src).await?;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let ty = entry.file_type().await?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            Box::pin(copy_dir_all(&src_path, &dst_path)).await?;
+        } else {
+            fs::copy(&src_path, &dst_path).await?;
+        }
+    }
+    Ok(())
+}
