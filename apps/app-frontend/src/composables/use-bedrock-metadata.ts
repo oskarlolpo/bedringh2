@@ -48,7 +48,10 @@ export function saveBedrockMetadata(profilePath: string, addonKey: string, meta:
 	}
 }
 
-export async function autoResolveAddonMetadata(profilePath: string, addons: Array<{ name: string; folder_name: string; icon_path?: string }>) {
+export async function autoResolveAddonMetadata(
+	profilePath: string,
+	addons: Array<{ name: string; folder_name: string; icon_path?: string; curseforge_mod_id?: number | null }>,
+) {
 	if (!profilePath || !addons || addons.length === 0) return
 	const map = loadBedrockMetadataMap(profilePath)
 	let updated = false
@@ -57,6 +60,45 @@ export async function autoResolveAddonMetadata(profilePath: string, addons: Arra
 		const cleanName = addon.name.replace(/§[0-9a-fk-or]/gi, '').trim()
 		const cleanKey = cleanName.toLowerCase()
 		if (map[cleanKey] && map[cleanKey].author && map[cleanKey].projectId) continue
+
+		// If we know exactly which CurseForge project this came from (stored at
+		// install time), fetch it directly instead of guessing from the folder
+		// name - the folder name is often mangled with disambiguation suffixes
+		// (e.g. "_ef21cad0") that make text search unreliable or wrong.
+		if (addon.curseforge_mod_id) {
+			try {
+				const mod: any = await invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon', {
+					modId: addon.curseforge_mod_id,
+				}).catch(() => null)
+
+				if (mod) {
+					let authorName = 'CurseForge Creator'
+					let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${mod.slug}`
+					if (mod.authors && mod.authors.length > 0) {
+						authorName = mod.authors[0].name
+						authorUrl = mod.authors[0].url || authorUrl
+					}
+
+					const meta: BedrockAddonMeta = {
+						projectId: mod.id.toString(),
+						slug: mod.slug,
+						author: authorName,
+						avatarUrl: mod.authors?.[0]?.avatarUrl || mod.authors?.[0]?.avatar_url || mod.logo?.thumbnailUrl || mod.logo?.url,
+						iconUrl: mod.logo?.thumbnailUrl || mod.logo?.url || addon.icon_path,
+						projectUrl: authorUrl,
+						is_curseforge: true,
+					}
+
+					map[cleanKey] = meta
+					map[mod.id.toString()] = meta
+					map[mod.slug.toLowerCase()] = meta
+					updated = true
+					continue
+				}
+			} catch (e) {
+				console.error(`Failed to resolve metadata by id for ${cleanName}:`, e)
+			}
+		}
 
 		try {
 			const searchRes = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {

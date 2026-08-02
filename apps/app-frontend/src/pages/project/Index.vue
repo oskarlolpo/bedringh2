@@ -59,7 +59,7 @@
 							<button
 								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
 								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-								@click="toggleTranslation(data)"
+								@click="handleToggleTranslation"
 							>
 								<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
 								<svg
@@ -90,7 +90,7 @@
 			<InstanceIndicator v-if="instance && !projectInstallContext" :instance="instance" />
 			<template v-if="data">
 				<Teleport
-					v-if="themeStore.featureFlags.project_background"
+					v-if="themeStore.featureFlags?.project_background"
 					to="#background-teleport-target"
 				>
 					<ProjectBackgroundGradient :project="data" />
@@ -171,6 +171,41 @@
 								<DownloadIcon v-else-if="!installButtonInstalled && !serverProjectSelected" />
 								<CheckIcon v-else />
 								{{ installButtonLabel }}
+							</button>
+						</ButtonStyled>
+						<ButtonStyled
+							v-if="!projectInstallContext"
+							circular
+							size="large"
+							:color="isTranslated ? 'brand' : 'surface'"
+						>
+							<button
+								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+								:disabled="isTranslating"
+								@click="handleToggleTranslation"
+							>
+								<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
+								<svg
+									v-else
+									xmlns="http://www.w3.org/2000/svg"
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
+								>
+									<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+									<path d="M4 5h7" />
+									<path d="M7 4c0 4.846 0 7 .5 8" />
+									<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
+									<path d="M12 20l4 -9l4 9" />
+									<path d="M19.1 18h-6.2" />
+								</svg>
 							</button>
 						</ButtonStyled>
 						<ButtonStyled size="large" circular type="transparent">
@@ -366,6 +401,9 @@ import { getServerAddress } from '@/store/install.js'
 import { useTheming } from '@/store/state.js'
 
 const { isTranslated, isTranslating, toggleTranslation } = useProjectTranslation()
+function handleToggleTranslation() {
+	toggleTranslation(data)
+}
 
 dayjs.extend(relativeTime)
 
@@ -419,7 +457,7 @@ const serverSetupModalRef = ref(null)
 const serverInstallContent = createServerInstallContent({ serverSetupModalRef })
 
 serverInstallContent.watchServerContextChanges()
-await serverInstallContent.initServerContext()
+serverInstallContent.initServerContext().catch(() => {})
 
 const instanceFilters = computed(() => {
 	if (!instance.value || !data.value) {
@@ -564,10 +602,16 @@ const installButtonTooltip = computed(() => {
 	return null
 })
 
-const [allLoaders, allGameVersions] = await Promise.all([
-	get_loaders().catch(handleError).then(ref),
-	get_game_versions().catch(handleError).then(ref),
-])
+const allLoaders = ref([])
+const allGameVersions = ref([])
+
+Promise.all([
+	get_loaders().catch(handleError),
+	get_game_versions().catch(handleError),
+]).then(([loaders, versions]) => {
+	allLoaders.value = loaders || []
+	allGameVersions.value = versions || []
+})
 
 async function handleClickPlay() {
 	if (!isServerProject.value) return
@@ -864,6 +908,9 @@ async function fetchProjectData() {
 				const projectSlugNorm = (data.value.slug || '').toLowerCase().trim()
 				const projectIdNorm = String(data.value.id || '').toLowerCase().trim()
 				const isInstalledInBedrock = bedrockAddons.some((addon) => {
+					if (addon.curseforge_mod_id != null) {
+						return String(addon.curseforge_mod_id) === projectIdNorm
+					}
 					const nameNorm = (addon.name || '').toLowerCase().trim()
 					const subPathNorm = (addon.sub_path || '').toLowerCase().trim()
 					return (
@@ -964,7 +1011,7 @@ function fetchDeferredServerData(project) {
 	updateServerPlayState()
 }
 
-await fetchProjectData()
+fetchProjectData().catch(handleError)
 
 let unlistenProcesses
 process_listener((e) => {

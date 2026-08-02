@@ -62,6 +62,7 @@ interface BedrockAddon {
 	icon_path?: string
 	has_update?: boolean
 	latest_version?: string
+	curseforge_mod_id?: number | null
 }
 
 const loading = ref(true)
