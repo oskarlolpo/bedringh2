@@ -59,7 +59,24 @@ apps/frontend/src/generated
 .turbo
 target
 generated
+
+# Local environment files
 .env
+.env.*
+!.env.example
+
+# IntelliJ IDEA project files (local-only)
+.idea/
+
+# Vibe-coding scratch / temp artifacts
+*~HEAD
+*.orig
+*.rej
+*.bak
+dev_*.log
+
+# Random zip sample/fixture in labrinth tests
+apps/labrinth/tests/files/simple-zip.zip
 
 # app testing dir
 app-playground-data/*

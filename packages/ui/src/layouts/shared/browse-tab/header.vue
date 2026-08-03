@@ -34,7 +34,7 @@ const {
 	applyingTranslation,
 	toggleSearchTranslation,
 	translateNewHits,
-} = useSearchTranslation()
+} = useSearchTranslation(ctx?.query)
 
 function setHits(updated: any[]) {
 	if (!ctx) return
