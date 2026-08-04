@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import { computed, ref, watch } from 'vue'
-import { injectNotificationManager, ButtonStyled, DropdownSelect, SettingsLabel, useVIntl } from '@modrinth/ui'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { computed, ref } from 'vue'
+import { injectNotificationManager, ButtonStyled, ConfirmRepairModal, Combobox } from '@modrinth/ui'
+import { HammerIcon, DownloadIcon } from '@modrinth/assets'
 import { invoke } from '@tauri-apps/api/core'
-import { LoaderIcon, AlertTriangleIcon } from 'lucide-vue-next'
+import { LoaderIcon } from 'lucide-vue-next'
 
 import { injectInstanceSettings } from '@/providers/instance-settings'
 import { edit, install } from '@/helpers/profile'
 
 const { instance } = injectInstanceSettings()
-const { handleError, notify } = injectNotificationManager()
-const { formatMessage } = useVIntl()
+const { handleError, addNotification } = injectNotificationManager()
 const queryClient = useQueryClient()
 
 const selectedVersion = ref(instance.value.game_version)
 const repairing = ref(false)
+const integrityRepairing = ref(false)
+const repairModal = ref<InstanceType<typeof ConfirmRepairModal>>()
 
 const bedrockVersionsQuery = useQuery({
     queryKey: ['bedrock-versions'],
@@ -26,7 +28,7 @@ const bedrockVersionsQuery = useQuery({
 const bedrockPackagesQuery = useQuery({
     queryKey: ['bedrock-packages-cache'],
     queryFn: async () => {
-        return (await invoke('plugin:cache|get_bedrock_packages')) as { version: string, is_valid: boolean }[]
+        return (await invoke('plugin:cache|get_bedrock_packages')) as { name: string, is_valid: boolean }[]
     }
 })
 
@@ -37,22 +39,46 @@ const versionsSelectOptions = computed(() => {
         if (v.is_preview) label += ' (Preview)'
         if (v.is_gdk) label += ' [GDK]'
         
-        let invalid = false
+        let disabled = false
+        let subLabel: string | undefined
         if (bedrockPackagesQuery.data.value) {
-            const pkg = bedrockPackagesQuery.data.value.find(p => p.version === v.version)
+            const pkg = bedrockPackagesQuery.data.value.find(p => p.name === `bedrock_${v.version}`)
             if (pkg && !pkg.is_valid) {
-                invalid = true
-                label += ' ⚠'
+                disabled = true
+                subLabel = 'Broken installation'
             }
         }
 
         return {
             value: v.version,
             label,
-            invalid
+            subLabel,
+            disabled
         }
     })
 })
+
+const currentPackage = computed(() => {
+    if (!bedrockPackagesQuery.data.value) return null
+    return bedrockPackagesQuery.data.value.find(p => p.name === `bedrock_${instance.value.game_version}`)
+})
+
+const repairIntegrity = async () => {
+    integrityRepairing.value = true
+    try {
+        await install(instance.value.path, true)
+        addNotification({
+            title: 'Проверка завершена',
+            text: 'Целостность файлов восстановлена. Недостающие компоненты были скачаны и распакованы.',
+            type: 'success'
+        })
+        await queryClient.invalidateQueries({ queryKey: ['bedrock-packages-cache'] })
+    } catch (e) {
+        handleError(e as Error)
+    } finally {
+        integrityRepairing.value = false
+    }
+}
 
 const changeVersion = async () => {
     if (selectedVersion.value === instance.value.game_version) return
@@ -66,14 +92,14 @@ const changeVersion = async () => {
             loader_version: v.identifier
         })
         await install(instance.value.path, true)
-        notify({
+        addNotification({
             title: 'Успех',
-            description: 'Версия изменена.',
+            text: 'Версия изменена.',
             type: 'success'
         })
         await queryClient.invalidateQueries({ queryKey: ['bedrock-packages-cache'] })
     } catch (e) {
-        handleError(e)
+        handleError(e as Error)
     } finally {
         repairing.value = false
     }
@@ -81,39 +107,78 @@ const changeVersion = async () => {
 </script>
 
 <template>
-    <div class="flex flex-col h-full overflow-y-auto w-full max-w-[800px] mt-0 mx-auto px-6 py-6 pb-20 custom-scrollbar gap-8">
-        <h1 class="text-2xl font-bold m-0 mb-4">
-            Версия Bedrock
-        </h1>
-        <div class="flex flex-col gap-4">
-            <SettingsLabel title="Версия игры" description="Установите версию Minecraft Bedrock без изменения загрузчика.">
-                <template #control>
-                    <div class="flex flex-row items-center gap-2">
-                        <DropdownSelect
-                            name="bedrock-version-select"
-                            v-model="selectedVersion"
-                            :options="versionsSelectOptions"
-                            :displayName="(opt) => opt.label"
-                            :disabled="bedrockVersionsQuery.isLoading.value || repairing"
-                            class="min-w-[200px]"
-                        >
-                        </DropdownSelect>
-                    </div>
-                </template>
-            </SettingsLabel>
+    <div class="flex flex-col gap-6">
+        <!-- Installation Info -->
+        <div class="flex flex-col gap-2.5">
+            <span class="text-lg font-semibold text-contrast">Installation info</span>
+            <div class="flex flex-col gap-2.5 rounded-[20px] bg-surface-2 p-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-primary">Platform</span>
+                    <span class="font-semibold text-contrast">Bedrock</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-primary">Game version</span>
+                    <span class="font-semibold text-contrast">{{ instance.game_version }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-primary">Status</span>
+                    <span class="font-semibold" :class="currentPackage?.is_valid ? 'text-green' : 'text-red'">
+                        {{ currentPackage?.is_valid ? 'Installed' : 'Broken' }}
+                    </span>
+                </div>
+            </div>
+        </div>
 
-            <div class="flex flex-row items-center gap-4 mt-4 select-none">
-                <ButtonStyled
-                    color="primary"
-                    :disabled="selectedVersion === instance.game_version || repairing"
-                    @click="changeVersion()"
-                >
-                    <button class="flex flex-row items-center gap-2">
-                        <LoaderIcon v-if="repairing" class="w-4 h-4 animate-spin" />
-                        Изменить версию (с переустановкой)
+        <!-- Change Version -->
+        <div class="flex flex-col gap-2.5">
+            <span class="text-lg font-semibold text-contrast">Change version</span>
+            <div class="flex flex-col gap-3">
+                <Combobox
+                    v-model="selectedVersion"
+                    :options="versionsSelectOptions"
+                    :disabled="bedrockVersionsQuery.isLoading.value || repairing"
+                    class="w-full"
+                />
+                <div>
+                    <ButtonStyled color="brand">
+                        <button
+                            class="!shadow-none"
+                            :disabled="selectedVersion === instance.game_version || repairing"
+                            @click="changeVersion()"
+                        >
+                            <LoaderIcon v-if="repairing" class="size-5 animate-spin" />
+                            <DownloadIcon v-else class="size-5" />
+                            {{ repairing ? 'Installing...' : 'Change version (reinstall)' }}
+                        </button>
+                    </ButtonStyled>
+                </div>
+            </div>
+            <span class="text-primary text-sm">
+                Select a new Minecraft Bedrock version. The game will be reinstalled with the new version.
+            </span>
+        </div>
+
+        <!-- Repair -->
+        <div class="flex flex-col gap-2.5">
+            <span class="text-lg font-semibold text-contrast">Repair instance</span>
+            <div>
+                <ButtonStyled>
+                    <button
+                        class="!shadow-none"
+                        :disabled="integrityRepairing"
+                        @click="repairModal?.show()"
+                    >
+                        <LoaderIcon v-if="integrityRepairing" class="size-5 animate-spin" />
+                        <HammerIcon v-else class="size-5" />
+                        {{ integrityRepairing ? 'Repairing...' : 'Repair' }}
                     </button>
                 </ButtonStyled>
             </div>
+            <span class="text-primary text-sm">
+                Reinstalls Minecraft Bedrock dependencies and checks for corruption. This may resolve issues if your game is not launching due to launcher-related errors.
+            </span>
         </div>
+
+        <ConfirmRepairModal ref="repairModal" :server="false" @repair="repairIntegrity" />
     </div>
 </template>

@@ -97,6 +97,8 @@ pub struct ProfileStorageInfo {
     pub path: String,
     pub size: u64,
     pub created: i64,
+    pub game_version: String,
+    pub loader: String,
 }
 
 fn dir_size(path: impl AsRef<Path>) -> u64 {
@@ -155,7 +157,7 @@ pub async fn get_bedrock_packages() -> crate::Result<Vec<BedrockPackageInfo>> {
                 packages.push(BedrockPackageInfo {
                     name,
                     path: path.to_string_lossy().to_string(),
-                    size: dir_size(&path),
+                    size: 0,
                     created,
                     is_valid,
                 });
@@ -164,6 +166,11 @@ pub async fn get_bedrock_packages() -> crate::Result<Vec<BedrockPackageInfo>> {
     }
     
     Ok(packages)
+}
+
+pub async fn get_directory_size(path_str: String) -> crate::Result<u64> {
+    let path = std::path::PathBuf::from(path_str);
+    Ok(dir_size(&path))
 }
 
 pub async fn remove_directory(path_str: String) -> crate::Result<()> {
@@ -198,8 +205,10 @@ pub async fn get_profile_storage() -> crate::Result<Vec<ProfileStorageInfo>> {
         storage_info.push(ProfileStorageInfo {
             name: profile.name.clone(),
             path: profile.path.clone(),
-            size: dir_size(&path),
+            size: 0,
             created,
+            game_version: profile.game_version.clone(),
+            loader: profile.loader.as_str().to_string(),
         });
     }
     

@@ -5,12 +5,15 @@
 </template>
 
 <script setup lang="ts">
+import { ClipboardCopyIcon, FolderOpenIcon } from '@modrinth/assets'
 import {
+	commonMessages,
 	ContentCardLayout as ContentPageLayout,
 	type ContentCardTableItem,
 	type ContentItem,
 	defineMessages,
 	injectNotificationManager,
+	type OverflowMenuOption,
 	provideContentManager,
 	ReadyTransition,
 	useVIntl,
@@ -20,7 +23,9 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { get_full_path } from '@/helpers/profile'
 import type { GameInstance } from '@/helpers/types'
+import { highlightInFolder } from '@/helpers/utils.js'
 
 import {
 	loadBedrockMetadataMap,
@@ -120,6 +125,7 @@ const contentItems = computed<ContentItem[]>(() => {
 			project_type: addon.kind === 'resource' ? 'resourcepack' : addon.kind === 'skin' ? 'skinpack' : 'mod',
 			owner: authorName
 				? {
+						id: authorName,
 						name: authorName,
 						avatar_url: avatarUrl,
 						type: 'user',
@@ -219,6 +225,58 @@ function handleBrowseContent() {
 	})
 }
 
+function kindToDir(kind: string | undefined): string {
+	switch (kind) {
+		case 'resource':
+			return 'resource_packs'
+		case 'skin':
+			return 'skin_packs'
+		default:
+			return 'behavior_packs'
+	}
+}
+
+async function showAddonInFolder(item: ContentItem) {
+	if (!props.instance?.path) return
+	try {
+		const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
+		const kindDir = kindToDir(rawAddon?.kind)
+		const instanceFullPath = await get_full_path(props.instance.path)
+		const sep = instanceFullPath.includes('\\') ? '\\' : '/'
+		const addonPath = [instanceFullPath, 'com.mojang', kindDir, item.file_name].join(sep)
+		await highlightInFolder(addonPath)
+	} catch (e) {
+		handleError(e as Error)
+	}
+}
+
+function getOverflowOptions(item: ContentItem): OverflowMenuOption[] {
+	const options: OverflowMenuOption[] = []
+
+	options.push({
+		id: formatMessage(commonMessages.showFileButton),
+		icon: FolderOpenIcon,
+		action: () => showAddonInFolder(item),
+	})
+
+	const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
+	const cleanKey = (item.project?.title || item.file_name).replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()
+	const meta = metaMap[cleanKey] || metaMap[item.file_name.toLowerCase()]
+	const projectUrl = meta?.projectUrl
+
+	if (projectUrl) {
+		options.push({
+			id: formatMessage(commonMessages.copyLinkButton),
+			icon: ClipboardCopyIcon,
+			action: async () => {
+				await navigator.clipboard.writeText(projectUrl)
+			},
+		})
+	}
+
+	return options
+}
+
 provideContentManager({
 	items: contentItems,
 	loading,
@@ -234,6 +292,7 @@ provideContentManager({
 	browse: handleBrowseContent,
 	uploadFiles: installFromFile,
 	hasUpdateSupport: false,
+	getOverflowOptions,
 	mapToTableItem: (item: ContentItem): ContentCardTableItem => {
 		const targetId = item.project?.id || item.id
 		const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
@@ -255,7 +314,6 @@ provideContentManager({
 				? {
 						...item.owner,
 						link: memberLink,
-						ownerLink: memberLink,
 					}
 				: undefined,
 		}

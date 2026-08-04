@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Combobox, defineMessages, ThemeSelector, Toggle, useVIntl } from '@modrinth/ui'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { get, set } from '@/helpers/settings.ts'
 import { getOS } from '@/helpers/utils'
@@ -158,28 +158,49 @@ const messages = defineMessages({
 const os = ref(await getOS())
 const settings = ref(await get())
 
-// Карта Hue-значений для каждого цвета акцента
-const accentHueMap: Record<string, number> = {
-	green: 145,
-	blue: 211,
-	purple: 270,
-	red: 350,
-	orange: 30,
-	pink: 330,
-	teal: 173,
-	cyan: 188,
-	yellow: 45,
-}
+const ACCENT_COLORS = [
+	'green',
+	'purple',
+	'blue',
+	'red',
+	'orange',
+	'pink',
+	'teal',
+	'cyan',
+	'yellow',
+] as const
 
 function applyAccentColor(color: string) {
-	const hue = accentHueMap[color] ?? 145
-	document.documentElement.style.setProperty('--brand-h', String(hue))
+	const html = document.documentElement
+	// Убираем inline-переопределение hue, чтобы действовали полные HSL из классов theme-*
+	html.style.removeProperty('--brand-h')
+	for (const c of ACCENT_COLORS) {
+		html.classList.remove(`theme-${c}`)
+	}
+	html.classList.add(`theme-${color}`)
 	window?.localStorage?.setItem('accent_color', color)
 }
 
 const accentColor = ref(window?.localStorage?.getItem('accent_color') || 'green')
 // Применяем сохранённый цвет при загрузке
 applyAccentColor(accentColor.value)
+
+const accentColorOptions = computed(() => [
+	{ value: 'green', label: formatMessage(messages.accentColorGreen) },
+	{ value: 'purple', label: formatMessage(messages.accentColorPurple) },
+	{ value: 'blue', label: formatMessage(messages.accentColorBlue) },
+	{ value: 'red', label: formatMessage(messages.accentColorRed) },
+	{ value: 'orange', label: formatMessage(messages.accentColorOrange) },
+	{ value: 'pink', label: formatMessage(messages.accentColorPink) },
+	{ value: 'teal', label: formatMessage(messages.accentColorTeal) },
+	{ value: 'cyan', label: formatMessage(messages.accentColorCyan) },
+	{ value: 'yellow', label: formatMessage(messages.accentColorYellow) },
+])
+
+const accentColorLabel = computed(() => {
+	const opt = accentColorOptions.value.find((o) => o.value === accentColor.value)
+	return opt?.label ?? accentColor.value
+})
 
 watch(
 	settings,
@@ -219,18 +240,8 @@ watch(
 			:model-value="accentColor"
 			name="Accent color dropdown"
 			class="max-w-40"
-			:options="[
-				{ value: 'green', label: formatMessage(messages.accentColorGreen) },
-				{ value: 'purple', label: formatMessage(messages.accentColorPurple) },
-				{ value: 'blue', label: formatMessage(messages.accentColorBlue) },
-				{ value: 'red', label: formatMessage(messages.accentColorRed) },
-				{ value: 'orange', label: formatMessage(messages.accentColorOrange) },
-				{ value: 'pink', label: formatMessage(messages.accentColorPink) },
-				{ value: 'teal', label: formatMessage(messages.accentColorTeal) },
-				{ value: 'cyan', label: formatMessage(messages.accentColorCyan) },
-				{ value: 'yellow', label: formatMessage(messages.accentColorYellow) },
-			]"
-			:display-value="accentColor"
+			:options="accentColorOptions"
+			:display-value="accentColorLabel"
 			@update:model-value="(val) => {
 				accentColor = val;
 				applyAccentColor(val);

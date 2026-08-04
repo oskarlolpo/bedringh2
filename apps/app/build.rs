@@ -50,6 +50,7 @@ fn main() {
                         "get_bedrock_packages",
                         "remove_directory",
                         "get_profile_storage",
+                        "get_directory_size",
                     ])
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,
@@ -373,6 +374,10 @@ fn main() {
                         "delete_bedrock_world",
                         "export_bedrock_world",
                         "import_bedrock_world",
+                        "list_bedrock_world_backups",
+                        "restore_bedrock_world_backup",
+                        "delete_bedrock_world_backup",
+                        "backup_bedrock_world_now",
                     ])
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,

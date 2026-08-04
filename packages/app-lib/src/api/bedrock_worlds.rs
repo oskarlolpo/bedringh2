@@ -213,8 +213,22 @@ pub async fn import_bedrock_world(profile_path: &str, archive_path: &str) -> Res
     Ok(())
 }
 
+/// Maximum number of snapshots kept per world (rotation limit).
+const MAX_WORLD_BACKUPS: usize = 10;
+
+/// Information about a single world backup snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BedrockWorldBackup {
+    pub folder_name: String,
+    pub backup_name: String,
+    pub created: u64,
+    pub size_bytes: u64,
+}
+
 /// Creates automatic backup snapshots of Bedrock worlds before launching the game.
-/// Stores up to 5 latest snapshots per world to prevent data corruption from crashes/power loss.
+/// Stores up to [`MAX_WORLD_BACKUPS`] latest snapshots per world to prevent data
+/// loss from crashes/power loss.
 pub async fn auto_backup_bedrock_worlds(profile_path: &str) -> Result<()> {
     let instance_path = match crate::api::profile::get_full_path(profile_path).await {
         Ok(p) => p,
@@ -252,7 +266,7 @@ pub async fn auto_backup_bedrock_worlds(profile_path: &str) -> Result<()> {
             continue;
         }
 
-        // Keep only 5 newest backups
+        // Keep only the newest MAX_WORLD_BACKUPS backups
         if let Ok(mut backup_entries) = fs::read_dir(&world_backup_dir).await {
             let mut list = Vec::new();
             while let Ok(Some(b_entry)) = backup_entries.next_entry().await {
@@ -260,11 +274,176 @@ pub async fn auto_backup_bedrock_worlds(profile_path: &str) -> Result<()> {
                     list.push(b_entry.path());
                 }
             }
-            if list.len() > 5 {
+            if list.len() > MAX_WORLD_BACKUPS {
                 list.sort();
-                for old in list.iter().take(list.len() - 5) {
+                for old in list.iter().take(list.len() - MAX_WORLD_BACKUPS) {
                     let _ = fs::remove_dir_all(old).await;
                 }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Lists all backup snapshots for every world of the given profile,
+/// newest first. Reads from the `auto_world_backups` directory.
+pub async fn list_bedrock_world_backups(profile_path: &str) -> Result<Vec<BedrockWorldBackup>> {
+    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let backups_base_dir = instance_path.join("auto_world_backups");
+
+    let mut backups = Vec::new();
+
+    if !backups_base_dir.exists() {
+        return Ok(backups);
+    }
+
+    let mut world_entries = match fs::read_dir(&backups_base_dir).await {
+        Ok(e) => e,
+        Err(_) => return Ok(backups),
+    };
+
+    while let Ok(Some(world_entry)) = world_entries.next_entry().await {
+        let world_backup_dir = world_entry.path();
+        if !world_backup_dir.is_dir() {
+            continue;
+        }
+        let folder_name = world_entry.file_name().to_string_lossy().to_string();
+
+        let mut backup_entries = match fs::read_dir(&world_backup_dir).await {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        while let Ok(Some(b_entry)) = backup_entries.next_entry().await {
+            let backup_path = b_entry.path();
+            if !backup_path.is_dir() {
+                continue;
+            }
+            let backup_name = b_entry.file_name().to_string_lossy().to_string();
+
+            let mut created = 0u64;
+            let mut size_bytes = 0u64;
+            if let Ok(meta) = b_entry.metadata().await {
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(d) = modified.duration_since(std::time::UNIX_EPOCH) {
+                        created = d.as_secs();
+                    }
+                }
+            }
+            // Compute size by walking the snapshot dir
+            let mut stack = vec![backup_path.clone()];
+            while let Some(dir) = stack.pop() {
+                if let Ok(mut sub) = fs::read_dir(&dir).await {
+                    while let Ok(Some(se)) = sub.next_entry().await {
+                        if let Ok(m) = se.metadata().await {
+                            if m.is_dir() {
+                                stack.push(se.path());
+                            } else {
+                                size_bytes += m.len();
+                            }
+                        }
+                    }
+                }
+            }
+
+            backups.push(BedrockWorldBackup {
+                folder_name: folder_name.clone(),
+                backup_name,
+                created,
+                size_bytes,
+            });
+        }
+    }
+
+    // Newest first
+    backups.sort_by(|a, b| b.created.cmp(&a.created));
+    Ok(backups)
+}
+
+/// Restores a world from the given backup snapshot, replacing current contents.
+pub async fn restore_bedrock_world_backup(
+    profile_path: &str,
+    folder_name: &str,
+    backup_name: &str,
+) -> Result<()> {
+    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let backup_path = instance_path
+        .join("auto_world_backups")
+        .join(folder_name)
+        .join(backup_name);
+    let world_path = instance_path
+        .join("com.mojang")
+        .join("minecraftWorlds")
+        .join(folder_name);
+
+    if !backup_path.exists() {
+        return Err(ErrorKind::OtherError(format!(
+            "Backup {backup_name} for world {folder_name} not found"
+        ))
+        .into());
+    }
+
+    if world_path.exists() {
+        fs::remove_dir_all(&world_path).await?;
+    }
+    copy_dir_all(&backup_path, &world_path).await?;
+    Ok(())
+}
+
+/// Deletes a single backup snapshot.
+pub async fn delete_bedrock_world_backup(
+    profile_path: &str,
+    folder_name: &str,
+    backup_name: &str,
+) -> Result<()> {
+    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let backup_path = instance_path
+        .join("auto_world_backups")
+        .join(folder_name)
+        .join(backup_name);
+
+    if backup_path.exists() && backup_path.is_dir() {
+        fs::remove_dir_all(backup_path).await?;
+    }
+    Ok(())
+}
+
+/// Manually creates a backup snapshot of a single world (used by the
+/// "Backups" UI button). Applies the same rotation limit.
+pub async fn backup_bedrock_world_now(profile_path: &str, folder_name: &str) -> Result<()> {
+    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let world_path = instance_path
+        .join("com.mojang")
+        .join("minecraftWorlds")
+        .join(folder_name);
+
+    if !world_path.exists() {
+        return Err(ErrorKind::OtherError(format!(
+            "World {folder_name} not found"
+        ))
+        .into());
+    }
+
+    let world_backup_dir = instance_path.join("auto_world_backups").join(folder_name);
+    let _ = fs::create_dir_all(&world_backup_dir).await;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let current_backup_path = world_backup_dir.join(format!("backup_{}", timestamp));
+    copy_dir_all(&world_path, &current_backup_path).await?;
+
+    // Rotate
+    if let Ok(mut backup_entries) = fs::read_dir(&world_backup_dir).await {
+        let mut list = Vec::new();
+        while let Ok(Some(b_entry)) = backup_entries.next_entry().await {
+            if b_entry.path().is_dir() {
+                list.push(b_entry.path());
+            }
+        }
+        if list.len() > MAX_WORLD_BACKUPS {
+            list.sort();
+            for old in list.iter().take(list.len() - MAX_WORLD_BACKUPS) {
+                let _ = fs::remove_dir_all(old).await;
             }
         }
     }

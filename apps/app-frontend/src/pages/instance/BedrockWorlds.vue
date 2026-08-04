@@ -19,6 +19,12 @@
 				/>
 				<div class="flex items-center gap-2">
 					<ButtonStyled type="outlined">
+						<button @click="openBackups">
+							<ArchiveIcon class="size-4" />
+							Бэкапы
+						</button>
+					</ButtonStyled>
+					<ButtonStyled type="outlined">
 						<button @click="importFromFile">
 							<DownloadIcon class="size-4" />
 							Импорт (.mcworld)
@@ -72,6 +78,12 @@
 						
 						<div class="mt-auto pt-3 flex gap-2 justify-end items-center border-t border-surface-4/60">
 							<ButtonStyled size="small" type="outlined">
+								<button @click="backupNow(world)" :disabled="backingUp === world.folderName" title="Создать снапшот мира">
+									<ArchiveIcon v-if="backingUp !== world.folderName" class="size-4" />
+									<SpinnerIcon v-else class="size-4 animate-spin" />
+								</button>
+							</ButtonStyled>
+							<ButtonStyled size="small" type="outlined">
 								<button @click="exportWorld(world)">
 									Экспорт
 								</button>
@@ -86,12 +98,58 @@
 				</div>
 			</div>
 		</div>
+
+		<NewModal ref="backupsModal" header="Бэкапы миров" max-width="560px">
+			<div class="flex flex-col gap-3 min-w-[320px]">
+				<p class="m-0 text-sm text-secondary">
+					Автоматические снапшоты создаются при запуске и выходе из игры. Хранятся последние 10 на мир.
+				</p>
+				<div v-if="backupsLoading" class="flex items-center justify-center py-8">
+					<SpinnerIcon class="size-6 animate-spin text-secondary" />
+				</div>
+				<div v-else-if="backups.length === 0" class="py-8 text-center text-sm text-secondary">
+					Снапшотов пока нет — они появятся после первого запуска игры.
+				</div>
+				<div v-else class="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+					<div
+						v-for="backup in backups"
+						:key="backup.folderName + '/' + backup.backupName"
+						class="flex items-center justify-between gap-3 bg-surface-3 border border-surface-4 rounded-xl p-3"
+					>
+						<div class="flex flex-col overflow-hidden">
+							<span class="font-medium text-sm text-primary truncate">
+								{{ worldNameFor(backup.folderName) }}
+							</span>
+							<span class="text-xs text-secondary">
+								{{ formatDate(backup.created) }} · {{ formatSize(backup.sizeBytes) }}
+							</span>
+						</div>
+						<div class="flex items-center gap-2 shrink-0">
+							<ButtonStyled size="small" type="outlined">
+								<button
+									:disabled="restoringBackup === backup.backupName"
+									@click="restoreBackup(backup)"
+								>
+									<SpinnerIcon v-if="restoringBackup === backup.backupName" class="size-4 animate-spin" />
+									<template v-else>Восстановить</template>
+								</button>
+							</ButtonStyled>
+							<ButtonStyled size="small" color="red" type="transparent">
+								<button :title="'Удалить снапшот'" @click="deleteBackup(backup)">
+									<TrashIcon class="size-4" />
+								</button>
+							</ButtonStyled>
+						</div>
+					</div>
+				</div>
+			</div>
+		</NewModal>
 	</ReadyTransition>
 </template>
 
 <script setup lang="ts">
-import { CompassIcon, DownloadIcon, GlobeIcon, SearchIcon, TrashIcon } from '@modrinth/assets'
-import { ButtonStyled, EmptyState, ReadyTransition, StyledInput, injectNotificationManager } from '@modrinth/ui'
+import { ArchiveIcon, CompassIcon, DownloadIcon, GlobeIcon, SearchIcon, SpinnerIcon, TrashIcon } from '@modrinth/assets'
+import { ButtonStyled, EmptyState, NewModal, ReadyTransition, StyledInput, injectNotificationManager } from '@modrinth/ui'
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { ref, computed, onMounted } from 'vue'
@@ -118,12 +176,26 @@ interface BedrockWorld {
 	sizeBytes: number
 	lastPlayed: number
 	iconPath: string | null
+	isValid?: boolean
+}
+
+interface BedrockWorldBackup {
+	folderName: string
+	backupName: string
+	created: number
+	sizeBytes: number
 }
 
 const loading = ref(true)
 const searchQuery = ref('')
 const worlds = ref<BedrockWorld[]>([])
 const notifications = injectNotificationManager()
+
+const backupsModal = ref<InstanceType<typeof NewModal> | null>(null)
+const backups = ref<BedrockWorldBackup[]>([])
+const backupsLoading = ref(false)
+const backingUp = ref<string | null>(null)
+const restoringBackup = ref<string | null>(null)
 
 const filteredWorlds = computed(() => {
 	if (!searchQuery.value.trim()) return worlds.value
@@ -239,6 +311,83 @@ async function importFromFile() {
 				loading.value = false
 			}
 		}
+	}
+}
+
+function worldNameFor(folderName: string) {
+	return worlds.value.find((w) => w.folderName === folderName)?.name ?? folderName
+}
+
+async function fetchBackups() {
+	backupsLoading.value = true
+	try {
+		backups.value = await invoke('plugin:bedrock-worlds|list_bedrock_world_backups', {
+			profilePath: props.instance.path,
+		})
+	} catch (e) {
+		notifications.handleError(e as Error)
+	} finally {
+		backupsLoading.value = false
+	}
+}
+
+async function openBackups() {
+	backupsModal.value?.show()
+	await fetchBackups()
+}
+
+async function backupNow(world: BedrockWorld) {
+	backingUp.value = world.folderName
+	try {
+		await invoke('plugin:bedrock-worlds|backup_bedrock_world_now', {
+			profilePath: props.instance.path,
+			folderName: world.folderName,
+		})
+		notifications.addNotification({
+			type: 'success',
+			title: 'Снапшот создан',
+			text: `Бэкап мира ${world.name} сохранён.`,
+		})
+	} catch (e) {
+		notifications.handleError(e as Error)
+	} finally {
+		backingUp.value = null
+	}
+}
+
+async function restoreBackup(backup: BedrockWorldBackup) {
+	if (!confirm(`Восстановить мир ${worldNameFor(backup.folderName)} из снапшота от ${formatDate(backup.created)}? Текущее состояние мира будет заменено.`)) return
+	restoringBackup.value = backup.backupName
+	try {
+		await invoke('plugin:bedrock-worlds|restore_bedrock_world_backup', {
+			profilePath: props.instance.path,
+			folderName: backup.folderName,
+			backupName: backup.backupName,
+		})
+		notifications.addNotification({
+			type: 'success',
+			title: 'Мир восстановлен',
+			text: `Мир ${worldNameFor(backup.folderName)} восстановлен из снапшота.`,
+		})
+		await fetchWorlds()
+	} catch (e) {
+		notifications.handleError(e as Error)
+	} finally {
+		restoringBackup.value = null
+	}
+}
+
+async function deleteBackup(backup: BedrockWorldBackup) {
+	if (!confirm(`Удалить снапшот от ${formatDate(backup.created)}?`)) return
+	try {
+		await invoke('plugin:bedrock-worlds|delete_bedrock_world_backup', {
+			profilePath: props.instance.path,
+			folderName: backup.folderName,
+			backupName: backup.backupName,
+		})
+		await fetchBackups()
+	} catch (e) {
+		notifications.handleError(e as Error)
 	}
 }
 

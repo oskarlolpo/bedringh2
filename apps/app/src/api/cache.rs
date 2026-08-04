@@ -64,6 +64,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             get_bedrock_packages,
             remove_directory,
             get_profile_storage,
+            get_directory_size,
         ])
         .build()
 }
@@ -102,4 +103,9 @@ pub async fn remove_directory(path: String) -> Result<()> {
 #[tauri::command]
 pub async fn get_profile_storage() -> Result<Vec<theseus::cache::ProfileStorageInfo>> {
     Ok(theseus::cache::get_profile_storage().await?)
+}
+
+#[tauri::command]
+pub async fn get_directory_size(path: String) -> Result<u64> {
+    Ok(theseus::cache::get_directory_size(path).await?)
 }

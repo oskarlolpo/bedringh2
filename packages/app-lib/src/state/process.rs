@@ -883,6 +883,13 @@ impl Process {
         // Now fully complete- update playtime one last time
         update_playtime(&mut last_updated_playtime, &profile_path, true).await;
 
+        // Make an automatic post-exit backup snapshot of worlds so the latest
+        // session progress is captured (rotation keeps the newest 10).
+        let backup_profile = profile_path.clone();
+        tokio::spawn(async move {
+            let _ = crate::api::bedrock_worlds::auto_backup_bedrock_worlds(&backup_profile).await;
+        });
+
         // Publish play time update
         // Allow failure, it will be stored locally and sent next time
         // Sent in another thread as first call may take a couple seconds and hold up process ending
