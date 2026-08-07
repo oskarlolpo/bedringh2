@@ -389,14 +389,14 @@ import {
 	get_projects as getInstanceProjects,
 	kill,
 	list as listInstances,
-} from '@/helpers/instance'
+} from '@/helpers/instance.ts'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
 import { getServerLatency } from '@/helpers/worlds'
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
 import { useProjectTranslation } from '@/composables/use-project-translation'
-import { useBreadcrumbs } from '@/store/breadcrumbs'
+import { useBreadcrumbs } from '@/store/breadcrumbs.ts'
 import { getServerAddress } from '@/helpers/worlds'
 import { useTheming } from '@/store/state.js'
 

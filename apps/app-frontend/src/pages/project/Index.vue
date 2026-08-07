@@ -346,7 +346,7 @@ import InstanceIndicator from '@/components/ui/InstanceIndicator.vue'
 import {
 	fetchCachedServerStatus,
 	getFreshCachedServerStatus,
-} from '@/composables/instances/use-server-status-query'
+} from '@/composables/instances/use-server-status-query.ts'
 import {
 	get_organization,
 	get_project,
@@ -361,12 +361,12 @@ import {
 	get_projects as getInstanceProjects,
 	kill,
 	list as listInstances,
-} from '@/helpers/instance'
+} from '@/helpers/instance.ts'
 import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
 import { get_by_instance_id } from '@/helpers/process'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
 import { getServerAddress } from '@/helpers/worlds'
-import { provideBreadcrumbParent, useBreadcrumb } from '@/providers/breadcrumbs'
+import { provideBreadcrumbParent, useBreadcrumb } from '@/providers/breadcrumbs.ts'
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
