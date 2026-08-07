@@ -146,15 +146,16 @@ async function handleSelectedProjectsLeaveResult(
 </script>
 
 <template>
-	<template v-if="installContext">
-		<SelectedProjectsLeaveModal
-			ref="selectedProjectsLeaveModal"
-			:count="selectedCount"
-			:installing="isInstallingSelected"
-		/>
-		<div class="flex flex-col gap-2">
-			<div class="flex flex-wrap items-center justify-between gap-4">
-				<div class="flex min-w-0 items-center gap-4">
+	<SelectedProjectsLeaveModal
+		v-if="installContext"
+		ref="selectedProjectsLeaveModal"
+		:count="selectedCount"
+		:installing="isInstallingSelected"
+	/>
+	<div class="flex flex-col gap-2">
+		<div class="flex flex-wrap items-center justify-between gap-4">
+			<div class="flex min-w-0 items-center gap-4">
+				<template v-if="installContext">
 					<ButtonStyled circular size="large">
 						<button :aria-label="installContext.backLabel" @click="handleBack">
 							<LeftArrowIcon />
@@ -180,57 +181,57 @@ async function handleSelectedProjectsLeaveResult(
 							</template>
 						</div>
 					</div>
-				</div>
-				<div class="flex items-center gap-2">
-					<ButtonStyled
-						v-if="ctx"
-						circular
-						size="large"
-						:color="isSearchTranslated ? 'brand' : 'standard'"
+				</template>
+			</div>
+			<div class="flex items-center gap-2 ml-auto">
+				<ButtonStyled
+					v-if="ctx"
+					circular
+					size="large"
+					:color="isSearchTranslated ? 'brand' : 'standard'"
+				>
+					<button
+						v-tooltip="
+							isSearchTranslated
+								? formatMessage(messages.showOriginal)
+								: formatMessage(messages.translatePage)
+						"
+						:aria-label="
+							isSearchTranslated
+								? formatMessage(messages.showOriginal)
+								: formatMessage(messages.translatePage)
+						"
+						:disabled="isSearchTranslating"
+						@click="handleToggleSearchTranslation"
 					>
-						<button
-							v-tooltip="
-								isSearchTranslated
-									? formatMessage(messages.showOriginal)
-									: formatMessage(messages.translatePage)
-							"
-							:aria-label="
-								isSearchTranslated
-									? formatMessage(messages.showOriginal)
-									: formatMessage(messages.translatePage)
-							"
-							:disabled="isSearchTranslating"
-							@click="handleToggleSearchTranslation"
+						<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-5" />
+						<svg
+							v-else
+							xmlns="http://www.w3.org/2000/svg"
+							width="22"
+							height="22"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
 						>
-							<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-5" />
-							<svg
-								v-else
-								xmlns="http://www.w3.org/2000/svg"
-								width="22"
-								height="22"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
-							>
-								<path stroke="none" d="M0 0h24v24H0z" fill="none" />
-								<path d="M4 5h7" />
-								<path d="M7 4c0 4.846 0 7 .5 8" />
-								<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
-								<path d="M12 20l4 -9l4 9" />
-								<path d="M19.1 18h-6.2" />
-							</svg>
-						</button>
-					</ButtonStyled>
-					<slot name="actions" />
-				</div>
+							<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+							<path d="M4 5h7" />
+							<path d="M7 4c0 4.846 0 7 .5 8" />
+							<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
+							<path d="M12 20l4 -9l4 9" />
+							<path d="M19.1 18h-6.2" />
+						</svg>
+					</button>
+				</ButtonStyled>
+				<slot name="actions" />
 			</div>
 		</div>
-		<Admonition v-if="installContext.warning" type="warning" class="mb-1">
+		<Admonition v-if="installContext?.warning" type="warning" class="mb-1">
 			{{ installContext.warning }}
 		</Admonition>
-	</template>
+	</div>
 </template>

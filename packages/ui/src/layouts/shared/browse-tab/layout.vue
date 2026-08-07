@@ -69,7 +69,7 @@ const messages = defineMessages({
 </script>
 
 <template>
-	<template v-if="ctx.installContext?.value && ctx.variant !== 'web'">
+	<template v-if="ctx.variant !== 'web'">
 		<div
 			ref="stickyInstallHeaderRef"
 			class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 p-3 border-surface-5"
@@ -243,7 +243,7 @@ const messages = defineMessages({
 					v-for="result in ctx.projectHits.value"
 					:key="result.project_id"
 					:link="ctx.getProjectLink(result)"
-					:title="result.title"
+					:title="result.title || (result as any).name || ''"
 					:icon-url="result.icon_url"
 					:author="{
 						name: (result as any).author_details?.name || (result.organization == null ? result.author : result.organization),
@@ -263,7 +263,7 @@ const messages = defineMessages({
 						ctx.effectiveCurrentSortType.value.name === 'newest' ? 'published' : 'updated'
 					"
 					:downloads="result.downloads"
-					:summary="result.description"
+					:summary="result.description || (result as any).summary"
 					:tags="result.display_categories"
 					:all-tags="result.categories"
 					:deprioritized-tags="ctx.deprioritizedTags.value"
