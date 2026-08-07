@@ -1875,7 +1875,12 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 	position: relative;
 	height: calc(100vh - var(--top-bar-height));
 	background: var(--surface-1-5, #111217);
-	background-image: linear-gradient(180deg, hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.03) 0%, transparent 100%);
+	background-image: linear-gradient(
+		180deg,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.18) 0%,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.06) 60%,
+		transparent 100%
+	);
 
 	--color-button-bg: var(--surface-3);
 	--color-button-bg-hover: var(--surface-4);

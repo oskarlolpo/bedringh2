@@ -414,14 +414,15 @@ html {
 	--color-ad: #0d1828;
 
 	--brand-gradient-bg: linear-gradient(
-		0deg,
-		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.04) 0%,
+		180deg,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.18) 0%,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.05) 60%,
 		transparent 100%
 	);
 	--brand-gradient-strong-bg: linear-gradient(
 		270deg,
-		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.06) 10%,
-		transparent 100%
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.20) 10%,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.08) 100%
 	);
 
 	--color-gradient-button-bg: linear-gradient(180deg, #1b1b20 0%, #25262b 100%);
