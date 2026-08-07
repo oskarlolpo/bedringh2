@@ -415,13 +415,13 @@ html {
 
 	--brand-gradient-bg: linear-gradient(
 		0deg,
-		rgba(22, 66, 51, 0.15) 0%,
-		rgba(55, 137, 73, 0.1) 100%
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.04) 0%,
+		transparent 100%
 	);
 	--brand-gradient-strong-bg: linear-gradient(
 		270deg,
-		rgba(9, 18, 14, 0.6) 10%,
-		rgba(19, 31, 23, 0.5) 100%
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.06) 10%,
+		transparent 100%
 	);
 
 	--color-gradient-button-bg: linear-gradient(180deg, #1b1b20 0%, #25262b 100%);
