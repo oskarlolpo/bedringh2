@@ -92,77 +92,32 @@ export function useSearchTranslation(queryRef?: Ref<string>) {
 	async function translateHits(hits: Record<string, any>[]): Promise<Record<string, any>[]> {
 		if (!hits || hits.length === 0) return hits
 
-		const textsToTranslate: string[] = []
-		const hitIndices: number[] = []
-
-		hits.forEach((hit, idx) => {
-			const id = getId(hit)
-			const text = getText(hit)
-			if (!originalSummaries.has(id)) {
-				originalSummaries.set(id, text)
-			}
-			const clean = text.trim()
-			if (
-				clean &&
-				!/^https?:\/\/[^\s]+$/i.test(clean) &&
-				!/^[0-9\s\-_.,:;!@#$%^&*()+=?/\\|<>'"~`]*$/.test(clean) &&
-				!clean.includes(DELIMITER)
-			) {
-				textsToTranslate.push(clean)
-				hitIndices.push(idx)
-			}
-		})
-
-		if (textsToTranslate.length === 0) {
-			return hits
-		}
-
-		const batches: { indices: number[]; payload: string }[] = []
-		let currentPayload = ''
-		let currentIndices: number[] = []
-
-		textsToTranslate.forEach((text, i) => {
-			if (currentPayload.length + text.length > MAX_BATCH_LENGTH) {
-				if (currentPayload) batches.push({ indices: [...currentIndices], payload: currentPayload })
-				currentPayload = text
-				currentIndices = [i]
-			} else {
-				currentPayload = currentPayload ? `${currentPayload}${DELIMITER}${text}` : text
-				currentIndices.push(i)
-			}
-		})
-		if (currentPayload) {
-			batches.push({ indices: [...currentIndices], payload: currentPayload })
-		}
-
-		const translatedTexts: string[] = new Array(textsToTranslate.length)
-		let anyOk = false
-
-		for (const batch of batches) {
-			const { text: translatedBatch, ok } = await fetchTranslation(batch.payload)
-			if (ok) {
-				anyOk = true
-				const items = translatedBatch.split(DELIMITER).map((s) => s.trim())
-				for (let k = 0; k < batch.indices.length; k++) {
-					const item = items[k]
-					if (item) {
-						translatedTexts[batch.indices[k]] = item
-					}
+		const updatedHits = await Promise.all(
+			hits.map(async (hit) => {
+				const id = getId(hit)
+				const text = getText(hit)
+				if (!originalSummaries.has(id)) {
+					originalSummaries.set(id, text)
 				}
-			}
-		}
+				const clean = text.trim()
+				if (
+					!clean ||
+					/^https?:\/\/[^\s]+$/i.test(clean) ||
+					/^[0-9\s\-_.,:;!@#$%^&*()+=?/\\|<>'"~`]*$/.test(clean)
+				) {
+					return hit
+				}
 
-		if (!anyOk) {
-			throw new Error('Translation service unreachable - no text was translated.')
-		}
+				const { text: translated, ok } = await fetchTranslation(clean)
+				if (!ok || !translated) return hit
 
-		return hits.map((hit, idx) => {
-			const pos = hitIndices.indexOf(idx)
-			if (pos === -1 || !translatedTexts[pos]) return hit
-			return hit.description !== undefined
-				? { ...hit, description: translatedTexts[pos] }
-				: { ...hit, summary: translatedTexts[pos] }
-		})
+				return hit.description !== undefined
+					? { ...hit, description: translated }
+					: { ...hit, summary: translated }
+			}),
+		)
+
+		return updatedHits
 	}
 
 	async function toggleSearchTranslation(hits: Record<string, any>[]): Promise<Record<string, any>[]> {
