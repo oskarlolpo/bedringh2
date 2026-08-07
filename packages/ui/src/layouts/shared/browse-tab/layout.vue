@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Labrinth } from '@modrinth/api-client'
-import { SearchIcon } from '@modrinth/assets'
+import { SearchIcon, SpinnerIcon } from '@modrinth/assets'
 import { computed, ref, toValue } from 'vue'
 
 import ButtonStyled from '#ui/components/base/ButtonStyled.vue'
@@ -18,6 +18,7 @@ import { commonMessages, formatProjectTypeSentence } from '#ui/utils/common-mess
 import type { SortType } from '#ui/utils/search'
 
 import SelectedProjectsFloatingBar from './components/SelectedProjectsFloatingBar.vue'
+import { useSearchTranslation } from './composables/use-search-translation'
 import BrowseInstallHeader from './header.vue'
 import { injectBrowseManager } from './providers/browse-manager'
 
@@ -29,6 +30,33 @@ const { isStuck: isInstallHeaderStuck } = useStickyObserver(
 	stickyInstallHeaderRef,
 	'BrowseInstallHeader',
 )
+
+const {
+	isTranslated: isSearchTranslated,
+	isTranslating: isSearchTranslating,
+	applyingTranslation,
+	toggleSearchTranslation,
+} = useSearchTranslation()
+
+function setHits(updated: any[]) {
+	if (!ctx) return
+	applyingTranslation.value = true
+	if (ctx.isServerType.value) {
+		ctx.serverHits.value = updated as typeof ctx.serverHits.value
+	} else {
+		ctx.projectHits.value = updated as typeof ctx.projectHits.value
+	}
+	setTimeout(() => {
+		applyingTranslation.value = false
+	}, 0)
+}
+
+async function handleToggleSearchTranslation() {
+	if (!ctx) return
+	const hits = ctx.isServerType.value ? ctx.serverHits.value : ctx.projectHits.value
+	const updated = await toggleSearchTranslation(hits as any[])
+	setHits(updated)
+}
 
 const sortOptions = computed<ComboboxOption<SortType>[]>(() =>
 	ctx.effectiveSortTypes.value.map((st) => ({
@@ -65,11 +93,19 @@ const messages = defineMessages({
 		id: 'browse.no-results',
 		defaultMessage: 'No results found for your query!',
 	},
+	translatePage: {
+		id: 'browse.translate-page',
+		defaultMessage: 'Translate this page',
+	},
+	showOriginal: {
+		id: 'browse.show-original',
+		defaultMessage: 'Show original',
+	},
 })
 </script>
 
 <template>
-	<template v-if="ctx.variant !== 'web'">
+	<template v-if="ctx.installContext?.value && ctx.variant !== 'web'">
 		<div
 			ref="stickyInstallHeaderRef"
 			class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 p-3 border-surface-5"
@@ -80,7 +116,54 @@ const messages = defineMessages({
 	</template>
 	<SelectedProjectsFloatingBar v-if="ctx.installContext?.value && ctx.variant !== 'web'" />
 
-	<NavTabs v-if="ctx.showProjectTypeTabs.value" :links="ctx.selectableProjectTypes.value" />
+	<div v-if="ctx.showProjectTypeTabs.value || !ctx.installContext?.value" class="flex items-center justify-between gap-4">
+		<NavTabs v-if="ctx.showProjectTypeTabs.value" :links="ctx.selectableProjectTypes.value" />
+		<div v-if="!ctx.installContext?.value" class="flex items-center gap-2 ml-auto">
+			<ButtonStyled
+				v-if="ctx"
+				circular
+				size="large"
+				:color="isSearchTranslated ? 'brand' : 'standard'"
+			>
+				<button
+					v-tooltip="
+						isSearchTranslated
+							? formatMessage(messages.showOriginal)
+							: formatMessage(messages.translatePage)
+					"
+					:aria-label="
+						isSearchTranslated
+							? formatMessage(messages.showOriginal)
+							: formatMessage(messages.translatePage)
+					"
+					:disabled="isSearchTranslating"
+					@click="handleToggleSearchTranslation"
+				>
+					<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-5" />
+					<svg
+						v-else
+						xmlns="http://www.w3.org/2000/svg"
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
+					>
+						<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+						<path d="M4 5h7" />
+						<path d="M7 4c0 4.846 0 7 .5 8" />
+						<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
+						<path d="M12 20l4 -9l4 9" />
+						<path d="M19.1 18h-6.2" />
+					</svg>
+				</button>
+			</ButtonStyled>
+		</div>
+	</div>
 
 	<StyledInput
 		v-model="ctx.query.value"
