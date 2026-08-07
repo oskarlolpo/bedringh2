@@ -439,6 +439,9 @@
 		"message": "Сборки"
 	},
 	"app.browse.project-type.resource-packs": "Текстур-паки",
+	"app.browse.project-type.worlds": "Миры",
+	"app.browse.project-type.skins": "Скины",
+	"app.browse.project-type.scripts": "Скрипты",
 	"app.browse.server-instance-content-warning": {
 		"message": "Добавление контента может сломать совместимость при подключении к серверу. Весь добавленный контент также будет удалён при обновлении сервера."
 	},

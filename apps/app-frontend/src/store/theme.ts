@@ -5,18 +5,22 @@ let systemThemeMq: MediaQueryList | null = null
 export const DEFAULT_FEATURE_FLAGS = {
 	project_background: false,
 	page_path: false,
-	worlds_tab: false,
 	worlds_in_home: true,
 	server_project_qa: false,
+	show_version_environment_column: false,
 	server_ram_as_bytes_always_on: false,
 	always_show_app_controls: false,
+	skip_non_essential_warnings: false,
 	skip_unknown_pack_warning: false,
 	pride_fundraiser: true,
 	i18n_debug: false,
 	show_instance_play_time: true,
+	advanced_filters_collapsed: true,
+	always_show_copy_details: false,
+	hide_installed_modpacks: false,
 }
 
-export const THEME_OPTIONS = ['dark', 'light', 'oled', 'system'] as const
+export const THEME_OPTIONS = ['dark', 'light', 'oled', 'retro', 'system'] as const
 
 export type FeatureFlag = keyof typeof DEFAULT_FEATURE_FLAGS
 export type FeatureFlags = Record<FeatureFlag, boolean>

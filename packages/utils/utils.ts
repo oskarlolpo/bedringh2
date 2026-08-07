@@ -68,14 +68,11 @@ const SERVER_HEADER_ORDER = [
 ]
 
 export const sortedCategories = (tags, formatCategoryName, locale) => {
-	if (!tags?.categories || !Array.isArray(tags.categories)) return []
 	return tags.categories.slice().sort((a, b) => {
-		const aHeader = a?.header ?? ''
-		const bHeader = b?.header ?? ''
-		const headerCompare = aHeader.localeCompare(bHeader)
+		const headerCompare = a.header.localeCompare(b.header)
 		if (headerCompare !== 0) {
-			const aServerIdx = SERVER_HEADER_ORDER.indexOf(aHeader)
-			const bServerIdx = SERVER_HEADER_ORDER.indexOf(bHeader)
+			const aServerIdx = SERVER_HEADER_ORDER.indexOf(a.header)
+			const bServerIdx = SERVER_HEADER_ORDER.indexOf(b.header)
 			if (aServerIdx !== -1 && bServerIdx !== -1) {
 				return aServerIdx - bServerIdx
 			}
@@ -83,16 +80,16 @@ export const sortedCategories = (tags, formatCategoryName, locale) => {
 			return headerCompare
 		}
 
-		if (aHeader === 'performance impact' && bHeader === 'performance impact') {
+		if (a.header === 'performance impact' && b.header === 'performance impact') {
 			const x = ['potato', 'low', 'medium', 'high', 'screenshot']
-			return x.indexOf(a?.name) - x.indexOf(b?.name)
+			return x.indexOf(a.name) - x.indexOf(b.name)
 		}
 
-		if (a?.name === 'pokemon') return -1
-		if (b?.name === 'pokemon') return 1
+		if (a.name === 'pokemon') return -1
+		if (b.name === 'pokemon') return 1
 
-		const aFormatted = formatCategoryName(a?.name ?? '') ?? ''
-		const bFormatted = formatCategoryName(b?.name ?? '') ?? ''
+		const aFormatted = formatCategoryName(a.name)
+		const bFormatted = formatCategoryName(b.name)
 		return aFormatted.localeCompare(bFormatted, locale, { numeric: true })
 	})
 }

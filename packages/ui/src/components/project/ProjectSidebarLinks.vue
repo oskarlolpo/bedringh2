@@ -1,13 +1,13 @@
 <template>
 	<div
 		v-if="
-			project?.issues_url ||
-			project?.source_url ||
-			project?.wiki_url ||
-			project?.discord_url ||
-			project?.site_url ||
-			projectV3?.link_urls?.store?.url ||
-			(project?.donation_urls && project.donation_urls.length > 0)
+			project.issues_url ||
+			project.source_url ||
+			project.wiki_url ||
+			project.discord_url ||
+			project.site_url ||
+			projectV3?.link_urls.store?.url ||
+			(project.donation_urls?.length ?? 0) > 0
 		"
 		class="flex flex-col gap-3"
 	>
@@ -16,7 +16,7 @@
 			class="flex flex-col gap-3 font-semibold [&>a]:flex [&>a]:gap-2 [&>a]:items-center [&>a]:w-fit [&>a]:text-primary [&>a]:leading-[1.2] [&>a:hover]:underline"
 		>
 			<a
-				v-if="project?.issues_url"
+				v-if="project.issues_url"
 				:href="project.issues_url"
 				:target="linkTarget"
 				rel="noopener nofollow ugc"
@@ -26,7 +26,7 @@
 				<ExternalIcon aria-hidden="true" class="external-icon" />
 			</a>
 			<a
-				v-if="project?.source_url"
+				v-if="project.source_url"
 				:href="project.source_url"
 				:target="linkTarget"
 				rel="noopener nofollow ugc"
@@ -36,7 +36,7 @@
 				<ExternalIcon aria-hidden="true" class="external-icon" />
 			</a>
 			<a
-				v-if="project?.wiki_url"
+				v-if="project.wiki_url"
 				:href="project.wiki_url"
 				:target="linkTarget"
 				rel="noopener nofollow ugc"
@@ -46,7 +46,7 @@
 				<ExternalIcon aria-hidden="true" class="external-icon" />
 			</a>
 			<a
-				v-if="project?.discord_url"
+				v-if="project.discord_url"
 				:href="project.discord_url"
 				:target="linkTarget"
 				rel="noopener nofollow ugc"
@@ -56,8 +56,8 @@
 				<ExternalIcon aria-hidden="true" class="external-icon" />
 			</a>
 			<a
-				v-if="projectV3?.link_urls?.site?.url"
-				:href="projectV3?.link_urls?.site?.url"
+				v-if="projectV3?.link_urls.site?.url"
+				:href="projectV3?.link_urls.site?.url"
 				:target="linkTarget"
 				rel="noopener nofollow ugc"
 			>
@@ -66,8 +66,8 @@
 				<ExternalIcon aria-hidden="true" class="external-icon" />
 			</a>
 			<a
-				v-if="projectV3?.link_urls?.store?.url"
-				:href="projectV3?.link_urls?.store?.url"
+				v-if="projectV3?.link_urls.store?.url"
+				:href="projectV3?.link_urls.store?.url"
 				:target="linkTarget"
 				rel="noopener nofollow ugc"
 			>
@@ -77,19 +77,18 @@
 			</a>
 			<hr
 				v-if="
-					(project?.issues_url ||
-						project?.source_url ||
-						project?.wiki_url ||
-						project?.discord_url ||
-						projectV3?.link_urls?.site?.url ||
-						projectV3?.link_urls?.store?.url) &&
-					project?.donation_urls &&
-					project.donation_urls.length > 0
+					(project.issues_url ||
+						project.source_url ||
+						project.wiki_url ||
+						project.discord_url ||
+						projectV3?.link_urls.site?.url ||
+						projectV3?.link_urls.store?.url) &&
+					(project.donation_urls?.length ?? 0) > 0
 				"
 				class="w-full border-button-border my-0.5"
 			/>
 			<a
-				v-for="(donation, index) in (project?.donation_urls || [])"
+				v-for="(donation, index) in (project.donation_urls || [])"
 				:key="index"
 				:href="donation.url"
 				:target="linkTarget"

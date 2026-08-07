@@ -1,6 +1,6 @@
 /**
  * All theseus API calls return serialized values (both return values and errors);
- * So, for example, addDefaultInstance creates a blank Profile object, where the Rust struct is serialized,
+ * So, for example, addDefaultInstance creates a blank instance object, where the Rust struct is serialized,
  *  and deserialized into a usable JS object.
  */
 import { invoke } from '@tauri-apps/api/core'
@@ -8,8 +8,8 @@ import { invoke } from '@tauri-apps/api/core'
 /*
 
 JavaVersion {
-    path: Path
-    version: String
+	path: Path
+	version: String
 }
 
 */

@@ -20,7 +20,7 @@
 						{{ formatMessage(commonMessages.cancelButton) }}
 					</button>
 				</ButtonStyled>
-				<ButtonStyled color="brand">
+				<ButtonStyled color="green">
 					<button @click="confirm">
 						<HammerIcon />
 						{{ formatMessage(messages.repairButton) }}

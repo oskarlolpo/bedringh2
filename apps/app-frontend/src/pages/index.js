@@ -3,6 +3,6 @@ import BrowseBedrock from './BrowseBedrock.vue'
 import Index from './Index.vue'
 import Servers from './Servers.vue'
 import Skins from './Skins.vue'
-import Worlds from './Worlds.vue'
+import User from './User.vue'
 
-export { Browse, BrowseBedrock, Index, Servers, Skins, Worlds }
+export { Browse, BrowseBedrock, Index, Servers, Skins, User }

@@ -176,42 +176,6 @@
 									}}
 								</button>
 							</ButtonStyled>
-							<ButtonStyled
-								circular
-								size="large"
-								:color="isTranslated ? 'brand' : 'surface'"
-							>
-								<button
-									v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-									:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-									:disabled="isTranslating"
-									@click="handleToggleTranslation"
-								>
-									<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
-									<svg
-										v-else
-										xmlns="http://www.w3.org/2000/svg"
-										width="20"
-										height="20"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
-									>
-										<path stroke="none" d="M0 0h24v24H0z" fill="none" />
-										<path d="M4 5h7" />
-										<path d="M7 4c0 4.846 0 7 .5 8" />
-										<path
-											d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143"
-										/>
-										<path d="M12 20l4 -9l4 9" />
-										<path d="M19.1 18h-6.2" />
-									</svg>
-								</button>
-							</ButtonStyled>
 							<ButtonStyled circular size="large" type="transparent">
 								<TeleportOverflowMenu
 									:options="projectHeaderMoreActions"
@@ -847,7 +811,7 @@ async function fetchProjectData() {
 						title: cfMod.name,
 						name: cfMod.name,
 						summary: cleanSummary,
-						description: cfDescription || cleanSummary,
+						description: cleanSummary,
 						body: cfDescription || cleanSummary,
 						downloads: cfMod.downloadCount || 0,
 						followers: 0,
@@ -878,6 +842,8 @@ async function fetchProjectData() {
 						server_side: 'optional',
 						loaders: ['bedrock'],
 						game_versions: [],
+						donation_urls: [],
+						status: 'approved',
 					}
 
 					versions.value = (cfFiles || []).map((f) => ({
@@ -931,10 +897,19 @@ async function fetchProjectData() {
 		const meta =
 			metaMap[rawName.toLowerCase()] ||
 			metaMap[rawName.replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()]
-		const authorName = meta?.author || undefined
-		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || undefined
-		const cleanTitle =
-			meta?.name || meta?.title || meta?.slug || rawName.replace(/§[0-9a-fk-or]/gi, '').trim()
+		const rawMetaSum = meta?.summary || meta?.description || 'Bedrock Addon'
+		const cleanMetaSummary = rawMetaSum
+			.replace(/<script[\s\S]*?<\/script>/gi, '')
+			.replace(/<style[\s\S]*?<\/style>/gi, '')
+			.replace(/<[^>]+>/g, ' ')
+			.replace(/&nbsp;/gi, ' ')
+			.replace(/&amp;/gi, '&')
+			.replace(/&lt;/gi, '<')
+			.replace(/&gt;/gi, '>')
+			.replace(/&quot;/gi, '"')
+			.replace(/&#39;/gi, "'")
+			.replace(/\s+/g, ' ')
+			.trim()
 
 		project = {
 			id: rawName,
@@ -942,8 +917,8 @@ async function fetchProjectData() {
 			project_type: 'addon',
 			title: cleanTitle,
 			name: cleanTitle,
-			summary: meta?.summary || meta?.description || 'Bedrock Addon',
-			description: meta?.description || meta?.summary || 'Bedrock Addon',
+			summary: cleanMetaSummary,
+			description: cleanMetaSummary,
 			body: meta?.body || meta?.description || meta?.summary || 'Bedrock Addon',
 			downloads: meta?.downloads ?? 0,
 			followers: meta?.followers ?? 0,
@@ -975,6 +950,25 @@ async function fetchProjectData() {
 			server_side: 'optional',
 			loaders: ['bedrock'],
 			game_versions: meta?.game_versions || [],
+			donation_urls: [],
+			status: 'approved',
+		}
+
+		if (!versions.value || versions.value.length === 0) {
+			versions.value = [
+				{
+					id: meta?.version || '1.0.0',
+					project_id: rawName,
+					name: meta?.version || '1.0.0',
+					version_number: meta?.version || '1.0.0',
+					version_type: 'release',
+					downloads: meta?.downloads ?? 0,
+					game_versions: meta?.game_versions || [],
+					loaders: ['bedrock'],
+					files: [],
+					date_published: meta?.published || new Date().toISOString(),
+				},
+			]
 		}
 
 		members.value = authorName
@@ -1002,17 +996,19 @@ async function fetchProjectData() {
 	data.value = project
 	projectBreadcrumbLabel.value = project.title
 
-	if (!project.is_curseforge) {
+	const isBedrock = project.is_curseforge || (project.loaders && project.loaders.includes('bedrock'))
+	if (!isBedrock) {
 		;[versions.value, members.value, categories.value, instance.value, instanceProjects.value] =
 			await Promise.all([
-				get_version_many(project.versions, 'must_revalidate').catch(handleError),
-				project.team ? get_team(project.team).catch(handleError) : Promise.resolve(members.value),
-				get_categories().catch(handleError),
-				route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
-				route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
+				get_version_many(project.versions, 'must_revalidate').catch(() => []),
+				project.team ? get_team(project.team).catch(() => null) : Promise.resolve(members.value || []),
+				get_categories().catch(() => []),
+				route.query.i ? getInstance(route.query.i).catch(() => null) : Promise.resolve(null),
+				route.query.i ? getInstanceProjects(route.query.i).catch(() => null) : Promise.resolve(null),
 			])
 
 		for (const member of members.value ?? []) {
+			if (!member?.user) continue
 			for (const identifier of [member.user.id, member.user.username]) {
 				if (identifier) {
 					queryClient.setQueryData(['users', 'summary', identifier], member.user)
@@ -1025,9 +1021,9 @@ async function fetchProjectData() {
 		)
 	} else {
 		;[categories.value, instance.value, instanceProjects.value] = await Promise.all([
-			get_categories().catch(handleError),
-			route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
-			route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
+			get_categories().catch(() => []),
+			route.query.i ? getInstance(route.query.i).catch(() => null) : Promise.resolve(null),
+			route.query.i ? getInstanceProjects(route.query.i).catch(() => null) : Promise.resolve(null),
 		])
 	}
 
@@ -1152,7 +1148,11 @@ function fetchDeferredServerData(project) {
 	updateServerPlayState()
 }
 
-await fetchProjectData()
+try {
+	await fetchProjectData()
+} catch (e) {
+	console.error('Error fetching project page data:', e)
+}
 
 let unlistenProcesses
 process_listener((e) => {

@@ -1118,14 +1118,27 @@ async function search(requestParams: string) {
 		}
 		const websiteUrl = `https://www.curseforge.com/minecraft/mc-addons/${hit.slug}`
 
+		const cleanSum = (hit.summary || '')
+			.replace(/<script[\s\S]*?<\/script>/gi, '')
+			.replace(/<style[\s\S]*?<\/style>/gi, '')
+			.replace(/<[^>]+>/g, ' ')
+			.replace(/&nbsp;/gi, ' ')
+			.replace(/&amp;/gi, '&')
+			.replace(/&lt;/gi, '<')
+			.replace(/&gt;/gi, '>')
+			.replace(/&quot;/gi, '"')
+			.replace(/&#39;/gi, "'")
+			.replace(/\s+/g, ' ')
+			.trim()
+
 		const mappedCategories = hit.categories?.map((c: any) => c.id?.toString() || c.slug) || []
 		const mapped = {
 			project_id: hit.id.toString(),
 			slug: hit.slug,
 			name: hit.name,
 			title: hit.name,
-			summary: hit.summary,
-			description: hit.summary,
+			summary: cleanSum,
+			description: cleanSum,
 			downloads: hit.downloadCount,
 			icon_url: hit.logo?.thumbnailUrl || hit.logo?.url,
 			categories: mappedCategories,

@@ -10,10 +10,10 @@
 				>
 					<Avatar :src="organization.icon_url" :alt="organization.name" size="32px" />
 					<div class="flex flex-col flex-nowrap justify-center">
-						<span class="group-hover:underline font-normal text-contrast">
+						<span class="group-hover:underline font-medium">
 							{{ organization.name }}
 						</span>
-						<span class="text-sm font-normal flex items-center gap-1"
+						<span class="text-sm font-normal text-secondary flex items-center gap-1"
 							><OrganizationIcon /> {{ formatMessage(messages.organization) }}</span
 						>
 					</div>
@@ -25,22 +25,20 @@
 				:key="`member-${member.id || member.user?.id || idx}`"
 				class="flex gap-2 items-center w-fit text-primary leading-[1.2] group"
 				:to="userLink(member.user?.username || '')"
-				:target="linkTarget ?? null"
+				:target="resolveLinkTarget(userLinkTarget)"
 			>
 				<Avatar :src="member.user?.avatar_url" :alt="member.user?.username || ''" size="32px" circle />
 				<div class="flex flex-col">
 					<span class="flex w-full flex-nowrap items-center gap-1 group-hover:underline">
-						<span class="min-w-0 overflow-hidden font-normal text-contrast truncate">{{
-							member.user?.username || 'Unknown'
-						}}</span>
+						<span class="min-w-0 overflow-hidden truncate">{{ member.user?.username || 'Unknown' }}</span>
 						<CrownIcon
 							v-if="member.is_owner"
 							v-tooltip="formatMessage(messages.owner)"
 							class="text-brand-orange"
 						/>
-						<ExternalIcon v-if="linkTarget === '_blank'" />
+						<ExternalIcon v-if="resolveLinkTarget(userLinkTarget) === '_blank'" />
 					</span>
-					<span class="text-sm font-normal">{{ member.role }}</span>
+					<span class="text-sm font-normal text-secondary">{{ member.role }}</span>
 				</div>
 			</AutoLink>
 		</div>
@@ -81,11 +79,16 @@ const props = defineProps<{
 	orgLink: (slug: string) => string
 	userLink: (username: string) => string
 	linkTarget?: string
+	userLinkTarget?: string | null
 }>()
+
+function resolveLinkTarget(target: string | null | undefined): string | null {
+	return target === undefined ? (props.linkTarget ?? null) : target
+}
 
 // Members should be an array of all members, without the accepted ones, and with the user with the Owner role at the start
 // The rest of the members should be sorted by role, then by name
-const sortedMembers = computed(() => {
+const sortedMembers = computed<TeamMember[]>(() => {
 	const acceptedMembers = (props.members ?? []).filter(
 		(x) => x && x.user && (x.accepted === undefined || x.accepted),
 	)
@@ -97,7 +100,10 @@ const sortedMembers = computed(() => {
 			: x.is_owner,
 	)
 
-	const rest = acceptedMembers.filter((x) => !owner || (x.user?.id && owner.user?.id ? x.user.id !== owner.user.id : x !== owner)) || []
+	const rest =
+		acceptedMembers.filter((x) =>
+			!owner || (x.user?.id && owner.user?.id ? x.user.id !== owner.user.id : x !== owner),
+		) || []
 
 	rest.sort((a, b) => {
 		if (a.role === b.role) {

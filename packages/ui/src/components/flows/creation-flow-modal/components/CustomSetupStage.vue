@@ -144,7 +144,7 @@
 				</div>
 			</Collapsible>
 		</template>
-		
+
 		<!-- Bedrock info -->
 		<template v-if="selectedLoader === 'bedrock'">
 			<div class="mt-2 flex items-start gap-2 rounded-lg border border-divider bg-surface-1 p-3 text-sm text-secondary">
@@ -374,21 +374,26 @@ const gameVersionOptions = computed<ComboboxOption<string>[]>(() => {
 				.map((v) => ({ value: v.version, label: v.version }))
 		}
 
+		if (selectedLoader.value === 'bedrock') {
+			const manifest = ctx.loaderVersionsCache.value['bedrock'] as any
+			if (!manifest || !manifest.gameVersions) return []
+			const filtered = ctx.showSnapshots.value
+				? manifest.gameVersions
+				: manifest.gameVersions.filter((x: any) => x.stable)
+			return filtered.map((x: any) => ({ value: x.id, label: x.id }))
+		}
+
 		const apiLoader = toApiLoaderName(selectedLoader.value)
 		const manifest = ctx.loaderVersionsCache.value[apiLoader]
 		if (!manifest) return []
 
-		if (selectedLoader.value === 'bedrock') {
-			const filtered = ctx.showSnapshots.value ? manifest : manifest.filter((x) => x.stable)
-			console.log("Bedrock versions computed. showSnapshots:", ctx.showSnapshots.value, "Manifest length:", manifest.length, "Filtered length:", filtered.length, "Manifest top:", manifest[0])
-			return filtered.map((x) => ({ value: x.id, label: x.id }))
-		}
-
-		const hasPlaceholder = manifest.some((x) => x.id === '${modrinth.gameVersion}')
+		const hasPlaceholder = manifest.gameVersions.some((x) => x.id === '${modrinth.gameVersion}')
 		const supportedVersions = new Set(
-			manifest
+			manifest.gameVersions
 				.filter(
-					(x) => x.id !== '${modrinth.gameVersion}' && (hasPlaceholder || x.loaders.length > 0),
+					(x) =>
+						x.id !== '${modrinth.gameVersion}' &&
+						(hasPlaceholder || x.loaders.length > 0 || !!x.versionGroup),
 				)
 				.map((x) => x.id),
 		)
@@ -480,14 +485,14 @@ function getLoaderVersionsForGameVersion(
 		apiLoader,
 		gameVersion,
 		hasManifest: !!manifest,
-		manifestLength: manifest?.length,
+		manifestLength: manifest?.gameVersions.length,
 	})
 	if (!manifest) return []
 
 	// Some loaders (e.g. Fabric) list all versions under a placeholder entry
-	const placeholder = manifest.find((x) => x.id === '${modrinth.gameVersion}')
+	const placeholder = manifest.gameVersions.find((x) => x.id === '${modrinth.gameVersion}')
 	if (placeholder) {
-		if (!manifest.some((x) => x.id === gameVersion)) return []
+		if (!manifest.gameVersions.some((x) => x.id === gameVersion)) return []
 		debug(
 			'getLoaderVersionsForGameVersion: using placeholder, loaders:',
 			placeholder.loaders.length,
@@ -495,7 +500,20 @@ function getLoaderVersionsForGameVersion(
 		return placeholder.loaders
 	}
 
-	const entry = manifest.find((x) => x.id === gameVersion)
+	const entry = manifest.gameVersions.find((x) => x.id === gameVersion)
+	if (entry?.versionGroup) {
+		const loaders =
+			manifest.versionGroups?.find((group) => group.id === entry.versionGroup)?.loaders ?? []
+		debug(
+			'getLoaderVersionsForGameVersion: version group for',
+			gameVersion,
+			':',
+			entry.versionGroup,
+			loaders.length + ' loaders',
+		)
+		return loaders
+	}
+
 	debug(
 		'getLoaderVersionsForGameVersion: entry for',
 		gameVersion,
@@ -626,6 +644,5 @@ const loaderVersionOptions = computed<ComboboxOption<string>[]>(() => {
 
 function toggleSnapshots() {
 	ctx.showSnapshots.value = !ctx.showSnapshots.value
-	console.log("Toggled showSnapshots to:", ctx.showSnapshots.value)
 }
 </script>

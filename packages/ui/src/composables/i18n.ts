@@ -308,15 +308,7 @@ export function useVIntl(): VIntlFormatters & { locale: Ref<string> } {
 		// when formatMessage is called during component render
 		void locale.value
 
-		if (!descriptor || typeof descriptor !== 'object') {
-			return ''
-		}
-
 		const key = descriptor.id
-		if (!key) {
-			return descriptor.defaultMessage ?? ''
-		}
-
 		const translation = t(key, values ?? {})
 
 		let result: string

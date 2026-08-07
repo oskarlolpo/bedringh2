@@ -107,21 +107,13 @@ export const commonMessages = defineMessages({
 		id: 'label.description',
 		defaultMessage: 'Description',
 	},
-	descriptionTabLabel: {
-		id: 'label.description-tab',
-		defaultMessage: 'Description',
-	},
-	versionsTabLabel: {
-		id: 'label.versions-tab',
-		defaultMessage: 'Versions',
-	},
-	galleryTabLabel: {
-		id: 'label.gallery-tab',
-		defaultMessage: 'Gallery',
-	},
 	detailsLabel: {
 		id: 'label.details',
 		defaultMessage: 'Details',
+	},
+	discoverContentLabel: {
+		id: 'label.discover-content',
+		defaultMessage: 'Discover content',
 	},
 	downloadButton: {
 		id: 'button.download',
@@ -219,6 +211,10 @@ export const commonMessages = defineMessages({
 		id: 'button.open-folder',
 		defaultMessage: 'Open folder',
 	},
+	openInBrowserButton: {
+		id: 'button.open-in-browser',
+		defaultMessage: 'Open in browser',
+	},
 	openInModrinthButton: {
 		id: 'button.open-in-modrinth',
 		defaultMessage: 'Open in Modrinth',
@@ -294,6 +290,10 @@ export const commonMessages = defineMessages({
 	scopesLabel: {
 		id: 'label.scopes',
 		defaultMessage: 'Scopes',
+	},
+	permissionsLabel: {
+		id: 'label.permissions',
+		defaultMessage: 'Permissions',
 	},
 	searchLabel: {
 		id: 'label.search',
@@ -441,11 +441,15 @@ export const commonMessages = defineMessages({
 	},
 	hideInstalledContentLabel: {
 		id: 'label.hide-installed-content',
-		defaultMessage: 'Hide already installed content',
+		defaultMessage: 'Hide content already installed',
 	},
 	hideSelectedContentLabel: {
 		id: 'label.hide-selected-content',
 		defaultMessage: 'Hide selected content',
+	},
+	serverOnlyLabel: {
+		id: 'label.server-only',
+		defaultMessage: 'Server only',
 	},
 	installedModpackTitle: {
 		id: 'label.installed-modpack',
@@ -552,6 +556,10 @@ export const commonMessages = defineMessages({
 	copyLinkButton: {
 		id: 'button.copy-link',
 		defaultMessage: 'Copy link',
+	},
+	switchToVersionButton: {
+		id: 'button.switch-to-version',
+		defaultMessage: 'Switch to version',
 	},
 	switchVersionButton: {
 		id: 'button.switch-version',
@@ -816,6 +824,10 @@ export function normalizeProjectType(type: string): string {
 type FormatMessage = (descriptor: MessageDescriptor, values?: Record<string, unknown>) => string
 
 export const commonProjectTypeCategoryMessages = defineMessages({
+	addon: {
+		id: 'app.browse.project-type.addons',
+		defaultMessage: 'Add-ons',
+	},
 	datapack: {
 		id: 'project-type.datapack.category',
 		defaultMessage: 'Data Packs',
@@ -840,6 +852,18 @@ export const commonProjectTypeCategoryMessages = defineMessages({
 		id: 'project-type.shader.category',
 		defaultMessage: 'Shaders',
 	},
+	skinpack: {
+		id: 'app.bedrock.category.skin-packs',
+		defaultMessage: 'Skin Packs',
+	},
+	world: {
+		id: 'app.browse.project-type.worlds',
+		defaultMessage: 'Worlds',
+	},
+	script: {
+		id: 'app.browse.project-type.scripts',
+		defaultMessage: 'Scripts',
+	},
 	server: {
 		id: 'project-type.server.category',
 		defaultMessage: 'Servers',
@@ -848,13 +872,13 @@ export const commonProjectTypeCategoryMessages = defineMessages({
 		id: 'project-type.project.category',
 		defaultMessage: 'Projects',
 	},
-	skinpack: {
-		id: 'app.bedrock.category.skin-packs',
-		defaultMessage: 'Skin Packs',
-	},
 })
 
 export const commonProjectTypeTitleMessages = defineMessages({
+	addon: {
+		id: 'app.browse.project-type.addons',
+		defaultMessage: '{count, plural, one {Add-on} other {Add-ons}}',
+	},
 	datapack: {
 		id: 'project-type.datapack.capital',
 		defaultMessage: '{count, plural, one {Data Pack} other {Data Packs}}',
@@ -879,6 +903,18 @@ export const commonProjectTypeTitleMessages = defineMessages({
 		id: 'project-type.shader.capital',
 		defaultMessage: '{count, plural, one {Shader} other {Shaders}}',
 	},
+	skinpack: {
+		id: 'app.bedrock.category.skin-packs',
+		defaultMessage: '{count, plural, one {Skin Pack} other {Skin Packs}}',
+	},
+	world: {
+		id: 'app.browse.project-type.worlds',
+		defaultMessage: '{count, plural, one {World} other {Worlds}}',
+	},
+	script: {
+		id: 'app.browse.project-type.scripts',
+		defaultMessage: '{count, plural, one {Script} other {Scripts}}',
+	},
 	server: {
 		id: 'project-type.server.capital',
 		defaultMessage: '{count, plural, one {Server} other {Servers}}',
@@ -887,13 +923,13 @@ export const commonProjectTypeTitleMessages = defineMessages({
 		id: 'project-type.project.capital',
 		defaultMessage: '{count, plural, one {Project} other {Projects}}',
 	},
-	skinpack: {
-		id: 'app.bedrock.category.skin-packs',
-		defaultMessage: '{count, plural, one {Skin Pack} other {Skin Packs}}',
-	},
 })
 
 export const commonProjectTypeSentenceMessages = defineMessages({
+	addon: {
+		id: 'app.browse.project-type.addons',
+		defaultMessage: '{count, plural, one {add-on} other {add-ons}}',
+	},
 	datapack: {
 		id: 'project-type.datapack.lowercase',
 		defaultMessage: '{count, plural, one {data pack} other {data packs}}',
@@ -918,6 +954,18 @@ export const commonProjectTypeSentenceMessages = defineMessages({
 		id: 'project-type.shader.lowercase',
 		defaultMessage: '{count, plural, one {shader} other {shaders}}',
 	},
+	skinpack: {
+		id: 'app.bedrock.category.skin-packs',
+		defaultMessage: '{count, plural, one {skin pack} other {skin packs}}',
+	},
+	world: {
+		id: 'app.browse.project-type.worlds',
+		defaultMessage: '{count, plural, one {world} other {worlds}}',
+	},
+	script: {
+		id: 'app.browse.project-type.scripts',
+		defaultMessage: '{count, plural, one {script} other {scripts}}',
+	},
 	server: {
 		id: 'project-type.server.lowercase',
 		defaultMessage: '{count, plural, one {server} other {servers}}',
@@ -925,10 +973,6 @@ export const commonProjectTypeSentenceMessages = defineMessages({
 	project: {
 		id: 'project-type.project.lowercase',
 		defaultMessage: '{count, plural, one {project} other {projects}}',
-	},
-	skinpack: {
-		id: 'app.bedrock.category.skin-packs',
-		defaultMessage: '{count, plural, one {skin pack} other {skin packs}}',
 	},
 })
 
@@ -1080,12 +1124,16 @@ export const commonSettingsMessages = defineMessages({
 		defaultMessage: 'Personal access tokens',
 	},
 	profile: {
-		id: 'settings.profile.title',
-		defaultMessage: 'Public profile',
+		id: 'settings.profile.navigation-title',
+		defaultMessage: 'Profile',
 	},
 	sessions: {
 		id: 'settings.sessions.title',
 		defaultMessage: 'Sessions',
+	},
+	social: {
+		id: 'settings.social.title',
+		defaultMessage: 'Social',
 	},
 })
 

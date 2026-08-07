@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Labrinth } from '@modrinth/api-client'
-import { SearchIcon, SpinnerIcon } from '@modrinth/assets'
-import { computed, ref, toValue, watch } from 'vue'
+import { SearchIcon } from '@modrinth/assets'
+import { computed, ref, toValue } from 'vue'
 
 import ButtonStyled from '#ui/components/base/ButtonStyled.vue'
 import Combobox, { type ComboboxOption } from '#ui/components/base/Combobox.vue'
@@ -18,54 +18,11 @@ import { commonMessages, formatProjectTypeSentence } from '#ui/utils/common-mess
 import type { SortType } from '#ui/utils/search'
 
 import SelectedProjectsFloatingBar from './components/SelectedProjectsFloatingBar.vue'
-import { useSearchTranslation } from './composables/use-search-translation'
 import BrowseInstallHeader from './header.vue'
 import { injectBrowseManager } from './providers/browse-manager'
 
 const ctx = injectBrowseManager()
 const { formatMessage } = useVIntl()
-
-const {
-	isTranslated: isSearchTranslated,
-	isTranslating: isSearchTranslating,
-	applyingTranslation,
-	toggleSearchTranslation,
-	translateNewHits,
-} = useSearchTranslation(ctx.query)
-
-function setHits(updated: any[]) {
-	applyingTranslation.value = true
-	if (ctx.isServerType.value) {
-		ctx.serverHits.value = updated as typeof ctx.serverHits.value
-	} else {
-		ctx.projectHits.value = updated as typeof ctx.projectHits.value
-	}
-	// Release the flag after Vue flushes the watcher queue so our own
-	// replacement does not retrigger the auto-translate watcher below.
-	setTimeout(() => {
-		applyingTranslation.value = false
-	}, 0)
-}
-
-async function handleToggleSearchTranslation() {
-	const hits = ctx.isServerType.value ? ctx.serverHits.value : ctx.projectHits.value
-	const updated = await toggleSearchTranslation(hits as any[])
-	setHits(updated)
-}
-
-// When translation is enabled and the search results change (e.g. page switch),
-// automatically translate the newly loaded hits.
-watch(
-	() => (ctx.isServerType.value ? ctx.serverHits.value : ctx.projectHits.value),
-	async (newHits, oldHits) => {
-		if (!newHits || newHits === oldHits) return
-		if (applyingTranslation.value) return
-		if (!isSearchTranslated.value || isSearchTranslating.value) return
-		const updated = await translateNewHits(newHits as any[])
-		if (updated === newHits) return
-		setHits(updated)
-	},
-)
 const lockedMessages = computed(() => toValue(ctx.lockedFilterMessages))
 const stickyInstallHeaderRef = ref<HTMLElement | null>(null)
 const { isStuck: isInstallHeaderStuck } = useStickyObserver(
@@ -92,14 +49,6 @@ const messages = defineMessages({
 		id: 'browse.search.placeholder',
 		defaultMessage: 'Search {projectType}...',
 	},
-	translatePage: {
-		id: 'browse.translate-page',
-		defaultMessage: 'Translate this page',
-	},
-	showOriginal: {
-		id: 'browse.show-original',
-		defaultMessage: 'Show original',
-	},
 	viewPrefix: {
 		id: 'browse.view-prefix',
 		defaultMessage: 'View:',
@@ -117,162 +66,37 @@ const messages = defineMessages({
 		defaultMessage: 'No results found for your query!',
 	},
 })
-
-function getLoaderFieldValues(
-	result: Labrinth.Search.v3.ResultSearchProject,
-	field: string,
-): string[] {
-	return (result.project_loader_fields?.[field] ?? []).filter(
-		(value): value is string => typeof value === 'string',
-	)
-}
-
-function getProjectCardTags(result: Labrinth.Search.v3.ResultSearchProject, displayOnly: boolean) {
-	const rawCats = displayOnly ? result.display_categories : result.categories
-	const tags = new Set<string>(Array.isArray(rawCats) ? rawCats : [])
-
-	const loaders = Array.isArray(result?.loaders) ? result.loaders : []
-	for (const loader of loaders) {
-		if (loader !== 'mrpack') {
-			tags.add(loader)
-		}
-	}
-
-	if (loaders.includes('mrpack')) {
-		for (const loader of getLoaderFieldValues(result, 'mrpack_loaders')) {
-			tags.add(loader)
-		}
-	}
-
-	return Array.from(tags)
-}
 </script>
 
 <template>
 	<template v-if="ctx.installContext?.value && ctx.variant !== 'web'">
 		<div
 			ref="stickyInstallHeaderRef"
-			class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 px-3 py-4 border-surface-5"
+			class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 p-3 border-surface-5"
 			:class="[isInstallHeaderStuck ? 'border-t' : '']"
 		>
-			<BrowseInstallHeader>
-				<template #actions>
-					<ButtonStyled
-						circular
-						size="large"
-						:color="isSearchTranslated ? 'brand' : 'standard'"
-					>
-						<button
-							v-tooltip="
-								isSearchTranslated
-									? formatMessage(messages.showOriginal)
-									: formatMessage(messages.translatePage)
-							"
-							:aria-label="
-								isSearchTranslated
-									? formatMessage(messages.showOriginal)
-									: formatMessage(messages.translatePage)
-							"
-							:disabled="isSearchTranslating"
-							@click="handleToggleSearchTranslation"
-						>
-							<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-5" />
-							<svg
-								v-else
-								xmlns="http://www.w3.org/2000/svg"
-								width="22"
-								height="22"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
-							>
-								<path stroke="none" d="M0 0h24v24H0z" fill="none" />
-								<path d="M4 5h7" />
-								<path d="M7 4c0 4.846 0 7 .5 8" />
-								<path
-									d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143"
-								/>
-								<path d="M12 20l4 -9l4 9" />
-								<path d="M19.1 18h-6.2" />
-							</svg>
-						</button>
-					</ButtonStyled>
-				</template>
-			</BrowseInstallHeader>
+			<BrowseInstallHeader />
 		</div>
 	</template>
 	<SelectedProjectsFloatingBar v-if="ctx.installContext?.value && ctx.variant !== 'web'" />
 
-	<NavTabs
-		v-if="ctx.showProjectTypeTabs.value"
-		:links="ctx.selectableProjectTypes.value"
-		:replace="ctx.variant === 'app'"
-	/>
+	<NavTabs v-if="ctx.showProjectTypeTabs.value" :links="ctx.selectableProjectTypes.value" />
 
-	<div class="flex items-center gap-2">
-		<StyledInput
-			v-model="ctx.query.value"
-			:icon="SearchIcon"
-			type="text"
-			autocomplete="off"
-			:placeholder="
-				formatMessage(messages.searchPlaceholder, {
-					projectType: formatProjectTypeSentence(formatMessage, ctx.projectType.value, 2),
-				})
-			"
-			clearable
-			wrapper-class="w-full"
-			:input-class="ctx.variant === 'web' ? '!h-12' : 'h-12'"
-			@clear="ctx.clearSearch()"
-		/>
-		<ButtonStyled
-			v-if="!ctx.installContext?.value"
-			circular
-			size="large"
-			:color="isSearchTranslated ? 'brand' : 'standard'"
-		>
-			<button
-				v-tooltip="
-					isSearchTranslated
-						? formatMessage(messages.showOriginal)
-						: formatMessage(messages.translatePage)
-				"
-				:aria-label="
-					isSearchTranslated
-						? formatMessage(messages.showOriginal)
-						: formatMessage(messages.translatePage)
-				"
-				:disabled="isSearchTranslating"
-				@click="handleToggleSearchTranslation"
-			>
-				<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-5" />
-				<svg
-					v-else
-					xmlns="http://www.w3.org/2000/svg"
-					width="22"
-					height="22"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
-				>
-					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
-					<path d="M4 5h7" />
-					<path d="M7 4c0 4.846 0 7 .5 8" />
-					<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
-					<path d="M12 20l4 -9l4 9" />
-					<path d="M19.1 18h-6.2" />
-				</svg>
-			</button>
-		</ButtonStyled>
-	</div>
+	<StyledInput
+		v-model="ctx.query.value"
+		:icon="SearchIcon"
+		type="text"
+		autocomplete="off"
+		:placeholder="
+			formatMessage(messages.searchPlaceholder, {
+				projectType: formatProjectTypeSentence(formatMessage, ctx.projectType.value, 2),
+			})
+		"
+		clearable
+		wrapper-class="w-full"
+		:input-class="ctx.variant === 'web' ? '!h-12' : 'h-12'"
+		@clear="ctx.clearSearch()"
+	/>
 
 	<div class="flex flex-wrap items-center gap-2">
 		<Combobox
@@ -340,11 +164,7 @@ function getProjectCardTags(result: Labrinth.Search.v3.ResultSearchProject, disp
 	<SearchFilterControl
 		v-else
 		v-model:selected-filters="ctx.currentFilters.value"
-		:filters="
-			ctx.filters.value.filter(
-				(f) => f.display !== 'none' && !(ctx.hiddenFilterTypes?.value ?? []).includes(f.id),
-			)
-		"
+		:filters="ctx.filters.value.filter((f) => f.display !== 'none')"
 		:provided-filters="ctx.providedFilters?.value ?? []"
 		:overridden-provided-filter-types="ctx.overriddenProvidedFilterTypes.value"
 		:provided-message="lockedMessages?.providedBy"
@@ -423,16 +243,16 @@ function getProjectCardTags(result: Labrinth.Search.v3.ResultSearchProject, disp
 					v-for="result in ctx.projectHits.value"
 					:key="result.project_id"
 					:link="ctx.getProjectLink(result)"
-					:title="result.name"
-					:icon-url="result.icon_url ?? undefined"
+					:title="result.title"
+					:icon-url="result.icon_url"
 					:author="{
-						name:
-							(result as any).author_details?.name ||
-							(result.organization == null ? result.author : result.organization),
+						name: (result as any).author_details?.name || (result.organization == null ? result.author : result.organization),
 						link:
 							(result as any).author_details?.link ||
 							(result.organization_id == null
-								? `/user/${encodeURIComponent(result.author_id ?? result.author)}`
+								? ctx.variant === 'web'
+									? `/user/${result.author_id ?? result.author}`
+									: `https://modrinth.com/user/${result.author_id ?? result.author}`
 								: ctx.variant === 'web'
 									? `/organization/${result.organization_id}`
 									: `https://modrinth.com/organization/${result.organization_id}`),
@@ -443,9 +263,9 @@ function getProjectCardTags(result: Labrinth.Search.v3.ResultSearchProject, disp
 						ctx.effectiveCurrentSortType.value.name === 'newest' ? 'published' : 'updated'
 					"
 					:downloads="result.downloads"
-					:summary="result.summary"
-					:tags="getProjectCardTags(result, true)"
-					:all-tags="getProjectCardTags(result, false)"
+					:summary="result.description"
+					:tags="result.display_categories"
+					:all-tags="result.categories"
 					:deprioritized-tags="ctx.deprioritizedTags.value"
 					:exclude-loaders="ctx.excludeLoaders.value"
 					:followers="result.follows"
@@ -453,7 +273,10 @@ function getProjectCardTags(result: Labrinth.Search.v3.ResultSearchProject, disp
 					:color="result.color ?? undefined"
 					:environment="
 						['mod', 'modpack'].includes(ctx.projectType.value)
-							? result.project_loader_fields?.environment?.[0]
+							? {
+									clientSide: result.client_side as Labrinth.Projects.v2.Environment,
+									serverSide: result.server_side as Labrinth.Projects.v2.Environment,
+								}
 							: undefined
 					"
 					:layout="ctx.effectiveLayout.value"

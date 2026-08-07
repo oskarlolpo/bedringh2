@@ -29,7 +29,7 @@
 			/>
 		</section>
 		<section v-if="recommendedVersions.length" class="flex flex-col gap-2">
-			<h3 class="text-primary text-base m-0">{{ isBedrock ? formatMessage(messages.minecraftBedrock) : formatMessage(messages.minecraftJava) }}</h3>
+			<h3 class="text-primary text-base m-0">{{ formatMessage(messages.minecraftJava) }}</h3>
 			<div class="flex flex-wrap gap-1.5">
 				<TagItem
 					v-for="version in formatVersionsForDisplay(recommendedVersions, tags.gameVersions)"
@@ -174,40 +174,30 @@ function handleCopyIP() {
 	})
 }
 
-const isBedrock = computed(
-	() =>
-		props.loaders?.includes('bedrock') ||
-		props.projectV3?.project_types?.includes('addon'),
-)
-
 const messages = defineMessages({
 	copied: {
 		id: `project.about.server.copied`,
 		defaultMessage: 'Copied!',
 	},
 	copiedText: {
-		id: `project.about.server.copied-text`,
-		defaultMessage: 'IP address copied to clipboard.',
+		id: `project.about.server.copiedText`,
+		defaultMessage: 'Server address copied to clipboard',
 	},
 	title: {
 		id: `project.about.server.title`,
-		defaultMessage: 'Server Info',
+		defaultMessage: 'Server details',
 	},
 	addressTooltip: {
 		id: `project.about.server.address.tooltip`,
 		defaultMessage: 'Copy Java server address',
 	},
 	requiredContent: {
-		id: `project.about.server.required-content`,
-		defaultMessage: 'Required Content',
+		id: `project.about.server.requiredContent`,
+		defaultMessage: 'Required content',
 	},
 	minecraftJava: {
 		id: `project.about.compatibility.game.minecraftJava`,
 		defaultMessage: 'Minecraft: Java Edition',
-	},
-	minecraftBedrock: {
-		id: `project.about.compatibility.game.minecraftBedrock`,
-		defaultMessage: 'Minecraft: Bedrock Edition',
 	},
 	recommendedVersion: {
 		id: `project.about.server.recommendedVersion`,

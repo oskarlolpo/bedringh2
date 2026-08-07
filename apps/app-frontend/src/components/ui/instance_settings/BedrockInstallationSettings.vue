@@ -2,12 +2,12 @@
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 import { injectNotificationManager, ButtonStyled, ConfirmRepairModal, Combobox } from '@modrinth/ui'
-import { HammerIcon, DownloadIcon } from '@modrinth/assets'
+import { HammerIcon, DownloadIcon, SpinnerIcon } from '@modrinth/assets'
 import { invoke } from '@tauri-apps/api/core'
-import { LoaderIcon } from 'lucide-vue-next'
 
 import { injectInstanceSettings } from '@/providers/instance-settings'
-import { edit, install } from '@/helpers/profile'
+import { edit } from '@/helpers/instance'
+import { install_existing_instance as install } from '@/helpers/install'
 
 const { instance } = injectInstanceSettings()
 const { handleError, addNotification } = injectNotificationManager()
@@ -66,7 +66,7 @@ const currentPackage = computed(() => {
 const repairIntegrity = async () => {
     integrityRepairing.value = true
     try {
-        await install(instance.value.path, true)
+        await install(instance.value.id, true)
         addNotification({
             title: 'Проверка завершена',
             text: 'Целостность файлов восстановлена. Недостающие компоненты были скачаны и распакованы.',
@@ -87,11 +87,11 @@ const changeVersion = async () => {
 
     repairing.value = true
     try {
-        await edit(instance.value.path, {
+        await edit(instance.value.id, {
             game_version: selectedVersion.value,
             loader_version: v.identifier
         })
-        await install(instance.value.path, true)
+        await install(instance.value.id, true)
         addNotification({
             title: 'Успех',
             text: 'Версия изменена.',
@@ -146,7 +146,7 @@ const changeVersion = async () => {
                             :disabled="selectedVersion === instance.game_version || repairing"
                             @click="changeVersion()"
                         >
-                            <LoaderIcon v-if="repairing" class="size-5 animate-spin" />
+                            <SpinnerIcon v-if="repairing" class="size-5 animate-spin" />
                             <DownloadIcon v-else class="size-5" />
                             {{ repairing ? 'Installing...' : 'Change version (reinstall)' }}
                         </button>
@@ -168,7 +168,7 @@ const changeVersion = async () => {
                         :disabled="integrityRepairing"
                         @click="repairModal?.show()"
                     >
-                        <LoaderIcon v-if="integrityRepairing" class="size-5 animate-spin" />
+                        <SpinnerIcon v-if="integrityRepairing" class="size-5 animate-spin" />
                         <HammerIcon v-else class="size-5" />
                         {{ integrityRepairing ? 'Repairing...' : 'Repair' }}
                     </button>

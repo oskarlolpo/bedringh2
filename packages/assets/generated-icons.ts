@@ -118,6 +118,7 @@ import _EyeOffIcon from './icons/eye-off.svg?component'
 import _FileIcon from './icons/file.svg?component'
 import _FileArchiveIcon from './icons/file-archive.svg?component'
 import _FileCodeIcon from './icons/file-code.svg?component'
+import _FileCogIcon from './icons/file-cog.svg?component'
 import _FileImageIcon from './icons/file-image.svg?component'
 import _FilePlusIcon from './icons/file-plus.svg?component'
 import _FileTextIcon from './icons/file-text.svg?component'
@@ -243,6 +244,7 @@ import _ShareIcon from './icons/share.svg?component'
 import _ShieldIcon from './icons/shield.svg?component'
 import _ShieldAlertIcon from './icons/shield-alert.svg?component'
 import _ShieldCheckIcon from './icons/shield-check.svg?component'
+import _ShirtIcon from './icons/shirt.svg?component'
 import _SignalIcon from './icons/signal.svg?component'
 import _SignatureIcon from './icons/signature.svg?component'
 import _SkullIcon from './icons/skull.svg?component'
@@ -418,6 +420,7 @@ import _UpdatedIcon from './icons/updated.svg?component'
 import _UploadIcon from './icons/upload.svg?component'
 import _UserIcon from './icons/user.svg?component'
 import _UserCogIcon from './icons/user-cog.svg?component'
+import _UserKeyIcon from './icons/user-key.svg?component'
 import _UserPlusIcon from './icons/user-plus.svg?component'
 import _UserRoundIcon from './icons/user-round.svg?component'
 import _UserSearchIcon from './icons/user-search.svg?component'
@@ -548,6 +551,7 @@ export const EyeOffIcon = _EyeOffIcon
 export const FileIcon = _FileIcon
 export const FileArchiveIcon = _FileArchiveIcon
 export const FileCodeIcon = _FileCodeIcon
+export const FileCogIcon = _FileCogIcon
 export const FileImageIcon = _FileImageIcon
 export const FilePlusIcon = _FilePlusIcon
 export const FileTextIcon = _FileTextIcon
@@ -673,6 +677,7 @@ export const ShareIcon = _ShareIcon
 export const ShieldIcon = _ShieldIcon
 export const ShieldAlertIcon = _ShieldAlertIcon
 export const ShieldCheckIcon = _ShieldCheckIcon
+export const ShirtIcon = _ShirtIcon
 export const SignalIcon = _SignalIcon
 export const SignatureIcon = _SignatureIcon
 export const SkullIcon = _SkullIcon
@@ -848,6 +853,7 @@ export const UpdatedIcon = _UpdatedIcon
 export const UploadIcon = _UploadIcon
 export const UserIcon = _UserIcon
 export const UserCogIcon = _UserCogIcon
+export const UserKeyIcon = _UserKeyIcon
 export const UserPlusIcon = _UserPlusIcon
 export const UserRoundIcon = _UserRoundIcon
 export const UserSearchIcon = _UserSearchIcon

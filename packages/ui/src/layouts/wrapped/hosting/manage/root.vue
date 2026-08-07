@@ -107,72 +107,125 @@
 		}"
 		:class="[
 			'server-panel-' + revealState,
-			constrainWidth ? 'min-h-[100svh] max-w-[1280px] pb-16' : 'min-h-[calc(100svh-100px)] pb-6',
+			containedLayout
+				? 'h-full min-h-0 overflow-hidden pb-6'
+				: constrainWidth
+					? 'min-h-[100svh] max-w-[1280px] pb-16'
+					: 'min-h-[calc(100svh-100px)] pb-6',
 		]"
 	>
 		<template v-if="revealState !== 'pending' || isOnboarding">
-			<ServerManageHeader
+			<div
 				v-if="!isOnboarding"
-				class="server-stagger-item"
+				class="w-full flex flex-col gap-4"
+				:class="['server-stagger-item', containedLayout ? 'shrink-0' : '', { 'mt-4': isNuxt }]"
 				:style="{ '--si': 0 }"
-				:server="serverData"
-				:server-image="serverImage"
-				:server-project="serverProject"
-				:uptime-seconds="showUptime ? uptimeSeconds : undefined"
 			>
-				<template #actions>
-					<div class="flex gap-2">
-						<PanelServerActionButton :disabled="!!installError" />
-						<Tooltip
-							theme="dismissable-prompt"
-							:triggers="[]"
-							:shown="showSettingsHint"
-							:auto-hide="false"
-							placement="bottom-end"
-						>
-							<ButtonStyled circular size="large">
-								<button
-									v-tooltip="showSettingsHint ? undefined : 'Server settings'"
-									@click="
-										() => {
-											openServerSettingsModal()
-											dismissSettingsHint()
-										}
-									"
-								>
-									<SettingsIcon />
-								</button>
-							</ButtonStyled>
-							<template #popper>
-								<div class="grid grid-cols-[min-content] gap-1">
-									<div class="flex min-w-48 items-center justify-between gap-8">
-										<h3 class="m-0 whitespace-nowrap text-base font-bold text-contrast">
-											{{ formatMessage(settingsHintMessages.title) }}
-										</h3>
-										<ButtonStyled size="small" circular>
-											<button
-												v-tooltip="formatMessage(settingsHintMessages.dismiss)"
-												@click="dismissSettingsHint"
-											>
-												<XIcon aria-hidden="true" />
-											</button>
-										</ButtonStyled>
-									</div>
-									<p class="m-0 text-wrap text-sm font-medium leading-tight text-secondary">
-										{{ formatMessage(settingsHintMessages.description) }}
-									</p>
-								</div>
-							</template>
-						</Tooltip>
-						<PanelServerOverflowMenu
-							:disabled="!!installError"
-							:uptime-seconds="uptimeSeconds"
-							:show-copy-id-action="showCopyIdAction"
-							:show-debug-info="showAdvancedDebugInfo"
+				<PageHeader :title="serverData?.name || 'Server'">
+					<template #leading>
+						<ServerIcon
+							:image="serverHeaderImage"
+							:class="isNuxt ? 'size-20 !rounded-2xl' : 'size-16 !rounded-xl'"
 						/>
-					</div>
-				</template>
-			</ServerManageHeader>
+					</template>
+
+					<template #metadata>
+						<PageHeaderMetadata>
+							<PageHeaderMetadataItem
+								v-if="serverData.flows?.intro"
+								:icon="SettingsIcon"
+								class="font-semibold"
+							>
+								Configuring server...
+							</PageHeaderMetadataItem>
+
+							<template v-else>
+								<PageHeaderMetadataItem
+									v-if="serverData.loader"
+									:icon="LoaderIcon"
+									:icon-props="{ loader: serverData.loader }"
+								>
+									{{ formatLoaderLabel(serverData.loader) }} {{ serverData.mc_version }}
+								</PageHeaderMetadataItem>
+								<PageHeaderMetadataItem
+									v-if="serverData.net?.domain && !serverPreferences.hideSubdomainLabel"
+									:icon="LinkIcon"
+									tooltip="Copy server address"
+									:action="copyServerAddress"
+								>
+									{{ serverData.net.domain }}.modrinth.gg
+								</PageHeaderMetadataItem>
+								<PageHeaderMetadataItem v-if="showServerUptime" :icon="TimerIcon">
+									{{ formattedUptime }}
+								</PageHeaderMetadataItem>
+								<PageHeaderMetadataItem
+									v-if="serverProject"
+									:to="serverProjectLink"
+									class="!text-primary"
+								>
+									Linked to
+									<Avatar :src="serverProject.icon_url" :alt="serverProject.title" size="24px" />
+									{{ serverProject.title }}
+								</PageHeaderMetadataItem>
+							</template>
+						</PageHeaderMetadata>
+					</template>
+
+					<template #actions>
+						<PageHeaderActions>
+							<PanelServerActionButton :disabled="!!installError" />
+							<Tooltip
+								theme="dismissable-prompt"
+								:triggers="[]"
+								:shown="showSettingsHint"
+								:auto-hide="false"
+								placement="bottom-end"
+							>
+								<ButtonStyled circular size="large">
+									<button
+										v-tooltip="showSettingsHint ? undefined : 'Server settings'"
+										type="button"
+										aria-label="Server settings"
+										@click="handleOpenServerSettings"
+									>
+										<SettingsIcon />
+									</button>
+								</ButtonStyled>
+								<template #popper>
+									<div class="grid grid-cols-[min-content] gap-1">
+										<div class="flex min-w-48 items-center justify-between gap-8">
+											<h3 class="m-0 whitespace-nowrap text-base font-bold text-contrast">
+												{{ formatMessage(settingsHintMessages.title) }}
+											</h3>
+											<ButtonStyled size="small" circular>
+												<button
+													type="button"
+													:aria-label="formatMessage(settingsHintMessages.dismiss)"
+													@click="dismissSettingsHint"
+												>
+													<XIcon aria-hidden="true" />
+												</button>
+											</ButtonStyled>
+										</div>
+										<p class="m-0 text-wrap text-sm font-medium leading-tight text-secondary">
+											{{ formatMessage(settingsHintMessages.description) }}
+										</p>
+									</div>
+								</template>
+							</Tooltip>
+							<ButtonStyled circular type="transparent" size="large">
+								<TeleportOverflowMenu
+									:options="serverMenuOptions"
+									:disabled="!!installError"
+									aria-label="More server options"
+								>
+									<MoreVerticalIcon aria-hidden="true" />
+								</TeleportOverflowMenu>
+							</ButtonStyled>
+						</PageHeaderActions>
+					</template>
+				</PageHeader>
+			</div>
 
 			<ServerOnboardingPanelPage v-if="isOnboarding" :browse-modpacks="handleBrowseModpacks" />
 
@@ -180,6 +233,7 @@
 				<div
 					data-pyro-navigation
 					class="server-stagger-item isolate flex w-full select-none flex-col justify-between gap-4 overflow-auto md:flex-row md:items-center"
+					:class="containedLayout ? 'shrink-0' : ''"
 					:style="{ '--si': 1 }"
 				>
 					<NavTabs :links="navLinks" replace />
@@ -187,7 +241,8 @@
 
 				<div
 					data-pyro-mount
-					class="server-stagger-item h-full w-full flex-1"
+					class="server-stagger-item w-full flex-1"
+					:class="containedLayout ? 'flex min-h-0 flex-col overflow-hidden' : 'h-full'"
 					:style="{ '--si': 2 }"
 				>
 					<div
@@ -308,7 +363,7 @@
 					</div>
 
 					<ServerPanelAdmonitions
-						class="mb-4"
+						class="mb-4 shrink-0"
 						:sync-progress="syncProgress"
 						:content-error="contentError"
 						@content-retry="handleContentRetry"
@@ -344,7 +399,7 @@
 
 <script setup lang="ts">
 import type { Archon, Labrinth } from '@modrinth/api-client'
-import { getNodeWebSocketUrl, ModrinthApiError } from '@modrinth/api-client'
+import { getNodeWebSocketUrl, ModrinthApiError, NuxtModrinthClient } from '@modrinth/api-client'
 import {
 	BoxesIcon,
 	CheckIcon,
@@ -354,10 +409,14 @@ import {
 	FolderOpenIcon,
 	IssuesIcon,
 	LayoutTemplateIcon,
+	LinkIcon,
 	LoaderCircleIcon,
 	LockIcon,
+	MoreVerticalIcon,
 	RightArrowIcon,
+	ServerIcon as ServerAssetIcon,
 	SettingsIcon,
+	TimerIcon,
 	TransferIcon,
 	TriangleAlertIcon,
 	UsersIcon,
@@ -370,18 +429,22 @@ import { Tooltip } from 'floating-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
+import Avatar from '#ui/components/base/Avatar.vue'
 import ButtonStyled from '#ui/components/base/ButtonStyled.vue'
 import ErrorInformationCard from '#ui/components/base/ErrorInformationCard.vue'
 import NavTabs from '#ui/components/base/NavTabs.vue'
+import PageHeader from '#ui/components/base/page-header/index.vue'
+import PageHeaderMetadata from '#ui/components/base/page-header/metadata/index.vue'
+import PageHeaderMetadataItem from '#ui/components/base/page-header/metadata/page-header-metadata-item.vue'
+import PageHeaderActions from '#ui/components/base/page-header/page-header-actions.vue'
 import ServerNotice from '#ui/components/base/ServerNotice.vue'
+import TeleportOverflowMenu from '#ui/components/base/TeleportOverflowMenu.vue'
 import ConfirmLeaveModal from '#ui/components/modal/ConfirmLeaveModal.vue'
 import ServerPanelAdmonitions from '#ui/components/servers/admonitions/ServerPanelAdmonitions.vue'
+import LoaderIcon from '#ui/components/servers/icons/LoaderIcon.vue'
+import ServerIcon from '#ui/components/servers/icons/ServerIcon.vue'
 import MedalServerCountdown from '#ui/components/servers/marketing/MedalServerCountdown.vue'
-import {
-	PanelServerActionButton,
-	PanelServerOverflowMenu,
-	ServerManageHeader,
-} from '#ui/components/servers/server-header'
+import { PanelServerActionButton } from '#ui/components/servers/server-header'
 import ServerSettingsModal from '#ui/components/servers/ServerSettingsModal.vue'
 import {
 	hasServerPermission,
@@ -447,6 +510,7 @@ const props = withDefaults(
 			type: 'mod' | 'plugin' | 'datapack'
 		}) => void | Promise<void>
 		constrainWidth?: boolean
+		layoutMode?: 'page' | 'contained'
 	}>(),
 	{
 		showCopyIdAction: false,
@@ -462,6 +526,7 @@ const props = withDefaults(
 		browseModpacks: undefined,
 		browseContent: undefined,
 		constrainWidth: false,
+		layoutMode: 'page',
 	},
 )
 
@@ -499,6 +564,8 @@ const DISABLE_LOADING_ANIM = true
 const { addNotification } = injectNotificationManager()
 const client = injectModrinthClient()
 const constrainWidth = computed(() => props.constrainWidth)
+const containedLayout = computed(() => props.layoutMode === 'contained')
+const isNuxt = computed(() => client instanceof NuxtModrinthClient)
 const queryClient = useQueryClient()
 const route = useRoute()
 const router = useRouter()
@@ -518,6 +585,10 @@ const isOnboarding = computed(() => serverData.value?.flows?.intro)
 const SETTINGS_HINT_KEY = 'server-panel-settings-hint-dismissed'
 const settingsHintDismissed = useStorage(SETTINGS_HINT_KEY, false)
 const showSettingsHint = ref(!settingsHintDismissed.value)
+const serverPreferences = useStorage(`pyro-server-${props.serverId}-preferences`, {
+	hideSubdomainLabel: false,
+})
+
 function dismissSettingsHint() {
 	showSettingsHint.value = false
 	settingsHintDismissed.value = true
@@ -692,6 +763,69 @@ const {
 	eventGuard: () => isMounted.value,
 	onStateEvent,
 })
+
+const serverHeaderImage = computed(() =>
+	serverData.value?.is_medal ? 'https://cdn-raw.modrinth.com/medal_icon.webp' : serverImage.value,
+)
+
+const showServerUptime = computed(() => props.showUptime && serverPowerState.value === 'running')
+
+const formattedUptime = computed(() => formatUptime(uptimeSeconds.value))
+
+const serverProjectLink = computed(() => {
+	if (!serverProject.value) return ''
+	return `/project/${serverProject.value.slug ?? serverProject.value.id}`
+})
+
+const serverMenuOptions = computed(() => [
+	{
+		id: 'all-servers',
+		label: 'All servers',
+		icon: ServerAssetIcon,
+		action: () => void router.push('/hosting/manage'),
+	},
+	{
+		id: 'copy-id',
+		label: 'Copy ID',
+		icon: CopyIcon,
+		action: copyServerId,
+		shown: props.showCopyIdAction,
+	},
+])
+
+function formatUptime(uptime: number) {
+	const days = Math.floor(uptime / (24 * 3600))
+	const hours = Math.floor((uptime % (24 * 3600)) / 3600)
+	const minutes = Math.floor((uptime % 3600) / 60)
+	const seconds = uptime % 60
+
+	let formatted = ''
+	if (days > 0) formatted += `${days}d `
+	if (hours > 0 || days > 0) formatted += `${hours}h `
+	formatted += `${minutes}m ${seconds}s`
+	return formatted.trim()
+}
+
+function copyServerAddress() {
+	const domain = serverData.value?.net?.domain
+	if (!domain) return
+
+	void navigator.clipboard.writeText(`${domain}.modrinth.gg`)
+	addNotification({
+		title: 'Server address copied',
+		text: "Your server's address has been copied to your clipboard.",
+		type: 'success',
+	})
+}
+
+function copyServerId() {
+	void navigator.clipboard.writeText(props.serverId)
+}
+
+function handleOpenServerSettings() {
+	openServerSettingsModal()
+	dismissSettingsHint()
+}
 
 const isUploading = computed(() => uploadState.value.isUploading)
 const canSetup = computed(() =>

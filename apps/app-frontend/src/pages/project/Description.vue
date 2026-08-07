@@ -1,6 +1,6 @@
 <template>
 	<Card>
-		<ProjectPageDescription :description="project?.body || project?.description || ''" />
+		<ProjectPageDescription :description="project.body" />
 	</Card>
 </template>
 

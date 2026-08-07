@@ -50,6 +50,9 @@
   "badge.new": {
     "defaultMessage": "Baharu"
   },
+  "badge.release": {
+    "defaultMessage": "Terbitan"
+  },
   "billing.resubscribe-modal.cancel": {
     "defaultMessage": "Batal"
   },
@@ -230,9 +233,6 @@
   "button.reinstall-modpack": {
     "defaultMessage": "Pasang semula pek mod"
   },
-  "button.remove": {
-    "defaultMessage": "Alih keluar"
-  },
   "button.remove-image": {
     "defaultMessage": "Alih keluar gambar"
   },
@@ -365,6 +365,15 @@
   "content.confirm-unlink.unlink-button": {
     "defaultMessage": "Nyahpaut"
   },
+  "content.dependency-warning.context.instance": {
+    "defaultMessage": "pemasangan"
+  },
+  "content.dependency-warning.context.server": {
+    "defaultMessage": "pelayan"
+  },
+  "content.dependency-warning.deleting-label": {
+    "defaultMessage": "Memadam"
+  },
   "content.diff-modal.added-count": {
     "defaultMessage": "{count} ditambah"
   },
@@ -427,15 +436,6 @@
   },
   "content.inline-backup.world-label": {
     "defaultMessage": "dunia"
-  },
-  "content.modpack-card.content-hint-description": {
-    "defaultMessage": "Kandungan pek mod anda kini boleh didapati di sini!"
-  },
-  "content.modpack-card.content-hint-title": {
-    "defaultMessage": "Kandungan pek mod telah berpindah"
-  },
-  "content.modpack-card.dismiss-hint": {
-    "defaultMessage": "Jangan tunjukkan lagi"
   },
   "content.page-layout.additional-content": {
     "defaultMessage": "Kandungan tambahan"
@@ -784,6 +784,51 @@
   },
   "creation-flow.title.set-up-server": {
     "defaultMessage": "Sediakan pelayan"
+  },
+  "external-files.permissions-card.attribution.moderation-status.passed": {
+    "defaultMessage": "Lulus"
+  },
+  "external-files.permissions-card.badge.attributed": {
+    "defaultMessage": "Selesai"
+  },
+  "external-files.permissions-card.badge.pending": {
+    "defaultMessage": "Menunggu"
+  },
+  "external-files.permissions-card.custom-license-option": {
+    "defaultMessage": "Lain-lain"
+  },
+  "external-files.permissions-card.editor.input-optional": {
+    "defaultMessage": "(pilihan)"
+  },
+  "external-files.permissions-card.editor.license-label": {
+    "defaultMessage": "Lesen"
+  },
+  "external-files.permissions-card.editor.modrinth-link-to-work": {
+    "defaultMessage": "Nampaknya ini pautan Modrinth. Jika kandungan ini tersedia di Modrinth, pek anda mungkin telah dieksport secara salah. Jika anda memuat turunnya dari tapak lain, cuba muat turun versi Modrinth; kadangkala ia bukan fail yang sama."
+  },
+  "external-files.permissions-card.editor.notes-label": {
+    "defaultMessage": "Catatan"
+  },
+  "external-files.permissions-card.license.unknown": {
+    "defaultMessage": "Tidak diketahui"
+  },
+  "external-files.permissions-card.licensed-as": {
+    "defaultMessage": "Berlesen:"
+  },
+  "external-files.permissions-card.moderation-reason": {
+    "defaultMessage": "Sebab"
+  },
+  "external-files.permissions-card.notes-label": {
+    "defaultMessage": "Catatan:"
+  },
+  "external-files.permissions-card.notes-none": {
+    "defaultMessage": "Tiada"
+  },
+  "external-files.permissions-card.reason.license": {
+    "defaultMessage": "Lesen"
+  },
+  "external-files.permissions-card.updated-by-moderator": {
+    "defaultMessage": "Penyederhana"
   },
   "external-project-license-status.no": {
     "defaultMessage": "Tidak"
@@ -3062,6 +3107,15 @@
   "project.versions.channel.release.symbol": {
     "defaultMessage": "T"
   },
+  "project.versions.platform.modloader.short": {
+    "defaultMessage": "ModLoader"
+  },
+  "project.versions.version.withheld": {
+    "defaultMessage": "Ditahan"
+  },
+  "project.versions.withheld-versions-warning.resolve-button": {
+    "defaultMessage": "Selesaikan"
+  },
   "project.visibility.archived": {
     "defaultMessage": "Diarkibkan"
   },
@@ -3455,20 +3509,152 @@
   "servers.audit-log.column.world.tooltip-title": {
     "defaultMessage": "Akan datang!"
   },
+  "servers.audit-log.empty": {
+    "defaultMessage": "Tiada aktiviti yang sepadan dengan penapis anda."
+  },
+  "servers.audit-log.empty.no-activity": {
+    "defaultMessage": "Lakukan tindakan pada pelayan anda dan anda akan melihatnya di sini!"
+  },
+  "servers.audit-log.event.addon-added": {
+    "defaultMessage": "Kandungan <content></content> telah ditambah"
+  },
+  "servers.audit-log.event.addon-changed": {
+    "defaultMessage": "Kandungan <content></content> telah diubah"
+  },
+  "servers.audit-log.event.addon-deleted": {
+    "defaultMessage": "Kandungan <content></content> telah dipadamkan"
+  },
+  "servers.audit-log.event.addon-deleted-label": {
+    "defaultMessage": "Kandungan telah dipadamkan"
+  },
+  "servers.audit-log.event.addon-disabled": {
+    "defaultMessage": "Kandungan <content></content> telah dinyahdayakan"
+  },
+  "servers.audit-log.event.addon-enabled": {
+    "defaultMessage": "Kandungan <content></content> telah didayakan"
+  },
+  "servers.audit-log.event.addon-updated": {
+    "defaultMessage": "Kandungan <content></content> telah dikemas kini"
+  },
+  "servers.audit-log.event.addon-uploaded": {
+    "defaultMessage": "<files></files> telah dimuat naik"
+  },
+  "servers.audit-log.event.backup-changed": {
+    "defaultMessage": "Sandaran <backup></backup> telah diubah"
+  },
+  "servers.audit-log.event.backup-changed-fallback": {
+    "defaultMessage": "Sandaran telah diubah"
+  },
+  "servers.audit-log.event.backup-created": {
+    "defaultMessage": "Sandaran <backup></backup> telah dicipta"
+  },
+  "servers.audit-log.event.backup-created-fallback": {
+    "defaultMessage": "Sandaran telah dicipta"
+  },
+  "servers.audit-log.event.backup-deleted": {
+    "defaultMessage": "Sandaran <backup></backup> telah dipadamkan"
+  },
+  "servers.audit-log.event.backup-deleted-fallback": {
+    "defaultMessage": "Sandaran telah dipadam"
+  },
   "servers.audit-log.event.backup-renamed": {
     "defaultMessage": "Sandaran <from></from> telah dinamakan semula kepada <renamed-backup></renamed-backup>"
+  },
+  "servers.audit-log.event.backup-renamed-fallback": {
+    "defaultMessage": "Sandaran telah dinamakan semula"
+  },
+  "servers.audit-log.event.backup-restored": {
+    "defaultMessage": "Sandaran <backup></backup> telah dipulihkan"
+  },
+  "servers.audit-log.event.backup-restored-fallback": {
+    "defaultMessage": "Sandaran telah dipulihkan"
+  },
+  "servers.audit-log.event.config-changed": {
+    "defaultMessage": "Konfigurasi pelayan telah diubah"
+  },
+  "servers.audit-log.event.console-cleared": {
+    "defaultMessage": "Konsol telah dikosongkan"
+  },
+  "servers.audit-log.event.console-command-executed": {
+    "defaultMessage": "Perintah konsol <command></command> telah dijalankan"
+  },
+  "servers.audit-log.event.entity-list.hidden-count": {
+    "defaultMessage": "+{count, number}"
+  },
+  "servers.audit-log.event.file-changed": {
+    "defaultMessage": "Fail <file></file> telah diubah"
+  },
+  "servers.audit-log.event.file-deleted": {
+    "defaultMessage": "Fail <file></file> telah dipadamkan"
+  },
+  "servers.audit-log.event.file-edited": {
+    "defaultMessage": "Fail <file></file> telah disunting"
+  },
+  "servers.audit-log.event.file-renamed": {
+    "defaultMessage": "<from></from> telah dinamakan semula kepada <to></to>"
+  },
+  "servers.audit-log.event.file-uploaded": {
+    "defaultMessage": "Fail <file></file> telah dimuat naik"
   },
   "servers.audit-log.event.game-version-changed": {
     "defaultMessage": "Versi Minecraft telah diubah kepada <version></version>"
   },
+  "servers.audit-log.event.java-runtime-modified": {
+    "defaultMessage": "Masa jalan Java telah diubah kepada <vendor></vendor>"
+  },
+  "servers.audit-log.event.java-version-modified": {
+    "defaultMessage": "Versi Java telah diubah kepada <java-version></java-version>"
+  },
+  "servers.audit-log.event.loader-and-version-changed": {
+    "defaultMessage": "Pemuat telah diubah kepada <loader></loader> <version></version>"
+  },
+  "servers.audit-log.event.loader-changed": {
+    "defaultMessage": "Pemuat telah diubah kepada <loader></loader>"
+  },
   "servers.audit-log.event.loader-version-changed": {
     "defaultMessage": "Versi pemuat telah diubah kepada <version></version>"
+  },
+  "servers.audit-log.event.loader-version-cleared": {
+    "defaultMessage": "Versi pemuat telah dikosongkan"
+  },
+  "servers.audit-log.event.modpack-changed": {
+    "defaultMessage": "Pek mod telah diubah"
+  },
+  "servers.audit-log.event.modpack-changed-to-modpack": {
+    "defaultMessage": "Pek mod telah diubah kepada <modpack></modpack>"
   },
   "servers.audit-log.event.modpack-changed-to-version": {
     "defaultMessage": "Versi pek mod telah diubah kepada versi <version></version>"
   },
+  "servers.audit-log.event.modpack-unlinked": {
+    "defaultMessage": "Pek mod telah dinyahpautkan"
+  },
+  "servers.audit-log.event.modpack-unlinked-modpack": {
+    "defaultMessage": "Pek mod <modpack></modpack> telah dinyahpautkan"
+  },
   "servers.audit-log.event.modpack-unlinked-version": {
     "defaultMessage": "Pek mod versi <version></version> telah dinyahpautkan"
+  },
+  "servers.audit-log.event.port-allocation-added": {
+    "defaultMessage": "Peruntukan port <port></port> telah ditambah"
+  },
+  "servers.audit-log.event.port-allocation-removed": {
+    "defaultMessage": "Peruntukan port <port></port> telah dialih keluar"
+  },
+  "servers.audit-log.event.server-created": {
+    "defaultMessage": "Pelayan dicipta"
+  },
+  "servers.audit-log.event.server-killed": {
+    "defaultMessage": "Pelayan telah dimatikan"
+  },
+  "servers.audit-log.event.server-metadata-changed": {
+    "defaultMessage": "Metadata pelayan telah diubah"
+  },
+  "servers.audit-log.event.server-name-changed": {
+    "defaultMessage": "Nama pelayan telah diubah kepada <name></name>"
+  },
+  "servers.audit-log.event.server-plan-changed": {
+    "defaultMessage": "Pelan telah diubah kepada <specs></specs>"
   },
   "servers.audit-log.event.server-plan.cpu": {
     "defaultMessage": "{count, number} CPU"
@@ -3476,11 +3662,62 @@
   "servers.audit-log.event.server-plan.new-plan": {
     "defaultMessage": "pelan baharu"
   },
+  "servers.audit-log.event.server-plan.ram-gb": {
+    "defaultMessage": "RAM {amount, number} GB"
+  },
+  "servers.audit-log.event.server-plan.ram-mb": {
+    "defaultMessage": "RAM {amount, number} MB"
+  },
+  "servers.audit-log.event.server-plan.storage-gb": {
+    "defaultMessage": "Storan {amount, number} GB"
+  },
+  "servers.audit-log.event.server-plan.storage-mb": {
+    "defaultMessage": "Storan {amount, number} MB"
+  },
+  "servers.audit-log.event.server-properties-modified": {
+    "defaultMessage": "Sifat pelayan <properties></properties> telah diubah suai"
+  },
+  "servers.audit-log.event.server-properties-modified-label": {
+    "defaultMessage": "Sifat pelayan telah diubah suai"
+  },
+  "servers.audit-log.event.server-reallocated": {
+    "defaultMessage": "Pelayan telah diperuntukkan semula"
+  },
+  "servers.audit-log.event.server-repaired": {
+    "defaultMessage": "Pelayan telah dibaiki"
+  },
+  "servers.audit-log.event.server-reset": {
+    "defaultMessage": "Pelayan ditetapkan semula"
+  },
+  "servers.audit-log.event.server-restarted": {
+    "defaultMessage": "Pelayan telah dimulakan semula"
+  },
+  "servers.audit-log.event.server-started": {
+    "defaultMessage": "Pelayan telah dimulakan"
+  },
+  "servers.audit-log.event.server-stopped": {
+    "defaultMessage": "Pelayan telah dihentikan"
+  },
+  "servers.audit-log.event.server-subdomain-changed": {
+    "defaultMessage": "Subdomain pelayan telah diubah kepada <subdomain></subdomain>"
+  },
+  "servers.audit-log.event.sftp-login": {
+    "defaultMessage": "Telah log masuk melalui SFTP"
+  },
   "servers.audit-log.event.startup-command-modified": {
     "defaultMessage": "Perintah permulaan telah diubah kepada <command></command>"
   },
+  "servers.audit-log.event.unknown": {
+    "defaultMessage": "Peristiwa tidak diketahui"
+  },
+  "servers.audit-log.event.unknown-basic": {
+    "defaultMessage": "Aktiviti pelayan telah dirakam"
+  },
   "servers.audit-log.event.user-invite-revoked": {
     "defaultMessage": "Jemputan untuk <target-user></target-user> telah dibatalkan"
+  },
+  "servers.audit-log.event.user-invited": {
+    "defaultMessage": "<target-user></target-user> telah dijemput"
   },
   "servers.audit-log.event.user-invited-with-permissions": {
     "defaultMessage": "<target-user></target-user> telah dijemput dengan keizinan <permission-label>{permissions}</permission-label>"
@@ -4205,9 +4442,6 @@
   "settings.pats.title": {
     "defaultMessage": "Token akses peribadi"
   },
-  "settings.profile.title": {
-    "defaultMessage": "Profil awam"
-  },
   "settings.sessions.title": {
     "defaultMessage": "Sesi"
   },
@@ -4765,6 +4999,317 @@
   },
   "user.profile.badge.staff.name": {
     "defaultMessage": "Pasukan Modrinth"
-  }
+  },
+  "version.content.name": {
+    "defaultMessage": "Nama"
+  },
+  "version.content.version": {
+    "defaultMessage": "Versi"
+  },
+  "version.file-type.dev-jar": {
+    "defaultMessage": "Jar pembangunan"
+  },
+  "version.file-type.primary": {
+    "defaultMessage": "Utama"
+  },
+  "version.file-type.unknown": {
+    "defaultMessage": "Lain-lain"
+  },
+  "version.section.changes": {
+    "defaultMessage": "Perubahan"
+  },
+  "version.section.content": {
+    "defaultMessage": "Kandungan"
+  },
+  "version.section.files": {
+    "defaultMessage": "Fail"
+  },
+  "version.supplementary-resources.file": {
+    "defaultMessage": "Fail"
+  },
+  "version.supplementary-resources.size": {
+    "defaultMessage": "Saiz"
+  },
+  "version.supplementary-resources.type": {
+    "defaultMessage": "Jenis"
+  },
+	"app.bedrock.active-filters": {
+		"message": "{count, plural, one {# filter active} other {# filters active}}"
+	},
+	"app.bedrock.active-status": {
+		"message": "Active"
+	},
+	"app.bedrock.behavior-pack": {
+		"message": "behavior pack"
+	},
+	"app.bedrock.categories": {
+		"message": "Categories"
+	},
+	"app.bedrock.category.128x": {
+		"message": "128x"
+	},
+	"app.bedrock.category.16x": {
+		"message": "16x"
+	},
+	"app.bedrock.category.32x": {
+		"message": "32x"
+	},
+	"app.bedrock.category.64x": {
+		"message": "64x"
+	},
+	"app.bedrock.category.adventure": {
+		"message": "Adventure"
+	},
+	"app.bedrock.category.building": {
+		"message": "Building"
+	},
+	"app.bedrock.category.cosmetics": {
+		"message": "Cosmetics"
+	},
+	"app.bedrock.category.ctm": {
+		"message": "CTM"
+	},
+	"app.bedrock.category.custom-terrain": {
+		"message": "Custom Terrain"
+	},
+	"app.bedrock.category.data-packs": {
+		"message": "Data Packs"
+	},
+	"app.bedrock.category.fantasy": {
+		"message": "Fantasy"
+	},
+	"app.bedrock.category.food": {
+		"message": "Food"
+	},
+	"app.bedrock.category.gui": {
+		"message": "GUI"
+	},
+	"app.bedrock.category.horror": {
+		"message": "Horror"
+	},
+	"app.bedrock.category.magic": {
+		"message": "Magic"
+	},
+	"app.bedrock.category.maps": {
+		"message": "Maps"
+	},
+	"app.bedrock.category.minigame": {
+		"message": "Minigame"
+	},
+	"app.bedrock.category.miscellaneous": {
+		"message": "Miscellaneous"
+	},
+	"app.bedrock.category.mob-skins": {
+		"message": "Mob Skins"
+	},
+	"app.bedrock.category.mobs": {
+		"message": "Mobs"
+	},
+	"app.bedrock.category.multiplayer": {
+		"message": "Multiplayer"
+	},
+	"app.bedrock.category.parkour": {
+		"message": "Parkour"
+	},
+	"app.bedrock.category.performance": {
+		"message": "Performance"
+	},
+	"app.bedrock.category.player-skins": {
+		"message": "Player Skins"
+	},
+	"app.bedrock.category.players": {
+		"message": "Players"
+	},
+	"app.bedrock.category.puzzle": {
+		"message": "Puzzle"
+	},
+	"app.bedrock.category.pvp": {
+		"message": "PvP"
+	},
+	"app.bedrock.category.realistic": {
+		"message": "Realistic"
+	},
+	"app.bedrock.category.redstone": {
+		"message": "Redstone"
+	},
+	"app.bedrock.category.roleplay": {
+		"message": "Roleplay"
+	},
+	"app.bedrock.category.roller-coaster": {
+		"message": "Roller Coaster"
+	},
+	"app.bedrock.category.scripts": {
+		"message": "Scripts"
+	},
+	"app.bedrock.category.shaders": {
+		"message": "Shaders"
+	},
+	"app.bedrock.category.simplistic": {
+		"message": "Simplistic"
+	},
+	"app.bedrock.category.skin-packs": {
+		"message": "Skin Packs"
+	},
+	"app.bedrock.category.skins": {
+		"message": "Skins"
+	},
+	"app.bedrock.category.survival": {
+		"message": "Survival"
+	},
+	"app.bedrock.category.technology": {
+		"message": "Technology"
+	},
+	"app.bedrock.category.textures": {
+		"message": "Textures"
+	},
+	"app.bedrock.category.themed": {
+		"message": "Themed"
+	},
+	"app.bedrock.category.utility": {
+		"message": "Utility"
+	},
+	"app.bedrock.category.vanilla-plus": {
+		"message": "Vanilla+"
+	},
+	"app.bedrock.category.weapons-armor": {
+		"message": "Armor, Tools & Weapons"
+	},
+	"app.bedrock.check-for-updates": {
+		"message": "Check for Updates"
+	},
+	"app.bedrock.checking": {
+		"message": "Checking..."
+	},
+	"app.bedrock.clear-all": {
+		"message": "Clear all"
+	},
+	"app.bedrock.close-btn": {
+		"message": "Close"
+	},
+	"app.bedrock.content-type": {
+		"message": "Content Type"
+	},
+	"app.bedrock.current-version": {
+		"message": "Current"
+	},
+	"app.bedrock.delete-addon-title": {
+		"message": "Delete Add-on"
+	},
+	"app.bedrock.description-label": {
+		"message": "Description"
+	},
+	"app.bedrock.disable-btn": {
+		"message": "Disable"
+	},
+	"app.bedrock.disabled-status": {
+		"message": "Disabled"
+	},
+	"app.bedrock.discover-curseforge": {
+		"message": "Discover on CurseForge"
+	},
+	"app.bedrock.enable-btn": {
+		"message": "Enable"
+	},
+	"app.bedrock.filters-header": {
+		"message": "Filters"
+	},
+	"app.bedrock.folder-name-label": {
+		"message": "Folder Name"
+	},
+	"app.bedrock.game-version": {
+		"message": "Minecraft Version"
+	},
+	"app.bedrock.install-addon-btn": {
+		"message": "Install Add-on (.mcpack / .mcaddon)"
+	},
+	"app.bedrock.install-btn": {
+		"message": "Install"
+	},
+	"app.bedrock.install-from-file": {
+		"message": "Install from File"
+	},
+	"app.bedrock.installed-addons": {
+		"message": "Installed Add-ons ({count})"
+	},
+	"app.bedrock.no-addons-desc": {
+		"message": "Add behavioral or resource packs to customize your Bedrock experience."
+	},
+	"app.bedrock.no-addons-installed": {
+		"message": "No Add-ons installed"
+	},
+	"app.bedrock.no-content-found": {
+		"message": "No content found matching current search and filters."
+	},
+	"app.bedrock.no-desc-provided": {
+		"message": "No description provided."
+	},
+	"app.bedrock.no-description": {
+		"message": "No description"
+	},
+	"app.bedrock.resource-pack": {
+		"message": "resource pack"
+	},
+	"app.bedrock.search-btn": {
+		"message": "Search"
+	},
+	"app.bedrock.search-placeholder": {
+		"message": "Search behavior packs, resource packs, maps, skins..."
+	},
+	"app.bedrock.search-versions": {
+		"message": "Search versions..."
+	},
+	"app.bedrock.searching": {
+		"message": "Searching..."
+	},
+	"app.bedrock.title": {
+		"message": "Bedrock Add-ons & Content"
+	},
+	"app.bedrock.type-addons": {
+		"message": "Addons"
+	},
+	"app.bedrock.type-all": {
+		"message": "All"
+	},
+	"app.bedrock.type-maps": {
+		"message": "Maps"
+	},
+	"app.bedrock.type-scripts": {
+		"message": "Scripts"
+	},
+	"app.bedrock.type-skins": {
+		"message": "Skins"
+	},
+	"app.bedrock.type-texture-packs": {
+		"message": "Texture Packs"
+	},
+	"app.bedrock.uuid-label": {
+		"message": "UUID"
+	},
+	"app.instance.bedrock.content.categories.all": "All",
+	"app.instance.bedrock.content.categories.behavior": "Behavior Packs",
+	"app.instance.bedrock.content.categories.resource": "Resource Packs",
+	"app.instance.bedrock.worlds.add_files": "Add files",
+	"app.instance.bedrock.worlds.empty.subtitle": "Find projects or add files",
+	"app.instance.bedrock.worlds.empty.title": "No Content",
+	"app.instance.bedrock.worlds.find_projects": "Find projects",
+	"app.instance.confirm-delete.admonition-body": {
+		"message": "All data for your instance will be permanently deleted, including your worlds, configs, and all installed content."
+	},
+	"app.resource-management.bedrock-downloaded": {
+		"message": "Downloaded Bedrock versions"
+	},
+	"app.resource-management.bedrock-packages": {
+		"message": "Bedrock versions"
+	},
+	"app.settings.bedrock.gaming-services.btn": "Download Gaming Services in Store",
+	"app.settings.bedrock.gaming-services.desc": "Microsoft Gaming Services is required for Bedrock Minecraft to launch and load GDK runtime binaries (xgameruntime.dll). If game launch fails or complains about missing runtime components, download or repair Gaming Services via Microsoft Store.",
+	"app.settings.bedrock.gaming-services.title": "Gaming Services (System Dependency)",
+	"app.settings.bedrock.gdk-unlocker": "GDK Unlocker (Xbox App)",
+	"app.settings.bedrock.gdk-unlocker.desc": "Replaces the license verification process with custom DLLs for Xbox App instances.\\nAdds antivirus exceptions automatically to prevent the fix from being removed.",
+	"app.settings.bedrock.uwp-unlocker": "UWP Unlocker (Microsoft Store)",
+	"app.settings.bedrock.uwp-unlocker.desc": "Modifies the Windows system Store components to unlock trial restriction for UWP Minecraft instances.",
+	"app.settings.bedrock.uwp-unlocker.warn": "⚠ This requires Administrator privileges. A backup of original files is automatically taken.",
+	"app.settings.developer-mode-enabled": {
+		"message": "Developer mode enabled."
+	}
 }
-

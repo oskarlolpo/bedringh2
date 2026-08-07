@@ -3,7 +3,7 @@
 		<div class="flex items-center justify-between mb-6">
 			<h1 class="text-2xl font-bold m-0">Favorite Servers</h1>
 			<ButtonStyled color="brand">
-				<button @click="showAddModal = true">
+				<button @click="addModal?.show()">
 					<PlusIcon /> Add Server
 				</button>
 			</ButtonStyled>
@@ -41,8 +41,7 @@
 		</div>
 
 		<!-- Add Server Modal -->
-		<Modal v-model:open="showAddModal">
-			<h2 class="text-xl font-bold mb-4 mt-0">Add Favorite Server</h2>
+		<NewModal ref="addModal" header="Add Favorite Server" max-width="500px">
 			<div class="flex flex-col gap-4">
 				<StyledInput v-model="newServer.name" label="Server Name" placeholder="My Awesome Server" />
 				<StyledInput v-model="newServer.address" label="Server Address" placeholder="play.example.com" />
@@ -50,13 +49,13 @@
 			</div>
 			<div class="flex justify-end gap-2 mt-6">
 				<ButtonStyled>
-					<button @click="showAddModal = false">Cancel</button>
+					<button @click="addModal?.hide()">Cancel</button>
 				</ButtonStyled>
 				<ButtonStyled color="brand">
 					<button @click="addServer" :disabled="!newServer.name || !newServer.address">Save</button>
 				</ButtonStyled>
 			</div>
-		</Modal>
+		</NewModal>
 	</div>
 </template>
 
@@ -64,13 +63,13 @@
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { PlusIcon, TrashIcon, GlobeIcon, HashIcon } from '@modrinth/assets'
-import { ButtonStyled, StyledInput, Modal, ProgressSpinner, injectNotificationManager } from '@modrinth/ui'
+import { ButtonStyled, StyledInput, NewModal, ProgressSpinner, injectNotificationManager } from '@modrinth/ui'
 
 const { handleError, addNotification } = injectNotificationManager()
 const favoriteServers = ref([])
 const loading = ref(true)
 
-const showAddModal = ref(false)
+const addModal = ref<InstanceType<typeof NewModal> | null>(null)
 const newServer = ref({ name: '', address: '', port: '19132' })
 
 async function fetchServers() {
@@ -98,7 +97,7 @@ async function addServer() {
 			}
 		})
 		
-		showAddModal.value = false
+		addModal.value?.hide()
 		newServer.value = { name: '', address: '', port: '19132' }
 		await fetchServers()
 		addNotification({ title: 'Server added', type: 'success' })

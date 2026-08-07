@@ -23,7 +23,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { get_full_path } from '@/helpers/profile'
+import { get_full_path } from '@/helpers/instance'
 import type { GameInstance } from '@/helpers/types'
 import { highlightInFolder } from '@/helpers/utils.js'
 
