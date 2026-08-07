@@ -64,6 +64,7 @@ generated
 .env
 .env.*
 !.env.example
+!packages/app-lib/.env.*
 
 # IntelliJ IDEA project files (local-only)
 .idea/
