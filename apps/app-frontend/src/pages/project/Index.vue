@@ -31,8 +31,9 @@
 				:organization="organization"
 				:members="members"
 				:org-link="(slug) => `https://modrinth.com/organization/${slug}`"
-				:user-link="(username) => data?.is_curseforge ? (data?.author_details?.link || `https://www.curseforge.com/members/${username}`) : `https://modrinth.com/user/${username}`"
+				:user-link="(username) => data?.is_curseforge ? (data?.author_details?.link || `https://www.curseforge.com/members/${username}`) : `/user/${encodeURIComponent(username)}`"
 				link-target="_blank"
+				:user-link-target="null"
 				class="project-sidebar-section"
 			/>
 			<ProjectSidebarDetails
@@ -47,15 +48,11 @@
 		<div class="flex flex-col gap-4 p-6">
 			<div
 				v-if="projectInstallContext"
-				class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 p-3 border-surface-5"
+				class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 px-3 py-4 border-surface-5"
 			>
 				<BrowseInstallHeader :install-context="projectInstallContext">
 					<template #actions>
-						<ButtonStyled
-							circular
-							size="large"
-							:color="isTranslated ? 'brand' : 'surface'"
-						>
+						<ButtonStyled circular size="large" :color="isTranslated ? 'brand' : 'surface'">
 							<button
 								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
 								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
@@ -78,7 +75,9 @@
 									<path stroke="none" d="M0 0h24v24H0z" fill="none" />
 									<path d="M4 5h7" />
 									<path d="M7 4c0 4.846 0 7 .5 8" />
-									<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
+									<path
+										d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143"
+									/>
 									<path d="M12 20l4 -9l4 9" />
 									<path d="M19.1 18h-6.2" />
 								</svg>
@@ -90,180 +89,155 @@
 			<InstanceIndicator v-if="instance && !projectInstallContext" :instance="instance" />
 			<template v-if="data">
 				<Teleport
-					v-if="themeStore.featureFlags?.project_background"
+					v-if="themeStore.featureFlags.project_background"
 					to="#background-teleport-target"
 				>
 					<ProjectBackgroundGradient :project="data" />
 				</Teleport>
-				<ProjectHeader
+				<ProjectPageHeader
 					v-else
 					:project="data"
 					:project-v3="projectV3"
-					:ping="serverPing"
+					:show-status-badge="data.status !== 'approved'"
 					@contextmenu.prevent.stop="handleRightClick"
+					@category="(category) => router.push(`${projectSearchUrl}?f=categories:${category}`)"
 				>
-					<template v-if="isServerProject" #actions>
-						<ButtonStyled v-if="serverPlaying" size="large" color="red">
-							<button @click="handleStopServer">
-								<StopCircleIcon />
-								{{ formatMessage(commonMessages.stopButton) }}
-							</button>
-						</ButtonStyled>
-						<ButtonStyled v-else size="large" color="brand">
-							<button
-								:disabled="data && installingServerProjects.includes(data.id)"
-								@click="handleClickPlay"
-							>
-								<PlayIcon />
-								{{
-									data && installingServerProjects.includes(data.id)
-										? formatMessage(commonMessages.installingLabel)
-										: formatMessage(commonMessages.playButton)
-								}}
-							</button>
-						</ButtonStyled>
-						<ButtonStyled size="large" circular>
-							<button
-								v-tooltip="formatMessage(commonMessages.addServerToInstanceButton)"
-								@click="handleAddServerToInstance"
-							>
-								<PlusIcon />
-							</button>
-						</ButtonStyled>
-						<ButtonStyled size="large" circular type="transparent">
-							<OverflowMenu
-								:tooltip="`More options`"
-								:options="[
-									{
-										id: 'open-in-browser',
-										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/project/${data?.slug}`,
-										external: true,
-									},
-									{
-										divider: true,
-									},
-									{
-										id: 'report',
-										color: 'red',
-										hoverFilled: true,
-										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/report?item=project&itemID=${data?.id}`,
-									},
-								]"
-								aria-label="More options"
-							>
-								<MoreVerticalIcon aria-hidden="true" />
-								<template #open-in-browser> <ExternalIcon /> Open in browser </template>
-								<template #report> <ReportIcon /> Report </template>
-							</OverflowMenu>
-						</ButtonStyled>
-					</template>
-					<template v-else #actions>
-						<ButtonStyled size="large" color="brand">
-							<button
-								v-tooltip="installButtonTooltip"
-								:disabled="installButtonDisabled"
-								@click="install(null)"
-							>
-								<SpinnerIcon
-									v-if="installButtonLoading && !installButtonInstalled"
-									class="animate-spin"
-								/>
-								<DownloadIcon v-else-if="!installButtonInstalled && !serverProjectSelected" />
-								<CheckIcon v-else />
-								{{ installButtonLabel }}
-							</button>
-						</ButtonStyled>
-						<ButtonStyled
-							v-if="!projectInstallContext"
-							circular
-							size="large"
-							:color="isTranslated ? 'brand' : 'surface'"
-						>
-							<button
-								v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-								:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
-								:disabled="isTranslating"
-								@click="handleToggleTranslation"
-							>
-								<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
-								<svg
-									v-else
-									xmlns="http://www.w3.org/2000/svg"
-									width="20"
-									height="20"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
+					<template #actions>
+						<template v-if="isServerProject">
+							<ButtonStyled v-if="serverPlaying" color="red" size="large">
+								<button type="button" @click="handleStopServer">
+									<StopCircleIcon />
+									{{ formatMessage(commonMessages.stopButton) }}
+								</button>
+							</ButtonStyled>
+							<ButtonStyled v-else color="brand" size="large">
+								<button type="button" :disabled="serverInstallLoading" @click="handleClickPlay">
+									<PlayIcon />
+									{{
+										serverInstallLoading
+											? formatMessage(commonMessages.installingLabel)
+											: formatMessage(commonMessages.playButton)
+									}}
+								</button>
+							</ButtonStyled>
+							<ButtonStyled circular size="large">
+								<button
+									v-tooltip="formatMessage(commonMessages.addServerToInstanceButton)"
+									type="button"
+									:aria-label="formatMessage(commonMessages.addServerToInstanceButton)"
+									@click="handleAddServerToInstance"
 								>
-									<path stroke="none" d="M0 0h24v24H0z" fill="none" />
-									<path d="M4 5h7" />
-									<path d="M7 4c0 4.846 0 7 .5 8" />
-									<path d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143" />
-									<path d="M12 20l4 -9l4 9" />
-									<path d="M19.1 18h-6.2" />
-								</svg>
-							</button>
-						</ButtonStyled>
-						<ButtonStyled size="large" circular type="transparent">
-							<OverflowMenu
-								:tooltip="`More options`"
-								:options="[
-									{
-										id: 'follow',
-										disabled: true,
-										tooltip: 'Coming soon',
-										action: () => {},
-									},
-									{
-										id: 'save',
-										disabled: true,
-										tooltip: 'Coming soon',
-										action: () => {},
-									},
-									{
-										id: 'open-in-browser',
-										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/${data?.project_type || 'mod'}/${data?.slug || ''}`,
-										external: true,
-									},
-									{
-										divider: true,
-									},
-									{
-										id: 'report',
-										color: 'red',
-										hoverFilled: true,
-										link: data?.is_curseforge ? data?.website_url : `https://modrinth.com/report?item=project&itemID=${data?.id || ''}`,
-									},
-								]"
-								aria-label="More options"
+									<PlusIcon />
+								</button>
+							</ButtonStyled>
+							<ButtonStyled circular size="large" type="transparent">
+								<TeleportOverflowMenu
+									:options="serverProjectHeaderMoreActions"
+									tooltip="More options"
+									aria-label="More options"
+								>
+									<MoreVerticalIcon />
+								</TeleportOverflowMenu>
+							</ButtonStyled>
+						</template>
+						<template v-else>
+							<ButtonStyled v-if="showSwitchVersion && onVersionsPage" size="large">
+								<button v-tooltip="formatMessage(messages.alreadyInstalled)" type="button" disabled>
+									<CheckIcon />
+									{{ formatMessage(commonMessages.installedLabel) }}
+								</button>
+							</ButtonStyled>
+							<ButtonStyled v-else-if="showSwitchVersion" size="large">
+								<button type="button" @click="goToVersions">
+									<SwapIcon />
+									{{ formatMessage(messages.switchVersion) }}
+								</button>
+							</ButtonStyled>
+							<ButtonStyled v-else color="brand" size="large">
+								<button
+									v-tooltip="
+										installButtonInstalled ? formatMessage(messages.alreadyInstalled) : undefined
+									"
+									type="button"
+									:disabled="installButtonDisabled"
+									@click="install(null)"
+								>
+									<component :is="installButtonIcon" :class="installButtonIconClass" />
+									{{
+										installButtonInstalled
+											? formatMessage(commonMessages.installedLabel)
+											: installButtonValidating
+												? formatMessage(commonMessages.validatingLabel)
+												: installButtonLoading
+													? formatMessage(commonMessages.installingLabel)
+													: serverProjectSelected
+														? formatMessage(commonMessages.selectedLabel)
+														: formatMessage(commonMessages.installButton)
+									}}
+								</button>
+							</ButtonStyled>
+							<ButtonStyled
+								circular
+								size="large"
+								:color="isTranslated ? 'brand' : 'surface'"
 							>
-								<MoreVerticalIcon aria-hidden="true" />
-								<template #open-in-browser> <ExternalIcon /> Open in browser </template>
-								<template #follow> <HeartIcon /> Follow </template>
-								<template #save> <BookmarkIcon /> Save </template>
-								<template #report> <ReportIcon /> Report </template>
-							</OverflowMenu>
-						</ButtonStyled>
+								<button
+									v-tooltip="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+									:aria-label="isTranslated ? 'Показать оригинал' : 'Перевести на русский'"
+									:disabled="isTranslating"
+									@click="handleToggleTranslation"
+								>
+									<SpinnerIcon v-if="isTranslating" class="animate-spin text-lg" />
+									<svg
+										v-else
+										xmlns="http://www.w3.org/2000/svg"
+										width="20"
+										height="20"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										class="icon icon-tabler icons-tabler-outline icon-tabler-language-hiragana"
+									>
+										<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+										<path d="M4 5h7" />
+										<path d="M7 4c0 4.846 0 7 .5 8" />
+										<path
+											d="M10 8.5c0 2.286 -2 4.5 -3.5 4.5s-2.5 -1.135 -2.5 -2c0 -2 1 -3 3 -3s5 .57 5 2.857c0 1.524 -.667 2.571 -2 3.143"
+										/>
+										<path d="M12 20l4 -9l4 9" />
+										<path d="M19.1 18h-6.2" />
+									</svg>
+								</button>
+							</ButtonStyled>
+							<ButtonStyled circular size="large" type="transparent">
+								<TeleportOverflowMenu
+									:options="projectHeaderMoreActions"
+									tooltip="More options"
+									aria-label="More options"
+								>
+									<MoreVerticalIcon />
+								</TeleportOverflowMenu>
+							</ButtonStyled>
+						</template>
 					</template>
-				</ProjectHeader>
+				</ProjectPageHeader>
 				<NavTabs
 					:links="[
 						{
-							label: formatMessage(commonMessages?.descriptionTabLabel) || 'Description',
+							label: 'Description',
 							href: projectDescriptionHref,
 						},
 						{
-							label: formatMessage(commonMessages?.versionsTabLabel) || 'Versions',
+							label: 'Versions',
 							href: versionsHref,
 							subpages: ['version'],
 							shown: projectV3?.minecraft_server == null,
 						},
 						{
-							label: formatMessage(commonMessages?.galleryTabLabel) || 'Gallery',
+							label: 'Gallery',
 							href: projectGalleryHref,
 							shown: (data?.gallery?.length ?? 0) > 0,
 						},
@@ -271,21 +245,15 @@
 				/>
 				<RouterView
 					v-if="route.path.startsWith('/project')"
-					v-slot="{ Component }"
-				>
-					<component
-						:is="Component"
-						:key="route.fullPath"
-						:project="data"
-						:versions="versions"
-						:members="members"
-						:instance="instance"
-						:install="install"
-						:installed="installed"
-						:installing="installing"
-						:installed-version="installedVersion"
-					/>
-				</RouterView>
+					:project="data"
+					:versions="versions"
+					:members="members"
+					:instance="instance"
+					:install="install"
+					:installed="installed"
+					:installing="installing"
+					:installed-version="installedVersion"
+				/>
 			</template>
 			<template v-else> Project data couldn't not be loaded. </template>
 		</div>
@@ -326,7 +294,6 @@
 </template>
 
 <script setup>
-import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
 import {
 	BookmarkIcon,
 	CheckIcon,
@@ -351,9 +318,8 @@ import {
 	getTargetInstallPreferences,
 	injectNotificationManager,
 	NavTabs,
-	OverflowMenu,
 	ProjectBackgroundGradient,
-	ProjectHeader,
+	ProjectPageHeader,
 	ProjectSidebarCompatibility,
 	ProjectSidebarCreators,
 	ProjectSidebarDetails,
@@ -362,8 +328,10 @@ import {
 	ProjectSidebarTags,
 	requestInstall,
 	SelectedProjectsFloatingBar,
+	TeleportOverflowMenu,
 	useVIntl,
 } from '@modrinth/ui'
+import { useQueryClient } from '@tanstack/vue-query'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import dayjs from 'dayjs'
@@ -371,8 +339,14 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { SwapIcon } from '@/assets/icons/index.js'
 import ContextMenu from '@/components/ui/ContextMenu.vue'
+import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
 import InstanceIndicator from '@/components/ui/InstanceIndicator.vue'
+import {
+	fetchCachedServerStatus,
+	getFreshCachedServerStatus,
+} from '@/composables/instances/use-server-status-query'
 import {
 	get_organization,
 	get_project,
@@ -382,28 +356,22 @@ import {
 	get_version_many,
 } from '@/helpers/cache.js'
 import { process_listener } from '@/helpers/events'
-import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
-import { get_by_profile_path } from '@/helpers/process'
 import {
 	get as getInstance,
 	get_projects as getInstanceProjects,
 	kill,
 	list as listInstances,
-} from '@/helpers/profile'
+} from '@/helpers/instance'
+import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
+import { get_by_instance_id } from '@/helpers/process'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
-import { getServerLatency } from '@/helpers/worlds'
+import { getServerAddress } from '@/helpers/worlds'
+import { provideBreadcrumbParent, useBreadcrumb } from '@/providers/breadcrumbs'
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
 import { useProjectTranslation } from '@/composables/use-project-translation'
-import { useBreadcrumbs } from '@/store/breadcrumbs'
-import { getServerAddress } from '@/store/install.js'
 import { useTheming } from '@/store/state.js'
-
-const { isTranslated, isTranslating, toggleTranslation } = useProjectTranslation()
-function handleToggleTranslation() {
-	toggleTranslation(data)
-}
 
 dayjs.extend(relativeTime)
 
@@ -411,22 +379,53 @@ const { handleError } = injectNotificationManager()
 const { install: installVersion } = injectContentInstall()
 const route = useRoute()
 const router = useRouter()
-const breadcrumbs = useBreadcrumbs()
+const displayedProjectRoute = shallowRef(router.currentRoute.value)
+watch(
+	() => router.currentRoute.value,
+	(nextRoute) => {
+		if (nextRoute.path.startsWith('/project/')) {
+			displayedProjectRoute.value = nextRoute
+		}
+	},
+	{ immediate: true },
+)
+const projectBreadcrumbTo = computed(() => {
+	const currentRoute = displayedProjectRoute.value
+	if (currentRoute.name === 'Version') {
+		return {
+			name: 'Versions',
+			params: { id: currentRoute.params.id },
+			query: currentRoute.query,
+		}
+	}
+
+	return currentRoute.fullPath
+})
+const queryClient = useQueryClient()
 const themeStore = useTheming()
 const { formatMessage } = useVIntl()
+
+const { isTranslated, isTranslating, toggleTranslation } = useProjectTranslation()
+function handleToggleTranslation() {
+	toggleTranslation(data)
+}
 
 const messages = defineMessages({
 	backToBrowse: {
 		id: 'app.project.install-context.back-to-browse',
 		defaultMessage: 'Back to discover',
 	},
-	installContentToInstance: {
-		id: 'app.project.install-context.install-content-to-instance',
-		defaultMessage: 'Install content to instance',
+	backToInstance: {
+		id: 'app.project.install-context.back-to-instance',
+		defaultMessage: 'Back to instance',
 	},
 	alreadyInstalled: {
 		id: 'app.project.install-button.already-installed',
 		defaultMessage: 'This project is already installed',
+	},
+	switchVersion: {
+		id: 'app.project.install-button.switch-version',
+		defaultMessage: 'Switch version',
 	},
 })
 
@@ -434,6 +433,40 @@ const { installingServerProjects, playServerProject, showAddServerToInstanceModa
 	injectServerInstall()
 const installing = ref(false)
 const data = shallowRef(null)
+
+function getProjectBreadcrumbSummary(projectId) {
+	const identifier = Array.isArray(projectId) ? projectId[0] : projectId
+	if (typeof identifier !== 'string' || !identifier) return undefined
+
+	return queryClient.getQueryData(['projects', 'summary', identifier])
+}
+
+function getProjectBreadcrumbLabel(projectId) {
+	const summary = getProjectBreadcrumbSummary(projectId)
+	return summary?.name ?? summary?.title ?? formatMessage(commonMessages.loadingLabel)
+}
+
+const projectBreadcrumbLabel = ref(getProjectBreadcrumbLabel(route.params.id))
+const projectBreadcrumb = useBreadcrumb({
+	slot: 'project',
+	id: () => `project:${String(displayedProjectRoute.value.params.id ?? '')}`,
+	label: projectBreadcrumbLabel,
+	visual: () => {
+		const identifier = String(displayedProjectRoute.value.params.id ?? '')
+		const loadedProject =
+			data.value?.id === identifier || data.value?.slug === identifier ? data.value : undefined
+		const project = loadedProject ?? getProjectBreadcrumbSummary(identifier)
+		return {
+			type: 'image',
+			src: project?.icon_url,
+			alt: projectBreadcrumbLabel.value,
+			tintBy: identifier,
+		}
+	},
+	to: projectBreadcrumbTo,
+})
+provideBreadcrumbParent(projectBreadcrumb)
+
 const versions = shallowRef([])
 const members = shallowRef([])
 const categories = shallowRef([])
@@ -457,10 +490,10 @@ const serverSetupModalRef = ref(null)
 const serverInstallContent = createServerInstallContent({ serverSetupModalRef })
 
 serverInstallContent.watchServerContextChanges()
-serverInstallContent.initServerContext().catch(() => {})
+await serverInstallContent.initServerContext()
 
 const instanceFilters = computed(() => {
-	if (!instance.value || !data.value) {
+	if (!instance.value) {
 		return {}
 	}
 
@@ -469,7 +502,7 @@ const instanceFilters = computed(() => {
 		if (instance.value.loader !== 'vanilla') {
 			loaders.push(instance.value.loader)
 		}
-		if (instance.value.loader === 'vanilla' || (data.value.loaders || []).includes('datapack')) {
+		if (instance.value.loader === 'vanilla' || data.value.loaders.includes('datapack')) {
 			loaders.push('datapack')
 		}
 	}
@@ -516,9 +549,18 @@ const projectBrowseBackUrl = computed(() => {
 	if (data.value?.is_curseforge || instance.value?.loader?.toLowerCase() === 'bedrock') {
 		return buildBrowseHref('/browse/bedrock/addon')
 	}
+	const instanceId = route.query.i
+	if (typeof instanceId === 'string' && instanceId) {
+		return `/instance/${encodeURIComponent(instanceId)}`
+	}
 	const type = data.value?.project_type ? `${data.value.project_type}` : 'mod'
 	return buildBrowseHref(`/browse/${type}`)
 })
+const projectBackLabel = computed(() =>
+	typeof route.query.i === 'string' && typeof route.query.b !== 'string'
+		? formatMessage(messages.backToInstance)
+		: formatMessage(messages.backToBrowse),
+)
 
 const projectInstallContext = computed(() => {
 	const serverData = serverInstallContent.serverContextServerData.value
@@ -532,7 +574,7 @@ const projectInstallContext = computed(() => {
 			iconSrc: null,
 			isMedal: serverData.is_medal,
 			backUrl: projectBrowseBackUrl.value,
-			backLabel: formatMessage(messages.backToBrowse),
+			backLabel: projectBackLabel.value,
 			heading: serverInstallContent.serverBrowseHeading.value,
 			queuedCount: serverInstallContent.queuedServerInstallCount.value,
 			selectedProjects: serverInstallContent.selectedServerInstallProjects.value,
@@ -552,8 +594,8 @@ const projectInstallContext = computed(() => {
 			gameVersion: instance.value.game_version,
 			iconSrc: instance.value.icon_path ? convertFileSrc(instance.value.icon_path) : null,
 			backUrl: projectBrowseBackUrl.value,
-			backLabel: formatMessage(messages.backToBrowse),
-			heading: formatMessage(messages.installContentToInstance),
+			backLabel: projectBackLabel.value,
+			heading: formatMessage(commonMessages.installingContentLabel),
 		}
 	}
 
@@ -590,28 +632,84 @@ const installButtonInstalled = computed(() =>
 const installButtonDisabled = computed(
 	() => installButtonInstalled.value || installButtonLoading.value,
 )
-const installButtonLabel = computed(() => {
-	if (installButtonInstalled.value) return formatMessage(commonMessages.installedLabel)
-	if (installButtonValidating.value) return formatMessage(commonMessages.validatingLabel)
-	if (installButtonLoading.value) return formatMessage(commonMessages.installingLabel)
-	if (serverProjectSelected.value) return formatMessage(commonMessages.selectedLabel)
-	return formatMessage(commonMessages.installButton)
+const serverInstallLoading = computed(
+	() => !!data.value && installingServerProjects.value.includes(data.value.id),
+)
+const installButtonIcon = computed(() => {
+	if (installButtonLoading.value && !installButtonInstalled.value) return SpinnerIcon
+	if (!installButtonInstalled.value && !serverProjectSelected.value) return DownloadIcon
+	return CheckIcon
 })
-const installButtonTooltip = computed(() => {
-	if (installButtonInstalled.value) return formatMessage(messages.alreadyInstalled)
-	return null
-})
+const installButtonIconClass = computed(() =>
+	installButtonLoading.value && !installButtonInstalled.value ? 'animate-spin' : undefined,
+)
+const serverProjectHeaderMoreActions = computed(() => [
+	{
+		id: 'open-in-browser',
+		label: formatMessage(commonMessages.openInModrinthButton),
+		icon: ExternalIcon,
+		action: openProjectInBrowser,
+	},
+	{
+		divider: true,
+	},
+	{
+		id: 'report',
+		label: formatMessage(commonMessages.reportButton),
+		icon: ReportIcon,
+		color: 'red',
+		action: reportProject,
+	},
+])
+const projectHeaderMoreActions = computed(() => [
+	{
+		id: 'follow',
+		label: formatMessage(commonMessages.followButton),
+		icon: HeartIcon,
+		disabled: true,
+		tooltip: 'Coming soon',
+		action: () => {},
+	},
+	{
+		id: 'save',
+		label: formatMessage(commonMessages.saveButton),
+		icon: BookmarkIcon,
+		disabled: true,
+		tooltip: 'Coming soon',
+		action: () => {},
+	},
+	{
+		id: 'open-in-browser',
+		label: formatMessage(commonMessages.openInModrinthButton),
+		icon: ExternalIcon,
+		action: openProjectInBrowser,
+	},
+	{
+		divider: true,
+	},
+	{
+		id: 'report',
+		label: formatMessage(commonMessages.reportButton),
+		icon: ReportIcon,
+		color: 'red',
+		action: reportProject,
+	},
+])
+const projectSearchUrl = computed(
+	() => `/browse/${isServerProject.value ? 'server' : data.value?.project_type}`,
+)
 
-const allLoaders = ref([])
-const allGameVersions = ref([])
+const showSwitchVersion = computed(() => !!instance.value && installed.value)
+const onVersionsPage = computed(() => route.name === 'Versions')
 
-Promise.all([
-	get_loaders().catch(handleError),
-	get_game_versions().catch(handleError),
-]).then(([loaders, versions]) => {
-	allLoaders.value = loaders || []
-	allGameVersions.value = versions || []
-})
+function goToVersions() {
+	router.push(versionsHref.value)
+}
+
+const [allLoaders, allGameVersions] = await Promise.all([
+	get_loaders().catch(handleError).then(ref),
+	get_game_versions().catch(handleError).then(ref),
+])
 
 async function handleClickPlay() {
 	if (!isServerProject.value) return
@@ -622,10 +720,10 @@ async function handleClickPlay() {
 async function updateServerPlayState() {
 	if (!isServerProject.value || !data.value) return
 	const packs = await listInstances()
-	const inst = packs.find((p) => p.linked_data?.project_id === data.value.id)
+	const inst = packs.find((p) => p.link?.project_id === data.value.id)
 	if (inst) {
-		serverInstancePath.value = inst.path
-		const processes = await get_by_profile_path(inst.path).catch(() => [])
+		serverInstancePath.value = inst.id
+		const processes = await get_by_instance_id(inst.id).catch(() => [])
 		serverPlaying.value = Array.isArray(processes) && processes.length > 0
 	} else {
 		serverInstancePath.value = null
@@ -645,7 +743,33 @@ function handleAddServerToInstance() {
 	showAddServerToInstanceModal(data.value.title, address)
 }
 
+function openProjectInBrowser() {
+	if (!data.value) return
+	if (data.value.is_curseforge) {
+		void openUrl(
+			data.value.website_url ||
+				`https://www.curseforge.com/minecraft/mc-addons/${data.value.slug}`,
+		)
+		return
+	}
+	const type = isServerProject.value ? 'project' : data.value.project_type
+	void openUrl(`https://modrinth.com/${type}/${data.value.slug}`)
+}
+
+function reportProject() {
+	if (!data.value) return
+	if (data.value.is_curseforge) {
+		void openUrl(
+			data.value.website_url ||
+				`https://www.curseforge.com/minecraft/mc-addons/${data.value.slug}`,
+		)
+		return
+	}
+	void openUrl(`https://modrinth.com/report?item=project&itemID=${data.value.id}`)
+}
+
 async function fetchProjectData() {
+	projectBreadcrumbLabel.value = getProjectBreadcrumbLabel(route.params.id)
 	let project = null
 	let projectV3Result = null
 	const rawId = String(route.params.id || '')
@@ -657,6 +781,7 @@ async function fetchProjectData() {
 		project = await get_project(rawId, 'must_revalidate').catch(() => null)
 		projectV3Result = await get_project_v3(rawId, 'must_revalidate').catch(() => null)
 	}
+	projectV3.value = projectV3Result
 
 	if (!project) {
 		let cfModId = isNumericId ? parseInt(digitsOnly, 10) : NaN
@@ -665,7 +790,7 @@ async function fetchProjectData() {
 				const searchRes = await invoke('plugin:bedrock-addons|search_bedrock_curseforge_addons', {
 					query: rawId,
 				}).catch(() => null)
-				const list = Array.isArray(searchRes) ? searchRes : (searchRes?.data || [])
+				const list = Array.isArray(searchRes) ? searchRes : searchRes?.data || []
 				if (list.length > 0) {
 					cfModId = list[0].id
 				}
@@ -677,15 +802,25 @@ async function fetchProjectData() {
 		if (!isNaN(cfModId)) {
 			try {
 				const [cfMod, cfFiles, cfDescription] = await Promise.all([
-					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon', { modId: cfModId }).catch(() => null),
-					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId: cfModId }).catch(() => []),
-					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_description', { modId: cfModId }).catch(() => ''),
+					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon', { modId: cfModId }).catch(
+						() => null,
+					),
+					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', {
+						modId: cfModId,
+					}).catch(() => []),
+					invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_description', {
+						modId: cfModId,
+					}).catch(() => ''),
 				])
 
 				if (cfMod) {
 					let authorName = 'CurseForge Creator'
 					let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`
-					let authorAvatar = cfMod.authors?.[0]?.avatarUrl || cfMod.authors?.[0]?.avatar_url || cfMod.logo?.thumbnailUrl || cfMod.logo?.url
+					let authorAvatar =
+						cfMod.authors?.[0]?.avatarUrl ||
+						cfMod.authors?.[0]?.avatar_url ||
+						cfMod.logo?.thumbnailUrl ||
+						cfMod.logo?.url
 					if (cfMod.authors && cfMod.authors.length > 0) {
 						authorName = cfMod.authors[0].name
 						authorUrl = cfMod.authors[0].url || authorUrl
@@ -697,11 +832,11 @@ async function fetchProjectData() {
 						.replace(/<style[\s\S]*?<\/style>/gi, '')
 						.replace(/<[^>]+>/g, ' ')
 						.replace(/&nbsp;/gi, ' ')
-						.replace(/&amp;/gi, '&')
-						.replace(/&lt;/gi, '<')
-						.replace(/&gt;/gi, '>')
-						.replace(/&quot;/gi, '"')
-						.replace(/&#39;/gi, "'")
+						.replace(/&/gi, '&')
+						.replace(/</gi, '<')
+						.replace(/>/gi, '>')
+						.replace(/"/gi, '"')
+						.replace(/'/gi, "'")
 						.replace(/\s+/g, ' ')
 						.trim()
 
@@ -726,12 +861,17 @@ async function fetchProjectData() {
 							avatar_url: authorAvatar,
 							link: authorUrl,
 						},
-						published: cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
-						created: cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
-						updated: cfMod.dateModified || cfMod.dateCreated || cfMod.dateReleased || new Date().toISOString(),
-						approved: cfMod.dateReleased || cfMod.dateCreated || cfMod.dateModified || new Date().toISOString(),
+						published:
+							cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
+						created:
+							cfMod.dateCreated || cfMod.dateReleased || cfMod.dateModified || new Date().toISOString(),
+						updated:
+							cfMod.dateModified || cfMod.dateCreated || cfMod.dateReleased || new Date().toISOString(),
+						approved:
+							cfMod.dateReleased || cfMod.dateCreated || cfMod.dateModified || new Date().toISOString(),
 						license: { id: 'Custom', name: 'Custom License', url: '' },
-						website_url: cfMod.websiteUrl || `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`,
+						website_url:
+							cfMod.websiteUrl || `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`,
 						is_curseforge: true,
 						gallery: [],
 						client_side: 'required',
@@ -761,8 +901,8 @@ async function fetchProjectData() {
 						date_published: f.fileDate
 							? new Date(f.fileDate).toISOString()
 							: cfMod.dateCreated
-							? new Date(cfMod.dateCreated).toISOString()
-							: new Date().toISOString(),
+								? new Date(cfMod.dateCreated).toISOString()
+								: new Date().toISOString(),
 					}))
 
 					members.value = [
@@ -788,10 +928,13 @@ async function fetchProjectData() {
 	if (!project) {
 		const rawName = decodeURIComponent(String(route.params.id || ''))
 		const metaMap = route.query.i ? loadBedrockMetadataMap(String(route.query.i)) : {}
-		const meta = metaMap[rawName.toLowerCase()] || metaMap[rawName.replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()]
+		const meta =
+			metaMap[rawName.toLowerCase()] ||
+			metaMap[rawName.replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()]
 		const authorName = meta?.author || undefined
 		const avatarUrl = meta?.avatarUrl || meta?.iconUrl || undefined
-		const cleanTitle = meta?.name || meta?.title || meta?.slug || rawName.replace(/§[0-9a-fk-or]/gi, '').trim()
+		const cleanTitle =
+			meta?.name || meta?.title || meta?.slug || rawName.replace(/§[0-9a-fk-or]/gi, '').trim()
 
 		project = {
 			id: rawName,
@@ -813,7 +956,11 @@ async function fetchProjectData() {
 				? {
 						name: authorName,
 						avatar_url: avatarUrl,
-						link: meta?.projectUrl || (meta?.is_curseforge ? `https://www.curseforge.com/members/${encodeURIComponent(authorName)}` : ''),
+						link:
+							meta?.projectUrl ||
+							(meta?.is_curseforge
+								? `https://www.curseforge.com/members/${encodeURIComponent(authorName)}`
+								: ''),
 					}
 				: undefined,
 			published: meta?.published || new Date().toISOString(),
@@ -853,23 +1000,25 @@ async function fetchProjectData() {
 	}
 
 	data.value = project
-	projectV3.value = projectV3Result
+	projectBreadcrumbLabel.value = project.title
 
 	if (!project.is_curseforge) {
-		const fetches = [
-			get_version_many(project.versions, 'must_revalidate').catch(handleError),
-			project.team ? get_team(project.team).catch(handleError) : Promise.resolve(members.value),
-			get_categories().catch(handleError),
-			route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
-			route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
-		]
+		;[versions.value, members.value, categories.value, instance.value, instanceProjects.value] =
+			await Promise.all([
+				get_version_many(project.versions, 'must_revalidate').catch(handleError),
+				project.team ? get_team(project.team).catch(handleError) : Promise.resolve(members.value),
+				get_categories().catch(handleError),
+				route.query.i ? getInstance(route.query.i).catch(handleError) : Promise.resolve(),
+				route.query.i ? getInstanceProjects(route.query.i).catch(handleError) : Promise.resolve(),
+			])
 
-		const [vRes, mRes, cRes, iRes, ipRes] = await Promise.all(fetches)
-		versions.value = vRes || []
-		if (mRes) members.value = mRes
-		categories.value = cRes || []
-		instance.value = iRes
-		instanceProjects.value = ipRes
+		for (const member of members.value ?? []) {
+			for (const identifier of [member.user.id, member.user.username]) {
+				if (identifier) {
+					queryClient.setQueryData(['users', 'summary', identifier], member.user)
+				}
+			}
+		}
 
 		versions.value = (versions.value || []).sort(
 			(a, b) => dayjs(b.date_published) - dayjs(a.date_published),
@@ -934,33 +1083,25 @@ async function fetchProjectData() {
 	isServerProject.value = projectV3.value?.minecraft_server != null
 	serverStatusOnline.value = !!projectV3.value?.minecraft_java_server?.ping?.data
 
-	if (data.value?.title) {
-		breadcrumbs.setName('Project', data.value.title)
-	}
-	if (instance.value?.loader?.toLowerCase() === 'bedrock' || data.value?.is_curseforge) {
-		if (instance.value) {
-			breadcrumbs.setContext({
-				name: instance.value.name,
-				link: `/instance/${instance.value.path}/content`,
-			})
-		} else {
-			breadcrumbs.setContext({
-				name: 'Поиск проектов',
-				link: projectBrowseBackUrl.value,
-			})
-		}
-	}
-
 	fetchDeferredServerData(project)
 }
 
 function fetchDeferredServerData(project) {
 	const serverAddress = projectV3.value?.minecraft_java_server?.address
 	if (serverAddress) {
-		serverPing.value = undefined
-		getServerLatency(serverAddress)
-			.then((latency) => {
-				serverPing.value = latency
+		const cachedStatus = getFreshCachedServerStatus(queryClient, serverAddress)
+		if (cachedStatus) {
+			serverPing.value = cachedStatus.ping
+			serverStatusOnline.value = true
+		} else {
+			serverPing.value = undefined
+		}
+
+		fetchCachedServerStatus(queryClient, serverAddress)
+			.then((status) => {
+				if (projectV3.value?.minecraft_java_server?.address !== serverAddress) return
+				serverPing.value = status.ping
+				serverStatusOnline.value = true
 			})
 			.catch((error) => {
 				console.error(`Failed to ping server ${serverAddress}:`, error)
@@ -1011,14 +1152,14 @@ function fetchDeferredServerData(project) {
 	updateServerPlayState()
 }
 
-fetchProjectData().catch(handleError)
+await fetchProjectData()
 
 let unlistenProcesses
 process_listener((e) => {
 	if (
 		e.event === 'finished' &&
 		serverInstancePath.value &&
-		e.profile_path_id === serverInstancePath.value
+		e.instance_id === serverInstancePath.value
 	) {
 		serverPlaying.value = false
 	}
@@ -1093,7 +1234,7 @@ async function install(version) {
 	await installVersion(
 		data.value.id,
 		version,
-		instance.value ? instance.value.path : null,
+		instance.value ? instance.value.id : null,
 		'ProjectPage',
 		(version, installedProjectIds) => {
 			installing.value = false

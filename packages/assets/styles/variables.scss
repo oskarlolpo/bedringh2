@@ -367,11 +367,11 @@ html {
 
 	--shadow-card: rgba(0, 0, 0, 0.25) 0px 2px 4px 0px;
 
-	--brand-gradient-bg: linear-gradient(0deg, hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.2) 0%, hsl(var(--brand-h) var(--brand-s) 40% / 0.1) 100%);
+	--brand-gradient-bg: linear-gradient(0deg, hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.08) 0%, transparent 100%);
 	--brand-gradient-strong-bg: linear-gradient(270deg, hsl(var(--brand-h) 30% 5%) 10%, hsl(var(--brand-h) 25% 10%) 100%);
 	--brand-gradient-button: rgba(255, 255, 255, 0.08);
 	--brand-gradient-border: hsl(var(--brand-h) 100% 80% / 0.08);
-	--brand-gradient-fade-out-color: linear-gradient(to bottom, hsl(var(--brand-h) 12% 10% / 0), hsl(var(--brand-h) 12% 10%) 80%);
+	--brand-gradient-fade-out-color: linear-gradient(to bottom, transparent 0%, var(--surface-2) 100%);
 
 	--color-button-bg-selected: var(--color-brand-highlight);
 	--color-button-text-selected: var(--color-brand);
@@ -415,20 +415,53 @@ html {
 
 	--brand-gradient-bg: linear-gradient(
 		0deg,
-		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.15) 0%,
-		hsl(var(--brand-h) var(--brand-s) 40% / 0.1) 100%
+		rgba(22, 66, 51, 0.15) 0%,
+		rgba(55, 137, 73, 0.1) 100%
 	);
 	--brand-gradient-strong-bg: linear-gradient(
 		270deg,
-		hsl(var(--brand-h) 30% 5% / 0.6) 10%,
-		hsl(var(--brand-h) 25% 10% / 0.5) 100%
+		rgba(9, 18, 14, 0.6) 10%,
+		rgba(19, 31, 23, 0.5) 100%
 	);
 
 	--color-gradient-button-bg: linear-gradient(180deg, #1b1b20 0%, #25262b 100%);
 }
 
 .retro-mode {
+	@extend .dark-mode;
+	--surface-1: #191917;
+	--surface-2: rgb(22, 22, 21);
 	--surface-2-5: #3a3c3e;
+	--surface-3: #232421;
+	--surface-4: #3a3b38;
+	--surface-5: #5a5c58;
+	--color-button-bg: #3a3b38;
+	--color-base: #c3c4b3;
+	--color-secondary: #9b9e98;
+	--color-contrast: #e6e2d1;
+
+	--color-brand: #4d9227;
+	--color-brand-highlight: #25421e;
+	--color-accent-contrast: #ffffff;
+	--color-ad: var(--color-brand-highlight);
+	--color-ad-raised: var(--color-brand);
+	--color-ad-contrast: black;
+	--color-ad-highlight: var(--color-brand);
+
+	--color-red: rgb(232, 32, 13);
+	--color-orange: rgb(232, 141, 13);
+	--color-green: rgb(60, 219, 54);
+	--color-blue: rgb(9, 159, 239);
+	--color-purple: rgb(139, 129, 230);
+	--color-gray: #718096;
+
+	--color-red-highlight: rgba(232, 32, 13, 0.25);
+	--color-orange-highlight: rgba(232, 141, 13, 0.25);
+	--color-green-highlight: rgba(60, 219, 54, 0.25);
+	--color-blue-highlight: rgba(9, 159, 239, 0.25);
+	--color-purple-highlight: rgba(139, 129, 230, 0.25);
+	--color-gray-highlight: rgba(113, 128, 150, 0.25);
+
 	--brand-gradient-strong-bg: #3a3b38;
 }
 
@@ -494,4 +527,3 @@ html.theme-yellow {
 html.dark.theme-yellow, html.oled-mode.theme-yellow {
 	--brand-h: 48; --brand-s: 100%; --brand-l: 55%;
 }
-

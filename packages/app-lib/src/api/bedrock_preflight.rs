@@ -56,6 +56,7 @@ pub fn check_developer_mode() -> crate::Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn uwp_deps_list() -> &'static [(&'static str, &'static str)] {
     &[
         ("Microsoft.VCLibs.140.00", "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"),

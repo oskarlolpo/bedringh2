@@ -10,6 +10,7 @@ function targetLanguage(): string {
 export function useProjectTranslation() {
 	const isTranslated = ref(false)
 	const isTranslating = ref(false)
+	const originalTitle = ref<string | null>(null)
 	const originalSummary = ref<string | null>(null)
 	const originalDescription = ref<string | null>(null)
 	const originalBody = ref<string | null>(null)
@@ -85,43 +86,17 @@ export function useProjectTranslation() {
 			return { text: content, anyOk: false }
 		}
 
-		const DELIMITER = ' ¶¶ '
-		let currentBatchText = ''
-		let currentSnippetIndices: number[] = []
-		const batches: { snippetIndices: number[]; textPayload: string }[] = []
-
-		snippets.forEach((snip, i) => {
-			if (currentBatchText.length + snip.text.length > 1000) {
-				if (currentBatchText) batches.push({ snippetIndices: [...currentSnippetIndices], textPayload: currentBatchText })
-				currentBatchText = snip.text
-				currentSnippetIndices = [i]
-			} else {
-				currentBatchText = currentBatchText ? `${currentBatchText}${DELIMITER}${snip.text}` : snip.text
-				currentSnippetIndices.push(i)
-			}
-		})
-		if (currentBatchText) {
-			batches.push({ snippetIndices: [...currentSnippetIndices], textPayload: currentBatchText })
-		}
-
 		let anyOk = false
 		const translatedParts = [...parts]
 
-		for (const batch of batches) {
-			const { text: translatedBatch, ok } = await fetchSingleChunk(batch.textPayload)
+		for (const snip of snippets) {
+			const { text: translatedText, ok } = await fetchSingleChunk(snip.text)
 			if (ok) {
 				anyOk = true
-				const translatedItems = translatedBatch.split(/\s*¶¶\s*/).map((s) => s.trim())
-				for (let k = 0; k < batch.snippetIndices.length; k++) {
-					const snip = snippets[batch.snippetIndices[k]]
-					const item = translatedItems[k]
-					if (item && snip) {
-						const origPart = parts[snip.partIndex]
-						const leadingSpace = origPart.match(/^\s*/)?.[0] || ''
-						const trailingSpace = origPart.match(/\s*$/)?.[0] || ''
-						translatedParts[snip.partIndex] = `${leadingSpace}${item}${trailingSpace}`
-					}
-				}
+				const origPart = parts[snip.partIndex]
+				const leadingSpace = origPart.match(/^\s*/)?.[0] || ''
+				const trailingSpace = origPart.match(/\s*$/)?.[0] || ''
+				translatedParts[snip.partIndex] = `${leadingSpace}${translatedText}${trailingSpace}`
 			}
 		}
 
@@ -135,6 +110,8 @@ export function useProjectTranslation() {
 		if (isTranslated.value) {
 			const restored = {
 				...proj,
+				title: originalTitle.value !== null ? originalTitle.value : proj.title,
+				title_formatted: originalTitle.value !== null ? originalTitle.value : proj.title_formatted,
 				summary: originalSummary.value !== null ? originalSummary.value : proj.summary,
 				description: originalDescription.value !== null ? originalDescription.value : proj.description,
 				body: originalBody.value !== null ? originalBody.value : proj.body,
@@ -150,6 +127,9 @@ export function useProjectTranslation() {
 
 		isTranslating.value = true
 		try {
+			if (originalTitle.value === null) {
+				originalTitle.value = proj.title ?? proj.title_formatted ?? ''
+			}
 			if (originalSummary.value === null) {
 				originalSummary.value = proj.summary ?? ''
 			}
@@ -160,24 +140,27 @@ export function useProjectTranslation() {
 				originalBody.value = proj.body || proj.description || ''
 			}
 
-			const [summaryResult, descriptionResult, bodyResult] = await Promise.all([
+			const [titleResult, summaryResult, descriptionResult, bodyResult] = await Promise.all([
+				translateChunk(originalTitle.value),
 				translateChunk(originalSummary.value),
 				translateChunk(originalDescription.value),
 				translateHtmlOrText(originalBody.value),
 			])
 
-			const anyTranslated = summaryResult.ok || descriptionResult.ok || bodyResult.anyOk
+			const anyTranslated = titleResult.ok || summaryResult.ok || descriptionResult.ok || bodyResult.anyOk
 			if (!anyTranslated) {
 				throw new Error(
-					'Translation service unreachable - no text was translated. Check that translate.googleapis.com is allowed in the app HTTP scope and CSP.',
+					'Translation service unreachable - no text was translated.',
 				)
 			}
 
 			const updated = {
 				...proj,
-				summary: summaryResult.text,
-				description: descriptionResult.text,
-				body: bodyResult.text,
+				title: titleResult.ok ? titleResult.text : proj.title,
+				title_formatted: titleResult.ok ? titleResult.text : proj.title_formatted,
+				summary: summaryResult.ok ? summaryResult.text : proj.summary,
+				description: descriptionResult.ok ? descriptionResult.text : proj.description,
+				body: bodyResult.anyOk ? bodyResult.text : proj.body,
 			}
 
 			if (isRef(projectRef)) {

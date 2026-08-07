@@ -42,14 +42,14 @@ import {
 	get_search_results_v3,
 	get_version_many,
 } from '@/helpers/cache.js'
-import { profile_listener } from '@/helpers/events.js'
+import { instance_listener } from '@/helpers/events.js'
 import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
 import {
 	get as getInstance,
 	get_installed_project_ids as getInstalledProjectIds,
-} from '@/helpers/profile.js'
+} from '@/helpers/instance'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
-import { get_profile_worlds } from '@/helpers/worlds'
+import { get_instance_worlds } from '@/helpers/worlds'
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import {
@@ -60,6 +60,108 @@ import { useBreadcrumbs } from '@/store/breadcrumbs'
 
 const { handleError } = injectNotificationManager()
 const { formatMessage } = useVIntl()
+
+const messages = defineMessages({
+	catWeaponsArmor: { id: 'app.bedrock.category.weapons-armor', defaultMessage: 'Armor, Tools & Weapons' },
+	catCosmetics: { id: 'app.bedrock.category.cosmetics', defaultMessage: 'Cosmetics' },
+	catDataPacks: { id: 'app.bedrock.category.data-packs', defaultMessage: 'Data Packs' },
+	catFantasy: { id: 'app.bedrock.category.fantasy', defaultMessage: 'Fantasy' },
+	catFood: { id: 'app.bedrock.category.food', defaultMessage: 'Food' },
+	catHorror: { id: 'app.bedrock.category.horror', defaultMessage: 'Horror' },
+	catMagic: { id: 'app.bedrock.category.magic', defaultMessage: 'Magic' },
+	catMaps: { id: 'app.bedrock.category.maps', defaultMessage: 'Maps' },
+	catMobs: { id: 'app.bedrock.category.mobs', defaultMessage: 'Mobs' },
+	catMultiplayer: { id: 'app.bedrock.category.multiplayer', defaultMessage: 'Multiplayer' },
+	catPerformance: { id: 'app.bedrock.category.performance', defaultMessage: 'Performance' },
+	catPlayers: { id: 'app.bedrock.category.players', defaultMessage: 'Players' },
+	catPvp: { id: 'app.bedrock.category.pvp', defaultMessage: 'PvP' },
+	catRealistic: { id: 'app.bedrock.category.realistic', defaultMessage: 'Realistic' },
+	catRoleplay: { id: 'app.bedrock.category.roleplay', defaultMessage: 'Roleplay' },
+	catSimplistic: { id: 'app.bedrock.category.simplistic', defaultMessage: 'Simplistic' },
+	catSkins: { id: 'app.bedrock.category.skins', defaultMessage: 'Skins' },
+	catSurvival: { id: 'app.bedrock.category.survival', defaultMessage: 'Survival' },
+	catTechnology: { id: 'app.bedrock.category.technology', defaultMessage: 'Technology' },
+	catTextures: { id: 'app.bedrock.category.textures', defaultMessage: 'Textures' },
+	catThemed: { id: 'app.bedrock.category.themed', defaultMessage: 'Themed' },
+	catUtility: { id: 'app.bedrock.category.utility', defaultMessage: 'Utility' },
+	catVanillaPlus: { id: 'app.bedrock.category.vanilla-plus', defaultMessage: 'Vanilla+' },
+	catAdventure: { id: 'app.bedrock.category.adventure', defaultMessage: 'Adventure' },
+	catBuilding: { id: 'app.bedrock.category.building', defaultMessage: 'Building' },
+	catCtm: { id: 'app.bedrock.category.ctm', defaultMessage: 'CTM' },
+	catCustomTerrain: { id: 'app.bedrock.category.custom-terrain', defaultMessage: 'Custom Terrain' },
+	catMinigame: { id: 'app.bedrock.category.minigame', defaultMessage: 'Minigame' },
+	catParkour: { id: 'app.bedrock.category.parkour', defaultMessage: 'Parkour' },
+	catPuzzle: { id: 'app.bedrock.category.puzzle', defaultMessage: 'Puzzle' },
+	catRedstone: { id: 'app.bedrock.category.redstone', defaultMessage: 'Redstone' },
+	catRollerCoaster: { id: 'app.bedrock.category.roller-coaster', defaultMessage: 'Roller Coaster' },
+	catGui: { id: 'app.bedrock.category.gui', defaultMessage: 'GUI' },
+	catMiscellaneous: { id: 'app.bedrock.category.miscellaneous', defaultMessage: 'Miscellaneous' },
+	catShaders: { id: 'app.bedrock.category.shaders', defaultMessage: 'Shaders' },
+	cat16x: { id: 'app.bedrock.category.16x', defaultMessage: '16x' },
+	cat32x: { id: 'app.bedrock.category.32x', defaultMessage: '32x' },
+	cat64x: { id: 'app.bedrock.category.64x', defaultMessage: '64x' },
+	cat128x: { id: 'app.bedrock.category.128x', defaultMessage: '128x' },
+	catScripts: { id: 'app.bedrock.category.scripts', defaultMessage: 'Scripts' },
+	catSkinPacks: { id: 'app.bedrock.category.skin-packs', defaultMessage: 'Skin Packs' },
+	catPlayerSkins: { id: 'app.bedrock.category.player-skins', defaultMessage: 'Player Skins' },
+	catMobSkins: { id: 'app.bedrock.category.mob-skins', defaultMessage: 'Mob Skins' },
+	gameVersionProvidedByServer: { id: 'search.filter.locked.server-game-version.title', defaultMessage: 'Game version is provided by the server' },
+	gameVersionProvidedByInstance: { id: 'search.filter.locked.instance-game-version.title', defaultMessage: 'Game version is provided by the instance' },
+	modLoaderProvidedByServer: { id: 'search.filter.locked.server-loader.title', defaultMessage: 'Loader is provided by the server' },
+	modLoaderProvidedByInstance: { id: 'search.filter.locked.instance-loader.title', defaultMessage: 'Loader is provided by the instance' },
+	environmentProvidedByServer: { id: 'search.filter.locked.server-environment.title', defaultMessage: 'Only client-side mods can be added to the server instance' },
+	syncFilterButton: { id: 'search.filter.locked.instance.sync', defaultMessage: 'Sync with instance' },
+	providedByServer: { id: 'search.filter.locked.server', defaultMessage: 'Provided by the server' },
+	providedByInstance: { id: 'search.filter.locked.instance', defaultMessage: 'Provided by the instance' },
+	hideAddedServers: { id: 'app.browse.hide-added-servers', defaultMessage: 'Hide already added servers' },
+	installingToServer: { id: 'app.browse.server.installing', defaultMessage: 'Installing' },
+	addServersToInstance: {
+		id: 'app.browse.add-servers-to-instance',
+		defaultMessage: 'Adding server to instance',
+	},
+	addToAnInstance: { id: 'app.browse.add-to-an-instance', defaultMessage: 'Add to an instance' },
+	discoverContent: {
+		id: 'app.browse.discover-content',
+		defaultMessage: 'Discover content',
+	},
+	discoverServers: {
+		id: 'app.browse.discover-servers',
+		defaultMessage: 'Discover servers',
+	},
+	backToInstance: {
+		id: 'app.browse.back-to-instance',
+		defaultMessage: 'Back to instance',
+	},
+	serverInstanceContentWarning: {
+		id: 'app.browse.server-instance-content-warning',
+		defaultMessage:
+			'Adding content can break compatibility when joining the server. Any added content will also be lost when you update the server instance content.',
+	},
+	modpacksProjectType: {
+		id: 'app.browse.project-type.modpacks',
+		defaultMessage: 'Modpacks',
+	},
+	addonsProjectType: {
+		id: 'app.browse.project-type.addons',
+		defaultMessage: 'Add-ons',
+	},
+	resourcePacksProjectType: {
+		id: 'app.browse.project-type.resource-packs',
+		defaultMessage: 'Resource Packs',
+	},
+	worldsProjectType: {
+		id: 'app.browse.project-type.worlds',
+		defaultMessage: 'Worlds',
+	},
+	skinsProjectType: {
+		id: 'app.browse.project-type.skins',
+		defaultMessage: 'Skins',
+	},
+	scriptsProjectType: {
+		id: 'app.browse.project-type.scripts',
+		defaultMessage: 'Scripts',
+	},
+})
 
 const { installingServerProjects, playServerProject, showAddServerToInstanceModal } =
 	injectServerInstall()
@@ -273,13 +375,13 @@ watch(
 
 watchServerContextChanges()
 
-await initInstanceContext()
+await initInstanceContext().catch(handleError)
 
 async function refreshInstalledProjectIds() {
 	if (!route.query.i) return
 
 	if (route.query.from === 'worlds') {
-		const worlds = await get_profile_worlds(route.query.i as string).catch(handleError)
+		const worlds = await get_instance_worlds(route.query.i as string).catch(handleError)
 		if (!worlds) return
 
 		const serverProjectIds = worlds
@@ -469,140 +571,7 @@ window.addEventListener('online', () => {
 	offline.value = false
 })
 
-const messages = defineMessages({
-	catWeaponsArmor: { id: 'app.bedrock.category.weapons-armor', defaultMessage: 'Armor, Tools & Weapons' },
-	catCosmetics: { id: 'app.bedrock.category.cosmetics', defaultMessage: 'Cosmetics' },
-	catDataPacks: { id: 'app.bedrock.category.data-packs', defaultMessage: 'Data Packs' },
-	catFantasy: { id: 'app.bedrock.category.fantasy', defaultMessage: 'Fantasy' },
-	catFood: { id: 'app.bedrock.category.food', defaultMessage: 'Food' },
-	catHorror: { id: 'app.bedrock.category.horror', defaultMessage: 'Horror' },
-	catMagic: { id: 'app.bedrock.category.magic', defaultMessage: 'Magic' },
-	catMaps: { id: 'app.bedrock.category.maps', defaultMessage: 'Maps' },
-	catMobs: { id: 'app.bedrock.category.mobs', defaultMessage: 'Mobs' },
-	catMultiplayer: { id: 'app.bedrock.category.multiplayer', defaultMessage: 'Multiplayer' },
-	catPerformance: { id: 'app.bedrock.category.performance', defaultMessage: 'Performance' },
-	catPlayers: { id: 'app.bedrock.category.players', defaultMessage: 'Players' },
-	catPvp: { id: 'app.bedrock.category.pvp', defaultMessage: 'PvP' },
-	catRealistic: { id: 'app.bedrock.category.realistic', defaultMessage: 'Realistic' },
-	catRoleplay: { id: 'app.bedrock.category.roleplay', defaultMessage: 'Roleplay' },
-	catSimplistic: { id: 'app.bedrock.category.simplistic', defaultMessage: 'Simplistic' },
-	catSkins: { id: 'app.bedrock.category.skins', defaultMessage: 'Skins' },
-	catSurvival: { id: 'app.bedrock.category.survival', defaultMessage: 'Survival' },
-	catTechnology: { id: 'app.bedrock.category.technology', defaultMessage: 'Technology' },
-	catTextures: { id: 'app.bedrock.category.textures', defaultMessage: 'Textures' },
-	catThemed: { id: 'app.bedrock.category.themed', defaultMessage: 'Themed' },
-	catUtility: { id: 'app.bedrock.category.utility', defaultMessage: 'Utility' },
-	catVanillaPlus: { id: 'app.bedrock.category.vanilla-plus', defaultMessage: 'Vanilla+' },
-	catAdventure: { id: 'app.bedrock.category.adventure', defaultMessage: 'Adventure' },
-	catBuilding: { id: 'app.bedrock.category.building', defaultMessage: 'Building' },
-	catCtm: { id: 'app.bedrock.category.ctm', defaultMessage: 'CTM' },
-	catCustomTerrain: { id: 'app.bedrock.category.custom-terrain', defaultMessage: 'Custom Terrain' },
-	catMinigame: { id: 'app.bedrock.category.minigame', defaultMessage: 'Minigame' },
-	catParkour: { id: 'app.bedrock.category.parkour', defaultMessage: 'Parkour' },
-	catPuzzle: { id: 'app.bedrock.category.puzzle', defaultMessage: 'Puzzle' },
-	catRedstone: { id: 'app.bedrock.category.redstone', defaultMessage: 'Redstone' },
-	catRollerCoaster: { id: 'app.bedrock.category.roller-coaster', defaultMessage: 'Roller Coaster' },
-	catGui: { id: 'app.bedrock.category.gui', defaultMessage: 'GUI' },
-	catMiscellaneous: { id: 'app.bedrock.category.miscellaneous', defaultMessage: 'Miscellaneous' },
-	catShaders: { id: 'app.bedrock.category.shaders', defaultMessage: 'Shaders' },
-	cat16x: { id: 'app.bedrock.category.16x', defaultMessage: '16x' },
-	cat32x: { id: 'app.bedrock.category.32x', defaultMessage: '32x' },
-	cat64x: { id: 'app.bedrock.category.64x', defaultMessage: '64x' },
-	cat128x: { id: 'app.bedrock.category.128x', defaultMessage: '128x' },
-	catScripts: { id: 'app.bedrock.category.scripts', defaultMessage: 'Scripts' },
-	catSkinPacks: { id: 'app.bedrock.category.skin-packs', defaultMessage: 'Skin Packs' },
-	catPlayerSkins: { id: 'app.bedrock.category.player-skins', defaultMessage: 'Player Skins' },
-	catMobSkins: { id: 'app.bedrock.category.mob-skins', defaultMessage: 'Mob Skins' },
-	addServersToInstance: {
-		id: 'app.browse.add-servers-to-instance',
-		defaultMessage: 'Adding server to instance',
-	},
-	addToAnInstance: {
-		id: 'app.browse.add-to-an-instance',
-		defaultMessage: 'Add to an instance',
-	},
-	discoverContent: {
-		id: 'app.browse.discover-content',
-		defaultMessage: 'Discover content',
-	},
-	discoverServers: {
-		id: 'app.browse.discover-servers',
-		defaultMessage: 'Discover servers',
-	},
-	environmentProvidedByServer: {
-		id: 'search.filter.locked.server-environment.title',
-		defaultMessage: 'Only client-side mods can be added to the server instance',
-	},
-	gameVersionProvidedByInstance: {
-		id: 'search.filter.locked.instance-game-version.title',
-		defaultMessage: 'Game version is provided by the instance',
-	},
-	gameVersionProvidedByServer: {
-		id: 'search.filter.locked.server-game-version.title',
-		defaultMessage: 'Game version is provided by the server',
-	},
-	hideAddedServers: {
-		id: 'app.browse.hide-added-servers',
-		defaultMessage: 'Hide already added servers',
-	},
-	installingToServer: {
-		id: 'app.browse.server.installing',
-		defaultMessage: 'Installing',
-	},
-	backToInstance: {
-		id: 'app.browse.back-to-instance',
-		defaultMessage: 'Back to instance',
-	},
-	serverInstanceContentWarning: {
-		id: 'app.browse.server-instance-content-warning',
-		defaultMessage:
-			'Adding content can break compatibility when joining the server. Any added content will also be lost when you update the server instance content.',
-	},
-	modLoaderProvidedByInstance: {
-		id: 'search.filter.locked.instance-loader.title',
-		defaultMessage: 'Loader is provided by the instance',
-	},
-	modpacksProjectType: {
-		id: 'app.browse.project-type.modpacks',
-		defaultMessage: 'Modpacks',
-	},
-	modLoaderProvidedByServer: {
-		id: 'search.filter.locked.server-loader.title',
-		defaultMessage: 'Loader is provided by the server',
-	},
-	providedByInstance: {
-		id: 'search.filter.locked.instance',
-		defaultMessage: 'Provided by the instance',
-	},
-	providedByServer: {
-		id: 'search.filter.locked.server',
-		defaultMessage: 'Provided by the server',
-	},
-	syncFilterButton: {
-		id: 'search.filter.locked.instance.sync',
-		defaultMessage: 'Sync with instance',
-	},
-	addonsProjectType: {
-		id: 'app.browse.project-type.addons',
-		defaultMessage: 'Add-ons',
-	},
-	resourcePacksProjectType: {
-		id: 'app.browse.project-type.resource-packs',
-		defaultMessage: 'Resource Packs',
-	},
-	worldsProjectType: {
-		id: 'app.browse.project-type.worlds',
-		defaultMessage: 'Worlds',
-	},
-	skinsProjectType: {
-		id: 'app.browse.project-type.skins',
-		defaultMessage: 'Skins',
-	},
-	scriptsProjectType: {
-		id: 'app.browse.project-type.scripts',
-		defaultMessage: 'Scripts',
-	},
-})
+
 
 const breadcrumbs = useBreadcrumbs()
 const browseTitle = computed(() =>
@@ -1149,6 +1118,7 @@ async function search(requestParams: string) {
 		}
 		const websiteUrl = `https://www.curseforge.com/minecraft/mc-addons/${hit.slug}`
 
+		const mappedCategories = hit.categories?.map((c: any) => c.id?.toString() || c.slug) || []
 		const mapped = {
 			project_id: hit.id.toString(),
 			slug: hit.slug,
@@ -1158,7 +1128,9 @@ async function search(requestParams: string) {
 			description: hit.summary,
 			downloads: hit.downloadCount,
 			icon_url: hit.logo?.thumbnailUrl || hit.logo?.url,
-			categories: hit.categories?.map((c: any) => c.id?.toString() || c.slug),
+			categories: mappedCategories,
+			display_categories: mappedCategories,
+			loaders: ['bedrock'],
 			project_types: [pt],
 			author: authorName,
 			author_details: {
@@ -1184,6 +1156,8 @@ async function search(requestParams: string) {
 		per_page: limit,
 	}
 }
+
+
 
 const isServerFilterContext = computed(() => isServerContext.value || isServerInstance.value)
 
@@ -1260,12 +1234,8 @@ let isUnmounted = false
 let unlistenProfiles: UnlistenFn | null = null
 
 onMounted(() => {
-	profile_listener(async (event: { event: string; profile_path_id: string }) => {
-		if (
-			instance.value &&
-			event.profile_path_id === instance.value.path &&
-			event.event === 'synced'
-		) {
+	instance_listener(async (event: { event: string; instance_id: string }) => {
+		if (instance.value && event.instance_id === instance.value.id && event.event === 'synced') {
 			await refreshInstalledProjectIds()
 			await searchState.refreshSearch()
 		}

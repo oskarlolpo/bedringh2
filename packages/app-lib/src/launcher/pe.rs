@@ -24,6 +24,7 @@ const IMAGE_ORDINAL_FLAG64: u64 = 0x8000000000000000;
 const IMAGE_ORDINAL_FLAG32: u32 = 0x80000000;
 
 const INJECT_SECTION_NAME: &[u8; 8] = b".nimp\0\0\0";
+#[allow(dead_code)]
 const INJECT_SECTION_NAME_STR: &str = ".nimp";
 
 // --- BMCBL 自标记 (用于无需 exe.bak 还原 PE 头) ---
@@ -91,7 +92,9 @@ fn has_inject_section_name(file: &mut File) -> io::Result<bool> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct PatchMarker {
+    #[allow(dead_code)]
     version: u32,
     original_file_len: u64,
     original_header: Vec<u8>,

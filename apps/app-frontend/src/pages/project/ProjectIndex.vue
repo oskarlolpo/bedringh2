@@ -175,7 +175,6 @@
 							</button>
 						</ButtonStyled>
 						<ButtonStyled
-							v-if="!projectInstallContext"
 							circular
 							size="large"
 							:color="isTranslated ? 'brand' : 'standard'"
@@ -384,13 +383,13 @@ import {
 } from '@/helpers/cache.js'
 import { process_listener } from '@/helpers/events'
 import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
-import { get_by_profile_path } from '@/helpers/process'
+import { get_by_instance_id } from '@/helpers/process'
 import {
 	get as getInstance,
 	get_projects as getInstanceProjects,
 	kill,
 	list as listInstances,
-} from '@/helpers/profile'
+} from '@/helpers/instance'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
 import { getServerLatency } from '@/helpers/worlds'
 import { injectContentInstall } from '@/providers/content-install'
@@ -398,7 +397,7 @@ import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
 import { useProjectTranslation } from '@/composables/use-project-translation'
 import { useBreadcrumbs } from '@/store/breadcrumbs'
-import { getServerAddress } from '@/store/install.js'
+import { getServerAddress } from '@/helpers/worlds'
 import { useTheming } from '@/store/state.js'
 
 const { isTranslated, isTranslating, toggleTranslation } = useProjectTranslation()
@@ -625,7 +624,7 @@ async function updateServerPlayState() {
 	const inst = packs.find((p) => p.linked_data?.project_id === data.value.id)
 	if (inst) {
 		serverInstancePath.value = inst.path
-		const processes = await get_by_profile_path(inst.path).catch(() => [])
+		const processes = await get_by_instance_id(inst.id).catch(() => [])
 		serverPlaying.value = Array.isArray(processes) && processes.length > 0
 	} else {
 		serverInstancePath.value = null
