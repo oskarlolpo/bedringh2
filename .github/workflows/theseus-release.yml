@@ -52,6 +52,7 @@ jobs:
           event: push
           branch: ${{ env.VERSION_TAG }}
           name: ${{ env.WINDOWS_X64_BUNDLE_ARTIFACT_NAME }}
+          path: extracted_artifact
           use_unzip: true
 
       - name: Extract app changelog
@@ -66,8 +67,9 @@ jobs:
         run: |
           # Reference: https://tauri.app/plugin/updater/#server-support
           windowsSig=""
-          if [ -f "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/nsis/Modrinth App_${VERSION_TAG#v}_x64-setup.nsis.zip.sig" ]; then
-            windowsSig=$(cat "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/nsis/Modrinth App_${VERSION_TAG#v}_x64-setup.nsis.zip.sig")
+          SIG_FILE=$(find extracted_artifact -type f -name "*.sig" | head -n 1)
+          if [ -n "$SIG_FILE" ]; then
+            windowsSig=$(cat "$SIG_FILE")
           fi
 
           jq -nc \
@@ -96,7 +98,7 @@ jobs:
         run: |
           VERSION="${VERSION_TAG#v}"
 
-          EXE_FILE=$(find "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}" -type f -name "*.exe" | head -n 1)
+          EXE_FILE=$(find extracted_artifact -type f -name "*.exe" | head -n 1)
           if [ -z "$EXE_FILE" ]; then
             echo "::error::Could not find installer exe file"
             exit 1
