@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build-windows:
     name: Build Windows installer
+    permissions:
+      contents: write
     runs-on: windows-latest
 
     steps:
