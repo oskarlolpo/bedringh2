@@ -554,7 +554,7 @@ impl Credentials {
         .fetch(exec)
         .try_fold(DashMap::new(), |acc, x| {
             let uuid = Uuid::parse_str(&x.uuid).unwrap_or_default();
-            let credentials = Self {
+            let mut credentials = Self {
                 offline_profile: MinecraftProfile {
                     id: uuid,
                     name: x.username,
@@ -570,6 +570,7 @@ impl Credentials {
             };
 
             async move {
+                credentials.refresh(exec).await.ok();
                 acc.insert(uuid, credentials);
 
                 Ok(acc)

@@ -1,8 +1,8 @@
-use crate::event::emit::{emit_process, emit_profile};
+use crate::event::emit::{emit_instance, emit_process};
+use crate::event::{InstancePayloadType, ProcessPayloadType};
 #[cfg(feature = "tauri")]
+use crate::State;
 use crate::event::{LogEvent, LogPayload};
-use crate::event::{ProcessPayloadType, ProfilePayloadType};
-use crate::profile;
 use crate::util::io::IOError;
 use crate::util::rpc::RpcServer;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
@@ -18,9 +18,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::sync::LazyLock;
+use std::time::Instant;
 #[cfg(feature = "tauri")]
 use tauri::Emitter;
-
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use uuid::Uuid;
@@ -58,28 +58,54 @@ impl LogRingBuffer {
 static LOG_BUFFERS: LazyLock<DashMap<String, LogRingBuffer>> =
     LazyLock::new(DashMap::new);
 
-pub fn push_log_line(profile_path: &str, line: String) {
+pub fn push_log_line(instance_id: &str, line: String) {
     LOG_BUFFERS
-        .entry(profile_path.to_string())
+        .entry(instance_id.to_string())
         .or_insert_with(LogRingBuffer::new)
         .push(line);
 }
 
-pub fn get_log_buffer(profile_path: &str) -> Vec<String> {
+pub fn get_log_buffer(instance_id: &str) -> Vec<String> {
     LOG_BUFFERS
-        .get(profile_path)
+        .get(instance_id)
         .map(|buf| buf.get_all())
         .unwrap_or_default()
 }
 
-pub fn clear_log_buffer(profile_path: &str) {
-    if let Some(mut buf) = LOG_BUFFERS.get_mut(profile_path) {
+pub fn clear_log_buffer(instance_id: &str) {
+    if let Some(mut buf) = LOG_BUFFERS.get_mut(instance_id) {
         buf.clear();
     }
 }
 
-pub fn remove_log_buffer(profile_path: &str) {
-    LOG_BUFFERS.remove(profile_path);
+pub fn remove_log_buffer(instance_id: &str) {
+    LOG_BUFFERS.remove(instance_id);
+}
+
+/// Emits a legacy (plain-text) log line for an instance: pushes it to the
+/// in-memory ring buffer and forwards it to the frontend via the `log` event.
+/// Used by the Bedrock launcher to report progress to the instance log.
+pub fn emit_legacy_log_pub(instance_id: &str, message: &str) {
+    push_log_line(instance_id, message.to_string());
+
+    #[cfg(feature = "tauri")]
+    {
+        if let Ok(event_state) = crate::EventState::get() {
+            let _ = event_state.app.emit(
+                "log",
+                LogPayload {
+                    instance_id: instance_id.to_string(),
+                    event: LogEvent::Legacy {
+                        message: message.to_string(),
+                    },
+                },
+            );
+        }
+    }
+    #[cfg(not(feature = "tauri"))]
+    {
+        let _ = (instance_id, message);
+    }
 }
 
 pub struct ProcessManager {
@@ -102,7 +128,9 @@ impl ProcessManager {
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_new_process(
         &self,
-        profile_path: &str,
+        instance_id: &str,
+        instance_path: &str,
+        instance_name: &str,
         mut mc_command: Command,
         post_exit_command: Option<String>,
         logs_folder: PathBuf,
@@ -119,11 +147,6 @@ impl ProcessManager {
         mc_command.stderr(std::process::Stdio::piped());
         mc_command.stdin(std::process::Stdio::piped());
 
-        // Restore corrupted worlds from backup if any crash occurred previously
-        let _ = crate::api::bedrock_worlds::verify_and_restore_corrupted_worlds(profile_path).await;
-        // Make an automatic pre-launch backup snapshot of worlds
-        let _ = crate::api::bedrock_worlds::auto_backup_bedrock_worlds(profile_path).await;
-
         let mut mc_proc = mc_command.spawn().map_err(IOError::from)?;
 
         let stdout = mc_proc.stdout.take();
@@ -134,9 +157,12 @@ impl ProcessManager {
             metadata: ProcessMetadata {
                 uuid: Uuid::new_v4(),
                 start_time: Utc::now(),
-                profile_path: profile_path.to_string(),
+                instance_id: instance_id.to_string(),
+                instance_path: instance_path.to_string(),
+                instance_name: instance_name.to_string(),
             },
             child: mc_proc,
+            extra_pids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             rpc_server,
             _keep_alive: keep_alive,
         };
@@ -159,22 +185,7 @@ impl ProcessManager {
 
         let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
 
-        if log_path.exists() {
-            if let Ok(metadata) = std::fs::metadata(&log_path) {
-                if metadata.len() > 0 {
-                    let time = metadata
-                        .modified()
-                        .or_else(|_| metadata.created())
-                        .unwrap_or_else(|_| std::time::SystemTime::now());
-                    let datetime: chrono::DateTime<chrono::Local> = time.into();
-                    let archive_name = format!("{}.log", datetime.format("%Y-%m-%d_%H-%M-%S"));
-                    let archive_path = logs_folder.join(archive_name);
-                    let _ = std::fs::copy(&log_path, archive_path);
-                }
-            }
-        }
-
-        clear_log_buffer(profile_path);
+        clear_log_buffer(instance_id);
 
         {
             let mut log_file = OpenOptions::new()
@@ -192,7 +203,7 @@ impl ProcessManager {
                 now.format("%Y-%m-%d %H:%M:%S")
             )
             .map_err(|e| IOError::with_path(e, &log_path))?;
-            writeln!(log_file, "# Profile: {profile_path} \n")
+            writeln!(log_file, "# Instance: {instance_path} \n")
                 .map_err(|e| IOError::with_path(e, &log_path))?;
             writeln!(log_file).map_err(|e| IOError::with_path(e, &log_path))?;
         }
@@ -200,10 +211,12 @@ impl ProcessManager {
         if let Some(stdout) = stdout {
             let log_path_clone = log_path.clone();
 
-            let profile_path = metadata.profile_path.clone();
+            let instance_id = metadata.instance_id.clone();
+            let instance_path = metadata.instance_path.clone();
             tokio::spawn(async move {
                 Process::process_output(
-                    &profile_path,
+                    &instance_id,
+                    &instance_path,
                     stdout,
                     log_path_clone,
                     xml_logging,
@@ -215,10 +228,12 @@ impl ProcessManager {
         if let Some(stderr) = stderr {
             let log_path_clone = log_path.clone();
 
-            let profile_path = metadata.profile_path.clone();
+            let instance_id = metadata.instance_id.clone();
+            let instance_path = metadata.instance_path.clone();
             tokio::spawn(async move {
                 Process::process_output(
-                    &profile_path,
+                    &instance_id,
+                    &instance_path,
                     stderr,
                     log_path_clone,
                     xml_logging,
@@ -228,7 +243,8 @@ impl ProcessManager {
         }
 
         tokio::spawn(Process::sequential_process_manager(
-            profile_path.to_string(),
+            instance_id.to_string(),
+            instance_path.to_string(),
             post_exit_command,
             metadata.uuid,
         ));
@@ -236,7 +252,7 @@ impl ProcessManager {
         self.processes.insert(process.metadata.uuid, process);
 
         emit_process(
-            profile_path,
+            instance_id,
             metadata.uuid,
             ProcessPayloadType::Launched,
             "Launched Minecraft",
@@ -281,26 +297,32 @@ impl ProcessManager {
 
     pub async fn kill(&self, id: Uuid) -> crate::Result<()> {
         if let Some(mut process) = self.processes.get_mut(&id) {
-            let child_pid = process.child.id();
-            let _ = process.child.kill().await;
-
-            if let Ok(Some(prof)) =
-                crate::api::profile::get(&process.metadata.profile_path).await
+            #[cfg(target_os = "windows")]
             {
-                if prof.loader == crate::state::ModLoader::Bedrock {
-                    #[cfg(target_os = "windows")]
-                    {
-                        use std::os::windows::process::CommandExt;
-                        if let Some(pid) = child_pid {
-                            let pid_str = pid.to_string();
-                            let _ = std::process::Command::new("taskkill")
-                                .creation_flags(0x08000000)
-                                .args(&["/PID", &pid_str, "/F", "/T"])
-                                .status();
-                        }
+                use std::os::windows::process::CommandExt;
+                let extra_pids = {
+                    if let Ok(lock) = process.extra_pids.lock() {
+                        lock.clone()
+                    } else {
+                        Vec::new()
                     }
+                };
+                for pid in extra_pids {
+                    let _ = std::process::Command::new("taskkill")
+                        .creation_flags(0x08000000)
+                        .args(&["/F", "/PID", &pid.to_string()])
+                        .output();
+                }
+
+                if let Some(child_pid) = process.child.id() {
+                    let _ = std::process::Command::new("taskkill")
+                        .creation_flags(0x08000000)
+                        .args(&["/F", "/T", "/PID", &child_pid.to_string()])
+                        .output();
                 }
             }
+
+            let _ = process.child.kill().await;
         }
 
         Ok(())
@@ -314,7 +336,9 @@ impl ProcessManager {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProcessMetadata {
     pub uuid: Uuid,
-    pub profile_path: String,
+    pub instance_id: String,
+    pub instance_path: String,
+    pub instance_name: String,
     pub start_time: DateTime<Utc>,
 }
 
@@ -322,6 +346,7 @@ pub struct ProcessMetadata {
 struct Process {
     metadata: ProcessMetadata,
     child: Child,
+    extra_pids: std::sync::Arc<std::sync::Mutex<Vec<u32>>>,
     _keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>>,
     rpc_server: RpcServer,
 }
@@ -338,7 +363,8 @@ pub struct Log4jEvent {
 
 impl Process {
     async fn process_output<R>(
-        profile_path: &str,
+        instance_id: &str,
+        _instance_path: &str,
         reader: R,
         log_path: impl AsRef<Path>,
         xml_logging: bool,
@@ -464,7 +490,7 @@ impl Process {
                                 }
 
                                 Self::emit_log4j_event(
-                                    profile_path,
+                                    instance_id,
                                     &current_event,
                                 );
                             }
@@ -499,16 +525,16 @@ impl Process {
                                             .unwrap_or("")
                                             .trim();
                                         if let Err(e) = Self::maybe_handle_server_join_logging(
-                                            profile_path,
-                                            &timestamp,
-                                            message,
+											instance_id,
+											&timestamp,
+											message,
                                         ).await {
                                             tracing::error!("Failed to handle server join logging: {e}");
                                         }
                                     }
 
                                     Self::emit_log4j_event(
-                                        profile_path,
+                                        instance_id,
                                         &current_event,
                                     );
                                 }
@@ -535,7 +561,7 @@ impl Process {
                                     e
                                 );
                             }
-                            emit_legacy_log(profile_path, &text);
+                            Self::emit_legacy_log(instance_id, &text);
                         }
                     }
                     Ok(Event::CData(e)) => {
@@ -562,9 +588,9 @@ impl Process {
                     if let Err(e) = Self::append_to_log_file(&log_path, &line) {
                         tracing::warn!("Failed to write to log file: {}", e);
                     }
-                    emit_legacy_log(profile_path, line.trim_ascii_end());
+                    Self::emit_legacy_log(instance_id, line.trim_ascii_end());
                     if let Err(e) = Self::maybe_handle_old_server_join_logging(
-                        profile_path,
+                        instance_id,
                         line.trim_ascii_end(),
                     )
                     .await
@@ -621,13 +647,13 @@ impl Process {
         ))
     }
 
-    fn emit_log4j_event(profile_path: &str, event: &Log4jEvent) {
+    fn emit_log4j_event(instance_id: &str, event: &Log4jEvent) {
         if let Some(formatted) = Self::format_log4j_entry(event) {
-            push_log_line(profile_path, formatted.trim_end().to_string());
+            push_log_line(instance_id, formatted.trim_end().to_string());
         }
         if let Some(ref throwable) = event.throwable {
             for line in throwable.lines().filter(|l| !l.is_empty()) {
-                push_log_line(profile_path, line.to_string());
+                push_log_line(instance_id, line.to_string());
             }
         }
 
@@ -637,7 +663,7 @@ impl Process {
                 let _ = event_state.app.emit(
                     "log",
                     LogPayload {
-                        profile_path_id: profile_path.to_string(),
+                        instance_id: instance_id.to_string(),
                         event: LogEvent::Log4j(event.clone()),
                     },
                 );
@@ -645,75 +671,57 @@ impl Process {
         }
         #[cfg(not(feature = "tauri"))]
         {
-            let _ = (profile_path, event);
+            let _ = (instance_id, event);
         }
     }
 
-}
+    fn emit_legacy_log(instance_id: &str, message: &str) {
+        push_log_line(instance_id, message.to_string());
 
-fn translate_chinese_logs(msg: &str) -> String {
-    if msg.chars().any(|c| c >= '\u{4e00}' && c <= '\u{9fa5}') {
-        let translated = msg
-            .replace("未通过校验", "Failed verification")
-            .replace("（未解密", "(Not decrypted")
-            .replace("解析）。", "Parsed).")
-            .replace("已安装（保留", "Installed (Retained")
-            .replace("明文", "Plaintext")
-            .replace("校验通过", "Verification passed")
-            .replace("网络", "Network")
-            .replace("初始化", "Initializing")
-            .replace("成功", "Success")
-            .replace("失败", "Failed")
-            .replace("错误", "Error")
-            .replace("加载", "Loading")
-            .replace("完成", "Complete")
-            .replace("注入", "Injecting")
-            .replace("启动", "Starting")
-            .replace("寻找", "Finding")
-            .replace("地址", "Address")
-            .replace("补丁", "Patch")
-            .replace("版本", "Version");
-        return translated;
-    }
-    msg.to_string()
-}
+        if message.contains("Found Bedrock process(es) with PID(s):") {
+            if let Some(idx) = message.find("PID(s):") {
+                let pids_str = message[idx + 7..].to_string();
+                let instance_id_clone = instance_id.to_string();
+                tokio::spawn(async move {
+                    if let Ok(state) = crate::State::get().await {
+                        for proc in state.process_manager.processes.iter_mut() {
+                            if proc.metadata.instance_id == instance_id_clone {
+                                for part in pids_str.split(',') {
+                                    if let Ok(pid) = part.trim().parse::<u32>() {
+                                        if let Ok(mut lock) = proc.extra_pids.lock() {
+                                            if !lock.contains(&pid) {
+                                                lock.push(pid);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
 
-pub fn emit_legacy_log(profile_path: &str, message: &str) {
-    let message_str = translate_chinese_logs(message);
-    let message = &message_str;
-    push_log_line(profile_path, message.to_string());
-
-    if let Some(dirs) = crate::state::DirectoryInfo::global_handle_if_ready() {
-        let logs_folder = dirs.profile_logs_dir(profile_path);
-        let _ = std::fs::create_dir_all(&logs_folder);
-        let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
-        let now = chrono::Local::now();
-        let formatted = format!("[{}] [Bedrock/INFO]: {}\n", now.format("%H:%M:%S"), message);
-        let _ = Process::append_to_log_file(&log_path, &formatted);
-    }
-
-    #[cfg(feature = "tauri")]
-    {
-        if let Ok(event_state) = crate::EventState::get() {
-            use tauri::Emitter;
-            let _ = event_state.app.emit(
-                "log",
-                crate::event::LogPayload {
-                    profile_path_id: profile_path.to_string(),
-                    event: crate::event::LogEvent::Legacy {
-                        message: message.to_string(),
+        #[cfg(feature = "tauri")]
+        {
+            if let Ok(event_state) = crate::EventState::get() {
+                let _ = event_state.app.emit(
+                    "log",
+                    LogPayload {
+                        instance_id: instance_id.to_string(),
+                        event: LogEvent::Legacy {
+                            message: message.to_string(),
+                        },
                     },
-                },
-            );
+                );
+            }
+        }
+        #[cfg(not(feature = "tauri"))]
+        {
+            let _ = (instance_id, message);
         }
     }
-    #[cfg(not(feature = "tauri"))]
-    {
-        let _ = (profile_path, message);
-    }
-}
 
-impl Process {
     fn append_to_log_file(
         path: impl AsRef<Path>,
         line: &str,
@@ -726,7 +734,7 @@ impl Process {
     }
 
     async fn maybe_handle_server_join_logging(
-        profile_path: &str,
+        instance_id: &str,
         timestamp: &str,
         message: &str,
     ) -> crate::Result<()> {
@@ -745,12 +753,12 @@ impl Process {
                     )
                 })
             })?;
-        Self::parse_and_insert_server_join(profile_path, message, timestamp)
+        Self::parse_and_insert_server_join(instance_id, message, timestamp)
             .await
     }
 
     async fn maybe_handle_old_server_join_logging(
-        profile_path: &str,
+        instance_id: &str,
         line: &str,
     ) -> crate::Result<()> {
         if let Some((timestamp, message)) = line.split_once(" [CLIENT] [INFO] ")
@@ -761,16 +769,16 @@ impl Process {
                     .map(|x| x.to_utc())
                     .single()
                     .unwrap_or_else(Utc::now);
-            Self::parse_and_insert_server_join(profile_path, message, timestamp)
+            Self::parse_and_insert_server_join(instance_id, message, timestamp)
                 .await
         } else {
-            Self::parse_and_insert_server_join(profile_path, line, Utc::now())
+            Self::parse_and_insert_server_join(instance_id, line, Utc::now())
                 .await
         }
     }
 
     async fn parse_and_insert_server_join(
-        profile_path: &str,
+        instance_id: &str,
         message: &str,
         timestamp: DateTime<Utc>,
     ) -> crate::Result<()> {
@@ -788,7 +796,7 @@ impl Process {
 
         let state = crate::State::get().await?;
         crate::state::server_join_log::JoinLogEntry {
-            profile_path: profile_path.to_owned(),
+            instance_id: instance_id.to_owned(),
             host: host.to_string(),
             port,
             join_time: timestamp,
@@ -796,12 +804,12 @@ impl Process {
         .upsert(&state.pool)
         .await?;
         {
-            let profile_path = profile_path.to_owned();
+            let instance_id = instance_id.to_owned();
             let host = host.to_owned();
             tokio::spawn(async move {
-                let _ = emit_profile(
-                    &profile_path,
-                    ProfilePayloadType::ServerJoined {
+                let _ = emit_instance(
+                    &instance_id,
+                    InstancePayloadType::ServerJoined {
                         host,
                         port,
                         timestamp,
@@ -818,38 +826,52 @@ impl Process {
     // Also, as the process ends, it spawns the follow-up process if it exists
     // By convention, ExitStatus is last command's exit status, and we exit on the first non-zero exit status
     async fn sequential_process_manager(
-        profile_path: String,
+        instance_id: String,
+        instance_path: String,
         post_exit_command: Option<String>,
         uuid: Uuid,
     ) -> crate::Result<()> {
         async fn update_playtime(
-            last_updated_playtime: &mut DateTime<Utc>,
-            profile_path: &str,
+            last_updated_playtime: &mut Instant,
+            instance_id: &str,
             force_update: bool,
         ) {
-            let diff = Utc::now()
-                .signed_duration_since(*last_updated_playtime)
-                .num_seconds();
-            if diff >= 60 || force_update {
-                if let Err(e) = profile::edit(profile_path, |prof| {
-                    prof.recent_time_played += diff as u64;
-                    async { Ok(()) }
-                })
-                .await
-                {
+            let elapsed = last_updated_playtime.elapsed().as_secs();
+            if elapsed == 0 || (!force_update && elapsed < 60) {
+                return;
+            }
+
+            let state = match crate::State::get().await {
+                Ok(state) => state,
+                Err(e) => {
                     tracing::warn!(
-                        "Failed to update playtime for profile {}: {}",
-                        &profile_path,
+                        "Failed to get state for playtime update on instance {}: {}",
+                        instance_id,
                         e
                     );
+                    return;
                 }
-                *last_updated_playtime = Utc::now();
+            };
+            if let Err(e) =
+                crate::state::instances::commands::add_instance_recent_playtime(
+                    instance_id,
+                    elapsed,
+                    &state.pool,
+                )
+                .await
+            {
+                tracing::warn!(
+                    "Failed to update playtime for instance {}: {}",
+                    instance_id,
+                    e
+                );
             }
+            *last_updated_playtime = Instant::now();
         }
 
         // Wait on current Minecraft Child
         let mc_exit_status;
-        let mut last_updated_playtime = Utc::now();
+        let mut last_updated_playtime = Instant::now();
 
         let state = crate::State::get().await?;
         loop {
@@ -867,13 +889,13 @@ impl Process {
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
             // Auto-update playtime every minute
-            update_playtime(&mut last_updated_playtime, &profile_path, false)
+            update_playtime(&mut last_updated_playtime, &instance_id, false)
                 .await;
         }
 
         state.process_manager.remove(uuid);
         emit_process(
-            &profile_path,
+            &instance_id,
             uuid,
             ProcessPayloadType::Finished,
             "Exited process",
@@ -881,30 +903,28 @@ impl Process {
         .await?;
 
         // Now fully complete- update playtime one last time
-        update_playtime(&mut last_updated_playtime, &profile_path, true).await;
-
-        // Make an automatic post-exit backup snapshot of worlds so the latest
-        // session progress is captured (rotation keeps the newest 10).
-        let backup_profile = profile_path.clone();
-        tokio::spawn(async move {
-            let _ = crate::api::bedrock_worlds::auto_backup_bedrock_worlds(&backup_profile).await;
-        });
+        update_playtime(&mut last_updated_playtime, &instance_id, true).await;
 
         // Publish play time update
         // Allow failure, it will be stored locally and sent next time
         // Sent in another thread as first call may take a couple seconds and hold up process ending
-        let profile = profile_path.clone();
+        let playtime_instance_id = instance_id.clone();
         tokio::spawn(async move {
-            if let Err(e) = profile::try_update_playtime(&profile).await {
+            if let Err(e) =
+                crate::api::instance::try_update_playtime_by_instance_id(
+                    &playtime_instance_id,
+                )
+                .await
+            {
                 tracing::warn!(
-                    "Failed to update playtime for profile {}: {}",
-                    profile,
+                    "Failed to update playtime for instance {}: {}",
+                    playtime_instance_id,
                     e
                 );
             }
         });
 
-        let logs_folder = state.directories.profile_logs_dir(&profile_path);
+        let logs_folder = state.directories.instance_logs_dir(&instance_path);
         let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
 
         if log_path.exists()
@@ -945,7 +965,7 @@ impl Process {
                 if let Some(command) = cmd.next() {
                     let mut command = Command::new(command);
                     command.args(cmd).current_dir(
-                        profile::get_full_path(&profile_path).await?,
+                        state.directories.instances_dir().join(&instance_path),
                     );
                     command.spawn().map_err(IOError::from)?;
                 }

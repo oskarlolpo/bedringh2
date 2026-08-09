@@ -49,6 +49,7 @@ pub async fn get_loader_versions(loader: &str) -> crate::Result<Manifest> {
             game_versions.push(daedalus::modded::Version {
                 id: v.version,
                 stable: !v.is_preview,
+                version_group: None,
                 loaders: vec![daedalus::modded::LoaderVersion {
                     id: "bedrock".to_string(),
                     url: v.identifier,
@@ -56,12 +57,17 @@ pub async fn get_loader_versions(loader: &str) -> crate::Result<Manifest> {
                 }],
             });
         }
-        return Ok(Manifest { game_versions });
+        return Ok(Manifest {
+            game_versions,
+            version_groups: Vec::new(),
+        });
     }
 
     let state = State::get().await?;
+    let cache_key =
+        daedalus::modded::loader_manifest_metadata(loader).cache_key;
     let loaders = match CachedEntry::get_loader_manifest(
-        loader,
+        &cache_key,
         None,
         &state.pool,
         &state.api_semaphore,
@@ -81,7 +87,7 @@ pub async fn get_loader_versions(loader: &str) -> crate::Result<Manifest> {
                 e
             );
             CachedEntry::get_loader_manifest(
-                loader,
+                &cache_key,
                 Some(crate::state::CacheBehaviour::StaleWhileRevalidateSkipOffline),
                 &state.pool,
                 &state.api_semaphore,

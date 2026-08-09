@@ -16,23 +16,54 @@
 			:header="formatMessage(messages.packageDataPackHeader)"
 		>
 			<div class="flex max-w-[35rem] flex-col">
-				<p class="m-0 mb-4">
+				<p class="m-0 mb-6">
 					{{ formatMessage(messages.packageDataPackDescription) }}
 				</p>
-				<label for="package-mod-loaders" class="mb-2 flex flex-col gap-1">
+				<div for="package-mod-loaders" class="mb-2 flex flex-col gap-2.5">
 					<span class="text-lg font-semibold text-contrast">{{
 						formatMessage(messages.modLoadersLabel)
 					}}</span>
+					<MultiSelect
+						id="package-mod-loaders"
+						v-model="packageLoaders"
+						:options="packageLoaderOptions"
+						:searchable="false"
+						:placeholder="formatMessage(messages.modLoadersPlaceholder)"
+					>
+						<template #input-content="{ selectedOptions, isOpen, openDirection }">
+							<div class="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-1.5 pr-1">
+								<template v-if="selectedOptions.length > 0">
+									<span
+										v-for="{ value: loader, label } in selectedOptions"
+										:key="`package-loader-tag-${loader}`"
+										class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-solid bg-surface-4 px-2 py-1 text-sm font-medium transition-all hover:brightness-[110%]"
+										:style="`color: var(--color-platform-${loader})`"
+										@click.stop="packageLoaders = packageLoaders.filter((x) => x !== loader)"
+									>
+										<component
+											:is="getLoaderIcon(loader)"
+											v-if="getLoaderIcon(loader)"
+											class="size-3.5 shrink-0"
+										/>
+										{{ label }}
+										<XIcon aria-hidden="true" class="size-3.5 shrink-0" />
+									</span>
+								</template>
+								<span v-else class="text-base font-medium text-primary opacity-50">
+									{{ formatMessage(messages.modLoadersPlaceholder) }}
+								</span>
+							</div>
+							<ChevronLeftIcon
+								class="ml-2 size-5 shrink-0 text-secondary transition-transform duration-150"
+								:class="
+									isOpen ? (openDirection === 'down' ? 'rotate-90' : '-rotate-90') : '-rotate-90'
+								"
+							/>
+						</template>
+					</MultiSelect>
 					<span>{{ formatMessage(messages.modLoadersDescription) }}</span>
-				</label>
-				<MultiSelect
-					id="package-mod-loaders"
-					v-model="packageLoaders"
-					class="max-w-[20rem]"
-					:options="packageLoaderOptions"
-					:searchable="false"
-					:placeholder="formatMessage(messages.modLoadersPlaceholder)"
-				/>
+				</div>
+
 				<div class="ml-auto mt-4 flex items-center gap-2">
 					<ButtonStyled type="outlined">
 						<button @click="packageModal?.hide()">
@@ -49,6 +80,13 @@
 				</div>
 			</div>
 		</NewModal>
+		<ProjectDownloadModal
+			ref="dependencyDownloadModal"
+			download-reason="dependency"
+			:use-route-hash="false"
+			:update-route-selection="false"
+			@download="emit('onDownload')"
+		/>
 		<div class="flex flex-col">
 			<nuxt-link
 				class="mb-4 flex w-fit items-center gap-2 rounded-lg px-2 py-0.5 pl-0 text-link"
@@ -82,6 +120,7 @@
 				<VersionPage
 					:version="version"
 					:enrichment="enrichment"
+					:enrichment-loading="dependenciesLoading"
 					:members="members"
 					:user-link-creator="(user) => (moderator ? `/user/${user.id}` : undefined)"
 					:dependency-link-creator="createDependencyLink"
@@ -191,7 +230,7 @@
 								</OverflowMenu>
 							</ButtonStyled>
 						</template>
-						<ButtonStyled v-else type="outlined" circular>
+						<ButtonStyled type="outlined" circular>
 							<OverflowMenu
 								v-tooltip="formatMessage(commonMessages.moreOptionsButton)"
 								:options="[
@@ -201,12 +240,38 @@
 										action: () =>
 											auth.user ? reportVersion(version!.id) : navigateTo(signInRouteObj),
 									},
+									{ divider: true, shown: flags.developerMode },
+									{
+										id: 'copy-id',
+										action: () => copyToClipboard(version!.id),
+										shown: flags.developerMode,
+									},
+									{
+										id: 'copy-permalink',
+										action: () =>
+											copyToClipboard(
+												`https://modrinth.com/project/${project.id}/version/${version!.id}`,
+											),
+										shown: flags.developerMode,
+									},
 								]"
 							>
 								<MoreVerticalIcon />
 								<template #report>
 									<ReportIcon aria-hidden="true" />
 									{{ formatMessage(commonMessages.reportButton) }}
+								</template>
+								<template #copy-link>
+									<ReportIcon aria-hidden="true" />
+									{{ formatMessage(commonMessages.reportButton) }}
+								</template>
+								<template #copy-id>
+									<ClipboardCopyIcon aria-hidden="true" />
+									{{ formatMessage(commonMessages.copyIdButton) }}
+								</template>
+								<template #copy-permalink>
+									<ClipboardCopyIcon aria-hidden="true" />
+									{{ formatMessage(commonMessages.copyPermalinkButton) }}
 								</template>
 							</OverflowMenu>
 						</ButtonStyled>
@@ -253,11 +318,25 @@
 					<template #dependencyActions="{ dependency }">
 						<ButtonStyled circular>
 							<nuxt-link
-								v-if="createDependencyLink(dependency)"
-								v-tooltip="
-									formatMessage(dependency.version ? messages.viewVersion : messages.viewProject)
+								v-if="
+									createDependencyLink({
+										project: dependency.project,
+										version: dependency.version ?? getDependencyVersion(dependency.dependency),
+									})
 								"
-								:to="createDependencyLink(dependency)"
+								v-tooltip="
+									formatMessage(
+										(dependency.version ?? getDependencyVersion(dependency.dependency))
+											? messages.viewVersion
+											: messages.viewProject,
+									)
+								"
+								:to="
+									createDependencyLink({
+										project: dependency.project,
+										version: dependency.version ?? getDependencyVersion(dependency.dependency),
+									})
+								"
 								target="_blank"
 							>
 								<ExternalIcon />
@@ -266,37 +345,40 @@
 						<ButtonStyled circular color="brand" color-fill="text">
 							<a
 								v-if="
-									dependency.version && dependency.dependency.dependency_type !== 'incompatible'
+									(dependency.version ?? getDependencyVersion(dependency.dependency)) &&
+									dependency.dependency.dependency_type !== 'incompatible'
 								"
 								v-tooltip="
-									dependencyVersionPrimaryFiles[dependency.version.id]
-										? dependencyVersionPrimaryFiles[dependency.version.id].filename +
-											' (' +
-											formatBytes(dependencyVersionPrimaryFiles[dependency.version.id].size) +
-											')'
-										: formatMessage(messages.noPrimaryFile)
-								"
-								:href="
-									createProjectDownloadUrl(
-										dependencyVersionPrimaryFiles[dependency.version.id].url,
-										{
-											reason: 'dependency',
-										},
+									getDependencyPrimaryFileTooltip(
+										dependency.version ?? getDependencyVersion(dependency.dependency),
 									)
 								"
-								:download="dependencyVersionPrimaryFiles[dependency.version.id].filename"
-								:disabled="dependencyVersionPrimaryFiles[dependency.version.id].url === undefined"
+								:href="
+									getDependencyDownloadUrl(
+										dependency.version ?? getDependencyVersion(dependency.dependency),
+									)
+								"
+								:download="
+									getDependencyPrimaryFile(
+										dependency.version ?? getDependencyVersion(dependency.dependency),
+									)?.filename
+								"
+								:disabled="
+									!getDependencyPrimaryFile(
+										dependency.version ?? getDependencyVersion(dependency.dependency),
+									)?.url
+								"
 							>
 								<DownloadIcon />
 							</a>
-							<a
+							<button
 								v-else-if="dependency.project"
 								v-tooltip="formatMessage(messages.downloadProject)"
-								:href="`/project/${dependency.project.id}#download`"
-								target="_blank"
+								:aria-label="formatMessage(messages.downloadProject)"
+								@click="openDependencyDownloadModal(dependency.project, $event)"
 							>
 								<DownloadIcon />
-							</a>
+							</button>
 						</ButtonStyled>
 					</template>
 				</VersionPage>
@@ -306,7 +388,7 @@
 						projectV3.project_types.includes('mod') ||
 						projectV3.project_types.includes('plugin')
 					"
-					class="flex flex-col overflow-hidden rounded-2xl border-[1px] border-solid border-surface-4 bg-surface-2 p-0"
+					class="mb-4 flex flex-col overflow-hidden rounded-2xl border-[1px] border-solid border-surface-4 bg-surface-2 p-0"
 				>
 					<button
 						class="group m-0 flex w-full min-w-0 appearance-none items-center gap-3 rounded-2xl rounded-b-none bg-surface-3 p-4 text-left outline-offset-[-3px]"
@@ -374,7 +456,7 @@
 				</pre
 				>
 			</template>
-			<template v-else>
+			<template v-else-if="showVersionSkeleton">
 				<div class="flex flex-col gap-4 pb-[30rem]">
 					<div
 						class="mt-4 flex h-[8rem] w-full animate-pulse items-center justify-center rounded-2xl bg-surface-3"
@@ -401,11 +483,13 @@ import type { Labrinth } from '@modrinth/api-client'
 import {
 	BoxIcon,
 	ChevronLeftIcon,
+	ClipboardCopyIcon,
 	CopyIcon,
 	DownloadIcon,
 	DropdownIcon,
 	ExternalIcon,
 	FileIcon,
+	getLoaderIcon,
 	InfoIcon,
 	MoreVerticalIcon,
 	PackageClosedIcon,
@@ -439,10 +523,13 @@ import {
 } from '@modrinth/ui'
 import { isStaff } from '@modrinth/utils'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { onServerPrefetch } from 'vue'
 
 import CreateProjectVersionModal from '~/components/ui/create-project-version/CreateProjectVersionModal.vue'
-import { getSignInRouteObj } from '~/composables/auth.js'
-import { STALE_TIME } from '~/composables/queries/project'
+import ProjectDownloadModal from '~/components/ui/ProjectDownloadModal/index.vue'
+import { getSignInRouteObj } from '~/composables/auth.ts'
+import { projectQueryOptions, STALE_TIME } from '~/composables/queries/project'
+import { versionQueryOptions } from '~/composables/queries/version'
 import { createDataPackVersion } from '~/helpers/package.js'
 import { reportVersion } from '~/utils/report-helpers.ts'
 
@@ -472,6 +559,7 @@ const {
 	versionsLoading,
 	loadVersions,
 	dependencies: contextDependencies,
+	dependenciesLoading,
 	loadDependencies,
 	invalidate,
 	cdnDownloadReason,
@@ -495,26 +583,31 @@ const signInRouteObj = computed(() => getSignInRouteObj(route))
 const versionRouteParam = computed(() => route.params.version as string)
 const isLatestRoute = computed(() => versionRouteParam.value === 'latest')
 
+function filterVersionsForLatestRoute(allVersions: Labrinth.Versions.v3.Version[]) {
+	let filtered = allVersions
+
+	const loaderFilter = route.query.loader
+	if (typeof loaderFilter === 'string') {
+		filtered = filtered.filter((x) => x.loaders.includes(loaderFilter))
+	}
+
+	const gameVersionFilter = route.query.version
+	if (typeof gameVersionFilter === 'string') {
+		filtered = filtered.filter((x) => x.game_versions.includes(gameVersionFilter))
+	}
+
+	return filtered
+}
+
 const latestVersionId = computed(() => {
 	if (!isLatestRoute.value) {
 		return null
 	}
 
-	let allVersions = versions.value ?? []
+	const filtered = filterVersionsForLatestRoute(versions.value ?? [])
+	if (filtered.length === 0) return null
 
-	const loaderFilter = route.query.loader
-	if (typeof loaderFilter === 'string') {
-		allVersions = allVersions.filter((x) => x.loaders.includes(loaderFilter))
-	}
-
-	const gameVersionFilter = route.query.version
-	if (typeof gameVersionFilter === 'string') {
-		allVersions = allVersions.filter((x) => x.game_versions.includes(gameVersionFilter))
-	}
-
-	if (allVersions.length === 0) return null
-
-	return allVersions.reduce((a, b) => (a.date_published > b.date_published ? a : b)).id
+	return filtered.reduce((a, b) => (a.date_published > b.date_published ? a : b)).id
 })
 
 const versionLookupKey = computed(() =>
@@ -525,6 +618,7 @@ const {
 	data: version,
 	refetch: refetchVersion,
 	error: versionError,
+	isPending: versionPending,
 } = useQuery({
 	queryKey: computed(
 		() => ['project', project.value.id, 'version', 'v3', versionLookupKey.value] as const,
@@ -533,6 +627,30 @@ const {
 		client.labrinth.versions_v3.getVersionFromIdOrNumber(project.value.id, versionLookupKey.value!),
 	enabled: computed(() => !!project.value.id && !!versionLookupKey.value),
 	staleTime: STALE_TIME,
+})
+
+const showVersionSkeleton = computed(() => import.meta.client && versionPending.value)
+
+onServerPrefetch(async () => {
+	if (!project.value.id) return
+
+	let lookupKey = versionRouteParam.value
+
+	if (isLatestRoute.value) {
+		loadVersions()
+		const versionsData = await queryClient.ensureQueryData(
+			projectQueryOptions.versionsV3(project.value.id, client),
+		)
+		const filtered = filterVersionsForLatestRoute(versionsData ?? [])
+		if (filtered.length === 0) return
+		lookupKey = filtered.reduce((a, b) => (a.date_published > b.date_published ? a : b)).id
+	}
+
+	if (!lookupKey || lookupKey === 'latest') return
+
+	await queryClient.ensureQueryData(
+		versionQueryOptions.fromProject(project.value.id, lookupKey, client),
+	)
 })
 
 watch(
@@ -564,6 +682,80 @@ watch(
 )
 
 const enrichment = computed(() => contextDependencies.value ?? undefined)
+
+const projectOnlyDependencyProjectIds = computed(() => {
+	const projectIds = new Set<string>()
+	for (const dependency of version.value?.dependencies ?? []) {
+		if (
+			dependency.project_id &&
+			!dependency.version_id &&
+			dependency.dependency_type !== 'incompatible'
+		) {
+			projectIds.add(dependency.project_id)
+		}
+	}
+	return [...projectIds]
+})
+
+const dependencyResolutionLoaders = computed(() => {
+	if (!version.value) return []
+	if (version.value.loaders.includes('mrpack')) {
+		return (version.value.mrpack_loaders ?? []).filter((loader) => loader !== 'minecraft')
+	}
+	return version.value.loaders
+})
+
+const { data: projectOnlyDependencyVersions } = useQuery({
+	queryKey: computed(
+		() =>
+			[
+				'version-page',
+				'project-only-dependency-versions',
+				version.value?.id,
+				version.value?.game_versions ?? [],
+				dependencyResolutionLoaders.value,
+				projectOnlyDependencyProjectIds.value,
+			] as const,
+	),
+	queryFn: async () => {
+		const currentVersion = version.value!
+		const entries = await Promise.all(
+			projectOnlyDependencyProjectIds.value.map(async (projectId) => {
+				let versions: Labrinth.Versions.v2.Version[] = []
+				try {
+					versions = await client.labrinth.versions_v2.getProjectVersions(projectId, {
+						game_versions: currentVersion.game_versions,
+						loaders: dependencyResolutionLoaders.value,
+						include_changelog: false,
+						limit: 100,
+					})
+				} catch {
+					return [projectId, undefined] as const
+				}
+
+				return [
+					projectId,
+					getOnlyCompatibleDependencyVersion(
+						versions,
+						currentVersion.game_versions,
+						dependencyResolutionLoaders.value,
+					),
+				] as const
+			}),
+		)
+
+		const versionsByProjectId: Record<string, Labrinth.Versions.v2.Version> = {}
+		for (const [projectId, dependencyVersion] of entries) {
+			if (dependencyVersion) {
+				versionsByProjectId[projectId] = dependencyVersion
+			}
+		}
+
+		return versionsByProjectId
+	},
+	enabled: computed(() => !!version.value && projectOnlyDependencyProjectIds.value.length > 0),
+	staleTime: STALE_TIME,
+})
 
 const primaryFile = computed(
 	() => version.value?.files?.find((file) => file.primary) ?? version.value?.files?.[0],
@@ -597,6 +789,7 @@ useSeoMeta({
 const editModal = useTemplateRef('editModal')
 const confirmModal = useTemplateRef('confirmModal')
 const packageModal = useTemplateRef('packageModal')
+const dependencyDownloadModal = useTemplateRef('dependencyDownloadModal')
 
 const packageLoaders = ref(['forge', 'fabric', 'quilt', 'neoforge'])
 const packageLoaderOptions = [
@@ -619,12 +812,28 @@ function handleOpenEditVersionModal(versionId: string, projectId: string, stageI
 	editModal.value?.openEditVersionModal(versionId, projectId, stageId)
 }
 
+function openDependencyDownloadModal(
+	dependencyProject: Labrinth.Projects.v2.Project,
+	event: MouseEvent,
+) {
+	const baseGameVersions = new Set(version.value?.game_versions ?? [])
+	const baseLoaders = new Set(dependencyResolutionLoaders.value)
+
+	dependencyDownloadModal.value?.show(event, {
+		projectId: dependencyProject.id,
+		incompatibleGameVersions: dependencyProject.game_versions.filter(
+			(gameVersion) => !baseGameVersions.has(gameVersion),
+		),
+		incompatibleLoaders: dependencyProject.loaders.filter((loader) => !baseLoaders.has(loader)),
+	})
+}
+
 const deleteVersionMutation = useMutation({
 	mutationFn: () => client.labrinth.versions_v3.deleteVersion(version.value!.id),
 	onSuccess: async () => {
 		addNotification({
-			title: 'Version deleted',
-			text: 'The version has been successfully deleted.',
+			title: formatMessage(messages.versionDeletedTitle),
+			text: formatMessage(messages.versionDeletedText),
 			type: 'success',
 		})
 		await invalidate()
@@ -632,7 +841,7 @@ const deleteVersionMutation = useMutation({
 	},
 	onError: (err: { data?: { description?: string } }) => {
 		addNotification({
-			title: 'An error occurred',
+			title: formatMessage(commonMessages.errorNotificationTitle),
 			text: err.data?.description ?? String(err),
 			type: 'error',
 		})
@@ -675,6 +884,7 @@ const createDataPackVersionMutation = useMutation({
 			game_versions: version.value.game_versions,
 			loaders: packageLoaders.value,
 			featured: version.value.featured,
+			environment: 'server_only',
 		}
 
 		const uploadHandle = client.labrinth.versions_v3.createVersion(draftVersion, [{ file }], 'mod')
@@ -684,8 +894,8 @@ const createDataPackVersionMutation = useMutation({
 		packageModal.value?.hide()
 
 		addNotification({
-			title: 'Packaging Success',
-			text: 'Your data pack was successfully packaged as a mod! Make sure to playtest to check for errors.',
+			title: formatMessage(messages.packagingSuccessTitle),
+			text: formatMessage(messages.packagingSuccessText),
 			type: 'success',
 		})
 
@@ -696,7 +906,7 @@ const createDataPackVersionMutation = useMutation({
 	},
 	onError: (err: { data?: { description?: string } }) => {
 		addNotification({
-			title: 'An error occurred',
+			title: formatMessage(commonMessages.errorNotificationTitle),
 			text: err.data?.description ?? String(err),
 			type: 'error',
 		})
@@ -728,6 +938,27 @@ const messages = defineMessages({
 	noPrimaryFile: {
 		id: 'version.download.no-primary-file',
 		defaultMessage: 'Error: No primary file found',
+	},
+	versionDeletedTitle: {
+		id: 'version.notification.deleted-title',
+		defaultMessage: 'Version deleted',
+	},
+	versionDeletedText: {
+		id: 'version.notification.deleted-text',
+		defaultMessage: 'The version has been successfully deleted.',
+	},
+	packagingSuccessTitle: {
+		id: 'version.notification.packaging-success-title',
+		defaultMessage: 'Packaging Success',
+	},
+	packagingSuccessText: {
+		id: 'version.notification.packaging-success-text',
+		defaultMessage:
+			'Your data pack was successfully packaged as a mod! Make sure to playtest to check for errors.',
+	},
+	downloadVersion: {
+		id: 'version.download.version',
+		defaultMessage: 'Download {version} ({size})',
 	},
 	edit: {
 		id: 'version.edit.button',
@@ -779,7 +1010,7 @@ const messages = defineMessages({
 	},
 	downloadProject: {
 		id: 'version.download.download-dependency',
-		defaultMessage: 'Download dependency',
+		defaultMessage: 'Select a version to download',
 	},
 	requiredResourcePack: {
 		id: 'version.download.required-resource-pack',
@@ -795,7 +1026,7 @@ const messages = defineMessages({
 	},
 	packageDataPackHeader: {
 		id: 'version.package-as-mod.header',
-		defaultMessage: 'Packaging data pack as a mod',
+		defaultMessage: 'Package data pack as mod',
 	},
 	packageDataPackDescription: {
 		id: 'version.package-as-mod.description',
@@ -857,19 +1088,85 @@ const copyFileHash = async (
 	file: Labrinth.Versions.v3.VersionFile,
 	method: Labrinth.Versions.v3.FileHashType,
 ) => {
-	await navigator.clipboard.writeText(file.hashes[method])
+	await copyToClipboard(file.hashes[method])
+}
+
+async function copyToClipboard(text: string) {
+	await navigator.clipboard.writeText(text)
 }
 
 const dependencyVersionPrimaryFiles = computed(() => {
-	const versions = enrichment.value?.versions
+	const versions = [
+		...(enrichment.value?.versions ?? []),
+		...Object.values(projectOnlyDependencyVersions.value ?? {}),
+	]
 	const primaryFileMap: Record<string, Labrinth.Versions.v2.VersionFile> = {}
-	versions?.forEach((depVersion) => {
+	versions.forEach((depVersion) => {
 		const depPrimaryFile = depVersion.files.find((file) => file.primary) ?? depVersion.files[0]
 
 		primaryFileMap[depVersion.id] = depPrimaryFile
 	})
 	return primaryFileMap
 })
+
+function getDependencyVersion(dependency: Labrinth.Versions.v3.Dependency) {
+	if (dependency.version_id || !dependency.project_id) {
+		return undefined
+	}
+
+	return projectOnlyDependencyVersions.value?.[dependency.project_id]
+}
+
+function getOnlyCompatibleDependencyVersion(
+	versions: Labrinth.Versions.v2.Version[],
+	gameVersions: string[],
+	loaders: string[],
+) {
+	const compatibleVersions = versions
+		.filter(
+			(version) =>
+				version.game_versions.some((gameVersion) => gameVersions.includes(gameVersion)) &&
+				version.loaders.some((loader) => loaders.includes(loader)),
+		)
+		.slice()
+		.sort((a, b) => new Date(b.date_published).getTime() - new Date(a.date_published).getTime())
+	const targetKeys = new Set(
+		compatibleVersions.flatMap((version) =>
+			version.game_versions.flatMap((gameVersion) =>
+				gameVersions.includes(gameVersion)
+					? version.loaders
+							.filter((loader) => loaders.includes(loader))
+							.map((loader) => `${gameVersion}:${loader}`)
+					: [],
+			),
+		),
+	)
+
+	return targetKeys.size === 1 ? compatibleVersions[0] : undefined
+}
+
+function getDependencyPrimaryFile(version?: Labrinth.Versions.v2.Version) {
+	return version ? dependencyVersionPrimaryFiles.value[version.id] : undefined
+}
+
+function getDependencyPrimaryFileTooltip(version?: Labrinth.Versions.v2.Version) {
+	const dependencyPrimaryFile = getDependencyPrimaryFile(version)
+	return dependencyPrimaryFile
+		? formatMessage(messages.downloadVersion, {
+				version: version?.name || version?.version_number || dependencyPrimaryFile.filename,
+				size: formatBytes(dependencyPrimaryFile.size),
+			})
+		: formatMessage(messages.noPrimaryFile)
+}
+
+function getDependencyDownloadUrl(version?: Labrinth.Versions.v2.Version) {
+	const dependencyPrimaryFile = getDependencyPrimaryFile(version)
+	return dependencyPrimaryFile?.url
+		? createProjectDownloadUrl(dependencyPrimaryFile.url, {
+				reason: 'dependency',
+			})
+		: undefined
+}
 
 function createDependencyLink(context: {
 	project?: Labrinth.Projects.v2.Project

@@ -5,9 +5,9 @@ use crate::database::PgTransaction;
 use crate::database::models::loader_fields::{
     QueryLoaderField, QueryLoaderFieldEnumValue, QueryVersionField,
 };
-use crate::database::redis::RedisPool;
 use crate::file_hosting::FileHost;
 use crate::models::exp;
+use xredis::RedisPool;
 
 use crate::models::projects::{FileType, VersionStatus};
 use crate::queue::file_scan::scan_file;
@@ -19,22 +19,38 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::iter;
 use tracing::error;
 
-pub const VERSIONS_NAMESPACE: &str = "versions";
-const VERSION_FILES_NAMESPACE: &str = "versions_files";
+pub const VERSIONS_NAMESPACE: &str = "versions:v3";
+const VERSION_FILES_NAMESPACE: &str = "versions_files:v3";
 
-pub async fn cleanup_empty_attribution_groups(
+pub async fn cleanup_unused_attribution_files_and_groups(
     transaction: &mut PgTransaction<'_>,
 ) -> Result<(), DatabaseError> {
+    sqlx::query!(
+        "
+        DELETE FROM project_attribution_files paf
+        USING project_attribution_groups pag
+        WHERE pag.id = paf.group_id
+            AND NOT EXISTS (
+            SELECT 1
+            FROM override_file_sources ofs
+            INNER JOIN files f ON f.id = ofs.file_id
+            INNER JOIN versions v ON v.id = f.version_id
+            WHERE ofs.sha1 = paf.sha1
+                AND v.mod_id = pag.project_id
+        )
+        ",
+    )
+    .execute(&mut *transaction)
+    .await?;
+
     sqlx::query!(
         "
         DELETE FROM project_attribution_groups g
         WHERE NOT EXISTS (
             SELECT 1
             FROM project_attribution_files paf
-            INNER JOIN override_file_sources ofs ON ofs.sha1 = paf.sha1
             WHERE paf.group_id = g.id
         )
         ",
@@ -493,7 +509,7 @@ impl DBVersion {
         .execute(&mut *transaction)
         .await?;
 
-        cleanup_empty_attribution_groups(transaction).await?;
+        cleanup_unused_attribution_files_and_groups(transaction).await?;
 
         // Sync dependencies
 
@@ -808,6 +824,18 @@ impl DBVersion {
                     }
                     ).await?;
 
+                let dependency_attributions =
+                    crate::queue::file_scan::get_dependency_attributions(
+                        &mut exec,
+                        &version_ids
+                            .iter()
+                            .copied()
+                            .map(DBVersionId)
+                            .collect_vec(),
+                    )
+                    .await
+                    .unwrap_or_default();
+
                 let res = sqlx::query!(
                     r#"
                     SELECT v.id id, v.mod_id mod_id, v.author_id author_id, v.name version_name, v.version_number version_number,
@@ -832,6 +860,19 @@ impl DBVersion {
                         let hashes = hashes.remove(&version_id).map(|x|x.1).unwrap_or_default();
                         let version_fields = version_fields.remove(&version_id).map(|x|x.1).unwrap_or_default();
                         let dependencies = dependencies.remove(&version_id).map(|x|x.1).unwrap_or_default();
+                        let dependencies = dependencies
+                            .into_iter()
+                            .map(|mut dependency| {
+                                if let Some(attr) = dependency_attributions.get(&dependency.id)
+                                    && (attr.attribution.flame_project.is_some()
+                                        || attr.attribution.resolution.is_some())
+                                {
+                                    dependency.attribution = Some(attr.attribution.clone());
+                                }
+
+                                dependency
+                            })
+                            .collect_vec();
 
                         let loader_fields = loader_fields.iter()
                             .filter(|x| loader_loader_field_ids.contains(&x.id))
@@ -906,7 +947,7 @@ impl DBVersion {
                     })
                     .await?;
 
-                Ok(res)
+                Ok::<_, DatabaseError>(res)
             },
         ).await?;
 
@@ -997,7 +1038,7 @@ impl DBVersion {
                     })
                     .await?;
 
-                Ok(files)
+                Ok::<_, DatabaseError>(files)
             }
         ).await?;
 
@@ -1009,25 +1050,32 @@ impl DBVersion {
         redis: &RedisPool,
     ) -> Result<(), DatabaseError> {
         let mut redis = redis.connect().await?;
+        let mut keys =
+            vec![redis.key().entity(VERSIONS_NAMESPACE, version.inner.id.0)];
+        keys.extend(version.files.iter().flat_map(|file| {
+            file.hashes.iter().map(|(algorithm, hash)| {
+                redis.key().entity(
+                    VERSION_FILES_NAMESPACE,
+                    format!("{algorithm}_{hash}"),
+                )
+            })
+        }));
 
-        redis
-            .delete_many(
-                iter::once((
-                    VERSIONS_NAMESPACE,
-                    Some(version.inner.id.0.to_string()),
-                ))
-                .chain(version.files.iter().flat_map(
-                    |file| {
-                        file.hashes.iter().map(|(algo, hash)| {
-                            (
-                                VERSION_FILES_NAMESPACE,
-                                Some(format!("{algo}_{hash}")),
-                            )
-                        })
-                    },
-                )),
-            )
-            .await?;
+        redis.delete_many(&keys).await?;
+        Ok(())
+    }
+
+    pub async fn clear_cache_ids(
+        version_ids: &[DBVersionId],
+        redis: &RedisPool,
+    ) -> Result<(), DatabaseError> {
+        let mut redis = redis.connect().await?;
+        let keys = version_ids
+            .iter()
+            .map(|id| redis.key().entity(VERSIONS_NAMESPACE, id.0))
+            .collect::<Vec<_>>();
+
+        redis.delete_many(&keys).await?;
         Ok(())
     }
 }

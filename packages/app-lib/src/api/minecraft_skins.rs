@@ -333,16 +333,6 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
         .as_ref()
         .and_then(PendingEffectiveSkinChange::skin);
 
-    let top_custom_skin = if online_profile.is_none() && pending_skin.is_none() && !pending_unequip {
-        if let Ok(mut stream) = CustomMinecraftSkin::get_all(profile_id, &state.pool).await {
-            stream.next().await
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     let fallback_default_skin = get_fallback_default_skin()?;
     let current_skin_texture_key = pending_skin.as_ref().map_or_else(
         || {
@@ -350,8 +340,6 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
                 Arc::clone(&fallback_default_skin.texture_key)
             } else if let Some(current_skin) = current_skin {
                 current_skin.texture_key()
-            } else if let Some(ref top) = top_custom_skin {
-                Arc::from(top.texture_key.as_str())
             } else {
                 Arc::clone(&fallback_default_skin.texture_key)
             }
@@ -364,8 +352,6 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
                 fallback_default_skin.variant
             } else if let Some(current_skin) = current_skin {
                 current_skin.variant
-            } else if let Some(ref top) = top_custom_skin {
-                top.variant
             } else {
                 fallback_default_skin.variant
             }
@@ -377,8 +363,6 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
             None
         } else if current_skin.is_some() {
             current_cape_id
-        } else if let Some(ref top) = top_custom_skin {
-            top.cape_id
         } else {
             None
         },
@@ -444,8 +428,17 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
             continue;
         }
 
-        let is_equipped =
-            !found_equipped_skin && current_skin_sync.is_current_skin;
+        let is_equipped = if !found_equipped_skin {
+            if current_skin_sync.is_current_skin {
+                true
+            } else if current_skin.is_none() && pending_skin.is_none() && !pending_unequip && custom_skins.is_empty() {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
 
         found_equipped_skin |= is_equipped;
 
@@ -593,24 +586,6 @@ async fn add_and_equip_custom_skin_now(
 ) -> crate::Result<()> {
     let state = State::get().await?;
 
-    let is_offline = selected_credentials.access_token == "null"
-        || selected_credentials.access_token.is_empty();
-
-    if is_offline {
-        let profile_id = selected_credentials.offline_profile.id;
-        CustomMinecraftSkin::add(
-            profile_id,
-            local_texture_key,
-            &texture_blob,
-            variant,
-            cape_id,
-            CustomMinecraftSkinInsertPosition::Top,
-            &state.pool,
-        )
-        .await?;
-        return Ok(());
-    }
-
     let previous_profile = selected_credentials
         .online_profile_fresh()
         .await
@@ -733,32 +708,6 @@ async fn equip_skin_now(
     skin: &Skin,
 ) -> crate::Result<()> {
     let state = State::get().await?;
-
-    let is_offline = selected_credentials.access_token == "null"
-        || selected_credentials.access_token.is_empty();
-
-    if is_offline {
-        let profile_id = selected_credentials.offline_profile.id;
-        let texture_blob = png_util::url_to_data_stream(&skin.texture)
-            .await?
-            .try_fold(Vec::new(), |mut texture, chunk| async move {
-                texture.extend_from_slice(&chunk);
-                Ok(texture)
-            })
-            .await?;
-
-        CustomMinecraftSkin::add(
-            profile_id,
-            &skin.texture_key,
-            &texture_blob,
-            skin.variant,
-            skin.cape_id,
-            CustomMinecraftSkinInsertPosition::Top,
-            &state.pool,
-        )
-        .await?;
-        return Ok(());
-    }
 
     let profile = selected_credentials
         .online_profile_fresh()
@@ -1126,10 +1075,12 @@ fn schedule_pending_skin_change_flush(profile_id: Uuid, generation: u64) {
         ))
         .await
         {
-            let _ = crate::event::emit::emit_warning(&format!(
-                "Failed to apply pending Minecraft skin change: {error}"
-            ))
-            .await;
+            if !matches!(&*error.raw, ErrorKind::OnlineMinecraftProfileUnavailable { .. }) {
+                let _ = crate::event::emit::emit_warning(&format!(
+                    "Failed to apply pending Minecraft skin change: {error}"
+                ))
+                .await;
+            }
         }
     });
 }
@@ -1223,6 +1174,12 @@ async fn flush_pending_skin_change_inner(
         };
 
         if let Err(error) = execute_pending_skin_change(&entry.change).await {
+            if matches!(&*error.raw, ErrorKind::OnlineMinecraftProfileUnavailable { .. }) {
+                if filter.is_some() {
+                    return Ok(());
+                }
+                continue;
+            }
             let profile_id = entry.change.profile_id();
             let generation = entry.generation;
             let mut state = PENDING_SKIN_CHANGE.lock().await;

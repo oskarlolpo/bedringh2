@@ -3,7 +3,6 @@ use super::{DBCollectionId, DBReportId, DBThreadId};
 use crate::database::models::charge_item::DBCharge;
 use crate::database::models::user_subscription_item::DBUserSubscription;
 use crate::database::models::{DBOrganizationId, DatabaseError};
-use crate::database::redis::RedisPool;
 use crate::database::{PgTransaction, models};
 use crate::models::billing::ChargeStatus;
 use crate::models::users::Badges;
@@ -15,10 +14,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
+use xredis::RedisPool;
 
-const USERS_NAMESPACE: &str = "users";
-const USER_USERNAMES_NAMESPACE: &str = "users_usernames";
-const USERS_PROJECTS_NAMESPACE: &str = "users_projects";
+const USERS_NAMESPACE: &str = "users:v3";
+const USER_USERNAMES_NAMESPACE: &str = "users_usernames:v3";
+const USERS_PROJECTS_NAMESPACE: &str = "users_projects:v3";
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct DBUser {
@@ -55,6 +55,8 @@ pub struct DBUser {
     pub allow_friend_requests: bool,
 
     pub is_subscribed_to_newsletter: bool,
+
+    pub eligibility_verified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -83,13 +85,15 @@ impl DBUser {
                 avatar_url, raw_avatar_url, bio, created,
                 github_id, discord_id, gitlab_id, google_id, steam_id, microsoft_id,
                 email_verified, password, paypal_id, paypal_country, paypal_email,
-                venmo_handle, stripe_customer_id, allow_friend_requests, is_subscribed_to_newsletter
+                venmo_handle, stripe_customer_id, allow_friend_requests, is_subscribed_to_newsletter,
+                eligibility_verified_at
             )
             VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7,
                 $8, $9, $10, $11, $12, $13,
-                $14, $15, $16, $17, $18, $19, $20, $21, $22
+                $14, $15, $16, $17, $18, $19, $20, $21, $22,
+                $23
             )
             ",
             self.id as DBUserId,
@@ -114,6 +118,7 @@ impl DBUser {
             self.stripe_customer_id,
             self.allow_friend_requests,
             self.is_subscribed_to_newsletter,
+            self.eligibility_verified_at,
         )
         .execute(&mut *transaction)
         .await?;
@@ -209,7 +214,8 @@ impl DBUser {
                         ) AS campaign_pride_26_total_amount_donated_usd,
                         github_id, discord_id, gitlab_id, google_id, steam_id, microsoft_id,
                         email_verified, password, totp_secret, paypal_id, paypal_country, paypal_email,
-                        venmo_handle, stripe_customer_id, allow_friend_requests, is_subscribed_to_newsletter
+                        venmo_handle, stripe_customer_id, allow_friend_requests, is_subscribed_to_newsletter,
+                        eligibility_verified_at
                     FROM users
                     WHERE id = ANY($1) OR LOWER(username) = ANY($2)
                     ",
@@ -259,6 +265,7 @@ impl DBUser {
                             totp_secret: u.totp_secret,
                             allow_friend_requests: u.allow_friend_requests,
                             is_subscribed_to_newsletter: u.is_subscribed_to_newsletter,
+                            eligibility_verified_at: u.eligibility_verified_at,
                         };
 
                         acc.insert(u.id, (Some(u.username), user));
@@ -266,7 +273,7 @@ impl DBUser {
                     })
                     .await?;
 
-                Ok(users)
+                Ok::<_, DatabaseError>(users)
             }).await?;
         Ok(val)
     }
@@ -382,13 +389,10 @@ impl DBUser {
 
         {
             let mut redis = redis.connect().await?;
+            let key = redis.key().entity(USERS_PROJECTS_NAMESPACE, user_id.0);
 
-            let cached_projects = redis
-                .get_deserialized_from_json::<Vec<DBProjectId>>(
-                    USERS_PROJECTS_NAMESPACE,
-                    &user_id.0.to_string(),
-                )
-                .await?;
+            let cached_projects =
+                redis.get_deserialized::<Vec<DBProjectId>>(&key).await?;
 
             if let Some(projects) = cached_projects {
                 return Ok(projects);
@@ -410,15 +414,9 @@ impl DBUser {
         .await?;
 
         let mut redis = redis.connect().await?;
+        let key = redis.key().entity(USERS_PROJECTS_NAMESPACE, user_id.0);
 
-        redis
-            .set_serialized_to_json(
-                USERS_PROJECTS_NAMESPACE,
-                user_id.0,
-                &db_projects,
-                None,
-            )
-            .await?;
+        redis.set_serialized(&key, &db_projects, None).await?;
 
         Ok(db_projects)
     }
@@ -549,18 +547,24 @@ impl DBUser {
         redis: &RedisPool,
     ) -> Result<(), DatabaseError> {
         let mut redis = redis.connect().await?;
-
-        redis
-            .delete_many(user_ids.iter().flat_map(|(id, username)| {
+        let keys = user_ids
+            .iter()
+            .flat_map(|(id, username)| {
                 [
-                    (USERS_NAMESPACE, Some(id.0.to_string())),
-                    (
-                        USER_USERNAMES_NAMESPACE,
-                        username.clone().map(|i| i.to_lowercase()),
-                    ),
+                    Some(redis.key().entity(USERS_NAMESPACE, id.0)),
+                    username.as_ref().map(|username| {
+                        redis.key().entity(
+                            USER_USERNAMES_NAMESPACE,
+                            username.to_lowercase(),
+                        )
+                    }),
                 ]
-            }))
-            .await?;
+                .into_iter()
+                .flatten()
+            })
+            .collect::<Vec<_>>();
+
+        redis.delete_many(&keys).await?;
         Ok(())
     }
 
@@ -569,14 +573,12 @@ impl DBUser {
         redis: &RedisPool,
     ) -> Result<(), DatabaseError> {
         let mut redis = redis.connect().await?;
+        let keys = user_ids
+            .iter()
+            .map(|id| redis.key().entity(USERS_PROJECTS_NAMESPACE, id.0))
+            .collect::<Vec<_>>();
 
-        redis
-            .delete_many(
-                user_ids.iter().map(|id| {
-                    (USERS_PROJECTS_NAMESPACE, Some(id.0.to_string()))
-                }),
-            )
-            .await?;
+        redis.delete_many(&keys).await?;
 
         Ok(())
     }
@@ -623,19 +625,6 @@ impl DBUser {
             .execute(&mut *transaction)
             .await
             .wrap_err("failed to update versions author_id")?;
-
-            sqlx::query!(
-                "
-                UPDATE shared_instances
-                SET owner_id = $1
-                WHERE owner_id = $2
-                ",
-                deleted_user as DBUserId,
-                id as DBUserId,
-            )
-            .execute(&mut *transaction)
-            .await
-            .wrap_err("failed to update shared_instances owner_id")?;
 
             use futures::TryStreamExt;
             let notifications: Vec<i64> = sqlx::query!(
@@ -1001,28 +990,6 @@ impl DBUser {
             .execute(&mut *transaction)
             .await
             .wrap_err("failed to delete oauth_client_authorizations")?;
-
-            sqlx::query!(
-                "
-				DELETE FROM shared_instance_users
-				WHERE user_id = $1
-				",
-                id as DBUserId,
-            )
-            .execute(&mut *transaction)
-            .await
-            .wrap_err("failed to delete shared_instance_users")?;
-
-            sqlx::query!(
-                "
-				DELETE FROM shared_instance_invited_users
-				WHERE invited_user_id = $1
-				",
-                id as DBUserId,
-            )
-            .execute(&mut *transaction)
-            .await
-            .wrap_err("failed to delete shared_instance_invited_users")?;
 
             sqlx::query!(
                 "

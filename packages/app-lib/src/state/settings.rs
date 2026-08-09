@@ -53,7 +53,6 @@ pub struct Settings {
 pub enum FeatureFlag {
     PagePath,
     ProjectBackground,
-    WorldsTab,
     WorldsInHome,
     ServerRamAsBytesAlwaysOn,
     AlwaysShowAppControls,
@@ -63,6 +62,10 @@ pub enum FeatureFlag {
     ServerProjectQa,
     I18nDebug,
     ShowInstancePlayTime,
+    SkipNonEssentialWarnings,
+    AdvancedFiltersCollapsed,
+    AlwaysShowCopyDetails,
+    HideInstalledModpacks,
     BedrockUnlockerGdk,
     BedrockUnlockerUwp,
 }
@@ -103,7 +106,7 @@ impl Settings {
             advanced_rendering: res.advanced_rendering == 1,
             native_decorations: res.native_decorations == 1,
             toggle_sidebar: res.toggle_sidebar == 1,
-            telemetry: false,
+            telemetry: res.telemetry == 1,
             discord_rpc: res.discord_rpc == 1,
             developer_mode: res.developer_mode == 1,
             personalized_ads: res.personalized_ads == 1,
@@ -328,6 +331,7 @@ pub enum Theme {
     Dark,
     Light,
     Oled,
+    Retro,
     System,
 }
 
@@ -337,6 +341,7 @@ impl Theme {
             Theme::Dark => "dark",
             Theme::Light => "light",
             Theme::Oled => "oled",
+            Theme::Retro => "retro",
             Theme::System => "system",
         }
     }
@@ -346,6 +351,7 @@ impl Theme {
             "dark" => Theme::Dark,
             "light" => Theme::Light,
             "oled" => Theme::Oled,
+            "retro" => Theme::Retro,
             "system" => Theme::System,
             _ => Theme::Dark,
         }
@@ -363,7 +369,7 @@ pub struct MemorySettings {
 pub struct WindowSize(pub u16, pub u16);
 
 /// Game initialization hooks
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde_with::serde_as]
 pub struct Hooks {
     #[serde_as(as = "serde_with::NoneAsEmptyString")]

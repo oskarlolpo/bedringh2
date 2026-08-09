@@ -216,7 +216,7 @@ async fn register_pack_in_worlds(com_mojang: &std::path::Path, pack_uuid: &str, 
 }
 
 pub async fn list_bedrock_addons(profile_path: &str) -> Result<Vec<BedrockAddon>> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let base_dir = instance_path.join("com.mojang");
 
     // Auto-migrate any stray pack folders sitting directly in com.mojang
@@ -394,8 +394,30 @@ pub async fn sync_valid_known_packs(com_mojang: &std::path::Path) -> Result<()> 
 
             if let Ok(content) = fs::read_to_string(&manifest_path).await {
                 let cleaned = clean_json_content(&content);
+
+                if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&cleaned) {
+                    let mut patched = false;
+                    if let Some(header) = val.get_mut("header") {
+                        if let Some(min_ver) = header.get("min_engine_version") {
+                            if let Some(arr) = min_ver.as_array() {
+                                let major = arr.get(0).and_then(|v| v.as_u64()).unwrap_or(1);
+                                let minor = arr.get(1).and_then(|v| v.as_u64()).unwrap_or(0);
+                                if major > 1 || (major == 1 && minor > 21) {
+                                    header["min_engine_version"] = serde_json::json!([1, 20, 0]);
+                                    patched = true;
+                                }
+                            }
+                        }
+                    }
+                    if patched {
+                        if let Ok(pretty) = serde_json::to_string_pretty(&val) {
+                            let _ = fs::write(&manifest_path, pretty).await;
+                        }
+                    }
+                }
+
                 if let Ok(manifest) = serde_json::from_str::<BedrockManifest>(&cleaned) {
-                    let rel_path = format!("{}/{}", kind, folder_name);
+                    let rel_path = format!("{}/{}/", kind, folder_name);
                     let ver_vec = parse_version_vec(&manifest.header.version);
                     let version_str = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
 
@@ -405,6 +427,11 @@ pub async fn sync_valid_known_packs(com_mojang: &std::path::Path) -> Result<()> 
                         "uuid": manifest.header.uuid,
                         "version": version_str,
                     }));
+
+                    if *kind != "skin_packs" {
+                        let is_res = *kind == "resource_packs";
+                        register_pack_in_worlds(com_mojang, &manifest.header.uuid, &ver_vec, is_res).await;
+                    }
 
                     if *kind == "resource_packs" {
                         let ver_array = if ver_vec.is_empty() { vec![1, 0, 0] } else { ver_vec };
@@ -440,7 +467,7 @@ fn kind_to_dir(kind: &str) -> &'static str {
 }
 
 pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_name: &str, enable: bool) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let kind_dir = kind_to_dir(kind);
     let com_mojang = instance_path.join("com.mojang");
     let base_dir = com_mojang.join(kind_dir);
@@ -486,7 +513,7 @@ pub async fn set_bedrock_addon_enabled(profile_path: &str, kind: &str, folder_na
 }
 
 pub async fn delete_bedrock_addon(profile_path: &str, kind: &str, folder_name: &str) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let kind_dir = kind_to_dir(kind);
     let com_mojang = instance_path.join("com.mojang");
     let base_dir = com_mojang.join(kind_dir);
@@ -540,7 +567,7 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
         }
     }
 
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let com_mojang = instance_path.join("com.mojang");
 
     // Figure out the "effective root" of the extracted archive - some archives

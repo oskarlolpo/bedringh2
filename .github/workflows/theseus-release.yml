@@ -11,12 +11,11 @@ concurrency:
 jobs:
   release:
     name: Release Modrinth App
-    permissions:
-      contents: write
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      (startsWith(github.event.workflow_run.head_branch, 'v') || startsWith(github.event.workflow_run.head_commit.message, 'v'))
-    runs-on: ubuntu-24.04
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: namespace-profile-medium-amd64
     env:
       VERSION_TAG: ${{ github.event.workflow_run.head_branch }}
       LINUX_X64_BUNDLE_ARTIFACT_NAME: App bundle (x86_64-unknown-linux-gnu)
@@ -26,7 +25,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify ref is a tag
         env:
@@ -64,6 +63,85 @@ jobs:
           LAST_GITHUB_RELEASE_PUBLISHED_AT=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.published_at // ""' 2>/dev/null || true)
           LAST_GITHUB_RELEASE_PUBLISHED_AT="$LAST_GITHUB_RELEASE_PUBLISHED_AT" npx --yes tsx scripts/build-theseus-release-notes.ts
 
+      - name: Generate version manifest
+        run: |
+          # Reference: https://tauri.app/plugin/updater/#server-support
+          jq -nc \
+            --arg versionTag "${VERSION_TAG#v}" \
+            --rawfile releaseNotes release-notes.md \
+            --rawfile macOsAarch64UpdateArtifactSignature "${MACOS_UNIVERSAL_BUNDLE_ARTIFACT_NAME}/universal-apple-darwin/release/bundle/macos/Modrinth App.app.tar.gz.sig" \
+            --rawfile macOsX64UpdateArtifactSignature "${MACOS_UNIVERSAL_BUNDLE_ARTIFACT_NAME}/universal-apple-darwin/release/bundle/macos/Modrinth App.app.tar.gz.sig" \
+            --rawfile linuxX64UpdateArtifactSignature "${LINUX_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/appimage/Modrinth App_${VERSION_TAG#v}_amd64.AppImage.tar.gz.sig" \
+            --rawfile windowsX64UpdateArtifactSignature "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/nsis/Modrinth App_${VERSION_TAG#v}_x64-setup.nsis.zip.sig" \
+          '{
+            "version": $versionTag,
+            "notes": $releaseNotes,
+            "pub_date": now | todateiso8601,
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": $macOsAarch64UpdateArtifactSignature,
+                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/macos/\("Modrinth App.app.tar.gz")",
+                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/macos/\("Modrinth App_" + $versionTag + "_universal.dmg")"]
+              },
+              "darwin-x86_64": {
+                "signature": $macOsX64UpdateArtifactSignature,
+                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/macos/\("Modrinth App.app.tar.gz")",
+                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/macos/\("Modrinth App_" + $versionTag + "_universal.dmg")"]
+              },
+              "linux-x86_64": {
+                "signature": $linuxX64UpdateArtifactSignature,
+                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/linux/\("Modrinth App_" + $versionTag + "_amd64.AppImage.tar.gz")",
+                "install_urls": [
+                  @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/linux/\("Modrinth App_" + $versionTag + "_amd64.deb")",
+                  @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/linux/\("Modrinth App_" + $versionTag + "_amd64.AppImage")",
+                  @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/linux/\("Modrinth App-" + $versionTag + "-1.x86_64.rpm")"
+                ]
+              },
+              "windows-x86_64": {
+                "signature": $windowsX64UpdateArtifactSignature,
+                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Modrinth App_" + $versionTag + "_x64-setup.nsis.zip")",
+                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Modrinth App_" + $versionTag + "_x64-setup.exe")"]
+              }
+            }
+          }' > updates.json
+
+          echo "Generated manifest for version ${VERSION_TAG}:"
+          cat updates.json
+
+      - name: Upload release artifacts
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.LAUNCHER_FILES_BUCKET_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.LAUNCHER_FILES_BUCKET_SECRET_ACCESS_KEY }}
+          AWS_BUCKET: ${{ secrets.LAUNCHER_FILES_BUCKET_NAME }}
+          AWS_REGION: ${{ secrets.LAUNCHER_FILES_BUCKET_REGION }}
+          AWS_ENDPOINT_URL: ${{ secrets.LAUNCHER_FILES_BUCKET_ENDPOINT_URL }}
+          AWS_PAGER: ''
+          # Work around incompatible checksum behavior with some S3-like object storage providers,
+          # such as Cloudflare R2. See:
+          # - https://developers.cloudflare.com/r2/examples/aws/aws-cli/
+          # - https://developers.cloudflare.com/r2/examples/aws/aws-sdk-java/
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          for macosBundleType in 'macos' 'dmg'; do
+            aws s3 cp --recursive \
+              "${MACOS_UNIVERSAL_BUNDLE_ARTIFACT_NAME}/universal-apple-darwin/release/bundle/${macosBundleType}" \
+              "s3://${AWS_BUCKET}/versions/${VERSION_TAG#v}/macos"
+          done
+
+          for linuxBundleType in 'appimage' 'deb' 'rpm'; do
+            aws s3 cp --recursive \
+              "${LINUX_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/${linuxBundleType}" \
+              "s3://${AWS_BUCKET}/versions/${VERSION_TAG#v}/linux"
+          done
+
+          for windowsBundleType in 'nsis'; do
+            aws s3 cp --recursive \
+              "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/${windowsBundleType}" \
+              "s3://${AWS_BUCKET}/versions/${VERSION_TAG#v}/windows"
+          done
+
+          aws s3 cp updates.json "s3://${AWS_BUCKET}"
 
       - name: Create GitHub release
         env:
@@ -71,11 +149,11 @@ jobs:
         run: |
           VERSION="${VERSION_TAG#v}"
 
-          gh release delete "$VERSION_TAG" --cleanup-tag=false -y || true
-
           gh release create "$VERSION_TAG" \
-            --title "Bedringh ${VERSION}" \
+            --title "Modrinth App ${VERSION}" \
             --notes-file release-notes.md \
-            --clobber \
-            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/nsis/Bedringh_${VERSION}_x64-setup.exe" \
-            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/msi/Bedringh_${VERSION}_x64_en-US.msi"
+            "${WINDOWS_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/nsis/Modrinth App_${VERSION}_x64-setup.exe" \
+            "${MACOS_UNIVERSAL_BUNDLE_ARTIFACT_NAME}/universal-apple-darwin/release/bundle/dmg/Modrinth App_${VERSION}_universal.dmg" \
+            "${LINUX_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/appimage/Modrinth App_${VERSION}_amd64.AppImage" \
+            "${LINUX_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/deb/Modrinth App_${VERSION}_amd64.deb" \
+            "${LINUX_X64_BUNDLE_ARTIFACT_NAME}/release/bundle/rpm/Modrinth App-${VERSION}-1.x86_64.rpm"

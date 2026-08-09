@@ -1,10 +1,10 @@
 use crate::data::ModLoader;
+use crate::instance::get_full_path;
 use crate::launcher::get_loader_version_from_profile;
-use crate::profile::get_full_path;
 use crate::server_address::{parse_server_address, resolve_server_address};
 use crate::state::attached_world_data::AttachedWorldData;
 use crate::state::{
-    Profile, ProfileInstallStage, attached_world_data, server_join_log,
+    InstanceInstallStage, attached_world_data, server_join_log,
 };
 use crate::util::protocol_version::OLD_PROTOCOL_VERSIONS;
 pub use crate::util::protocol_version::ProtocolVersion;
@@ -36,8 +36,8 @@ use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use url::Url;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct WorldWithProfile {
-    pub profile: String,
+pub struct WorldWithInstance {
+    pub instance_id: String,
     #[serde(flatten)]
     pub world: World,
 }
@@ -191,33 +191,36 @@ impl From<ServerPackStatus> for Option<bool> {
 pub async fn get_recent_worlds(
     limit: usize,
     display_statuses: EnumSet<DisplayStatus>,
-) -> Result<Vec<WorldWithProfile>> {
+) -> Result<Vec<WorldWithInstance>> {
     let state = State::get().await?;
-    let profiles_dir = state.directories.profiles_dir();
+    let instances_dir = state.directories.instances_dir();
 
-    let mut profiles = Profile::get_all(&state.pool).await?;
-    profiles.sort_by_key(|x| Reverse(x.last_played));
+    let mut instances = crate::state::list_instances(&state.pool).await?;
+    instances.sort_by_key(|x| Reverse(x.instance.last_played));
 
     let mut result = Vec::with_capacity(limit);
 
     let mut least_recent_time = None;
-    for profile in profiles {
-        if result.len() >= limit && profile.last_played < least_recent_time {
+    for instance in instances {
+        if result.len() >= limit
+            && instance.instance.last_played < least_recent_time
+        {
             break;
         }
-        let profile_path = &profile.path;
-        let profile_dir = profiles_dir.join(profile_path);
-        let profile_worlds =
-            get_all_worlds_in_profile(profile_path, &profile_dir).await;
-        if let Err(e) = profile_worlds {
+        let instance_id = &instance.instance.id;
+        let instance_path = &instance.instance.path;
+        let instance_dir = instances_dir.join(instance_path);
+        let instance_worlds =
+            get_all_worlds_in_instance(instance_id, &instance_dir).await;
+        if let Err(e) = instance_worlds {
             tracing::error!(
-                "Failed to get worlds for profile {}: {}",
-                profile_path,
+                "Failed to get worlds for instance {}: {}",
+                instance_id,
                 e
             );
             continue;
         }
-        for world in profile_worlds? {
+        for world in instance_worlds? {
             let is_older = least_recent_time.is_none()
                 || world.last_played < least_recent_time;
             if result.len() >= limit && is_older {
@@ -229,8 +232,8 @@ pub async fn get_recent_worlds(
             if is_older {
                 least_recent_time = world.last_played;
             }
-            result.push(WorldWithProfile {
-                profile: profile_path.clone(),
+            result.push(WorldWithInstance {
+                instance_id: instance_id.clone(),
                 world,
             });
         }
@@ -246,29 +249,58 @@ pub async fn get_recent_worlds(
     Ok(result)
 }
 
-pub async fn get_profile_worlds(profile_path: &str) -> Result<Vec<World>> {
-    get_all_worlds_in_profile(profile_path, &get_full_path(profile_path).await?)
+pub async fn get_instance_worlds(instance_id: &str) -> Result<Vec<World>> {
+    get_all_worlds_in_instance(instance_id, &get_full_path(instance_id).await?)
         .await
 }
 
-async fn get_all_worlds_in_profile(
-    profile_path: &str,
-    profile_dir: &Path,
+async fn resolve_instance_id(instance: &str, state: &State) -> Result<String> {
+    resolve_instance_identity(instance, state)
+        .await
+        .map(|(instance_id, _)| instance_id)
+}
+
+async fn resolve_instance_identity(
+    instance: &str,
+    state: &State,
+) -> Result<(String, String)> {
+    let row = sqlx::query!(
+        "
+		SELECT id, path
+		FROM instances
+		WHERE id = ? OR path = ?
+		ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END
+		LIMIT 1
+		",
+        instance,
+        instance,
+        instance,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| {
+        ErrorKind::InputError(format!(
+            "Unknown instance id or path: {instance}"
+        ))
+        .as_error()
+    })?;
+
+    Ok((row.id, row.path))
+}
+
+async fn get_all_worlds_in_instance(
+    instance_id: &str,
+    instance_dir: &Path,
 ) -> Result<Vec<World>> {
     let mut worlds = vec![];
-    let is_bedrock = crate::api::profile::get(profile_path).await?.map_or(false, |p| p.loader == ModLoader::Bedrock);
+    get_singleplayer_worlds_in_instance(instance_dir, &mut worlds).await?;
+    let state = State::get().await?;
 
-    if is_bedrock {
-        get_bedrock_worlds_in_profile(profile_dir, &mut worlds).await?;
-    } else {
-        get_singleplayer_worlds_in_profile(profile_dir, &mut worlds).await?;
-    }
-    get_server_worlds_in_profile(profile_path, profile_dir, &mut worlds)
+    get_server_worlds_in_instance(instance_id, instance_dir, &mut worlds)
         .await?;
 
-    let state = State::get().await?;
     let attached_data =
-        AttachedWorldData::get_all_for_instance(profile_path, &state.pool)
+        AttachedWorldData::get_all_for_instance(instance_id, &state.pool)
             .await?;
     if !attached_data.is_empty() {
         for world in &mut worlds {
@@ -283,38 +315,7 @@ async fn get_all_worlds_in_profile(
     Ok(worlds)
 }
 
-async fn get_bedrock_worlds_in_profile(
-    instance_dir: &Path,
-    worlds: &mut Vec<World>,
-) -> Result<()> {
-    let saves_dir = instance_dir.join("com.mojang").join("minecraftWorlds");
-    if !saves_dir.exists() {
-        return Ok(());
-    }
-    let mut entries = io::read_dir(&saves_dir).await?;
-    let mut tasks = JoinSet::new();
-    while let Some(world_dir) = entries.next_entry().await? {
-        let world_path = world_dir.path();
-        if !world_path.join("level.dat").exists() {
-            continue;
-        }
-        tasks.spawn(read_bedrock_world(world_path));
-    }
-    while let Some(result) = tasks.join_next().await {
-        match result {
-            Ok(Ok(world)) => worlds.push(world),
-            Ok(Err(e)) => {
-                tracing::warn!("Skipping unreadable bedrock world: {e}");
-            }
-            Err(e) => {
-                tracing::warn!("Bedrock world read task panicked: {e}");
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn get_singleplayer_worlds_in_profile(
+async fn get_singleplayer_worlds_in_instance(
     instance_dir: &Path,
     worlds: &mut Vec<World>,
 ) -> Result<()> {
@@ -351,16 +352,14 @@ pub async fn get_singleplayer_world(
     world: &str,
 ) -> Result<World> {
     let state = State::get().await?;
-    let profile_path = state.directories.profiles_dir().join(instance);
-    let world_dir = get_world_dir(&profile_path, world);
-    let mut world = if world_dir.join("levelname.txt").exists() || world_dir.join("world_icon.jpeg").exists() {
-        read_bedrock_world(world_dir).await?
-    } else {
-        read_singleplayer_world(world_dir).await?
-    };
+    let (instance_id, instance_path) =
+        resolve_instance_identity(instance, &state).await?;
+    let instance_dir = state.directories.instances_dir().join(instance_path);
+    let mut world =
+        read_singleplayer_world(get_world_dir(&instance_dir, world)).await?;
 
     if let Some(data) = AttachedWorldData::get_for_world(
-        instance,
+        &instance_id,
         world.world_type(),
         world.world_id(),
         &state.pool,
@@ -402,7 +401,7 @@ async fn read_singleplayer_world_maybe_locked(
         .to_string();
     let last_played = data.get::<_, i64>("LastPlayed").unwrap_or(0);
     let game_type = data.get::<_, i32>("GameType").unwrap_or(0);
-    let hardcore = data.get::<_, i8>("hardcore").unwrap_or(0) != 0;
+    let hardcore = read_hardcore(data);
 
     let icon = if tokio::fs::try_exists(world_path.join("icon.png"))
         .await
@@ -439,8 +438,16 @@ async fn read_singleplayer_world_maybe_locked(
     })
 }
 
-async fn get_server_worlds_in_profile(
-    profile_path: &str,
+fn read_hardcore(data: &NbtCompound) -> bool {
+    data.get::<_, &NbtCompound>("difficulty_settings")
+        .and_then(|settings| settings.get::<_, i8>("hardcore"))
+        .or_else(|_| data.get::<_, i8>("hardcore"))
+        .unwrap_or(0)
+        != 0
+}
+
+async fn get_server_worlds_in_instance(
+    instance_id: &str,
     instance_dir: &Path,
     worlds: &mut Vec<World>,
 ) -> Result<()> {
@@ -450,7 +457,7 @@ async fn get_server_worlds_in_profile(
     }
 
     let state = State::get().await?;
-    let join_log = server_join_log::get_joins(profile_path, &state.pool)
+    let join_log = server_join_log::get_joins(instance_id, &state.pool)
         .await
         .ok();
 
@@ -508,8 +515,9 @@ pub async fn set_world_display_status(
     display_status: DisplayStatus,
 ) -> Result<()> {
     let state = State::get().await?;
+    let instance_id = resolve_instance_id(instance, &state).await?;
     attached_world_data::set_display_status(
-        instance,
+        &instance_id,
         world_type,
         world_id,
         display_status,
@@ -524,18 +532,12 @@ pub async fn rename_world(
     world: &str,
     new_name: &str,
 ) -> Result<()> {
-    let world_dir = get_world_dir(instance, world);
-    let levelname_txt = world_dir.join("levelname.txt");
-    if levelname_txt.exists() {
-        tokio::fs::write(&levelname_txt, new_name).await?;
-        return Ok(());
-    }
-
-    let level_dat_path = world_dir.join("level.dat");
+    let world = get_world_dir(instance, world);
+    let level_dat_path = world.join("level.dat");
     if !level_dat_path.exists() {
         return Ok(());
     }
-    let _lock = get_world_session_lock(&world_dir).await?;
+    let _lock = get_world_session_lock(&world).await?;
 
     let level_data = io::read(&level_dat_path).await?;
     let (mut root_data, _) = quartz_nbt::io::read_nbt(
@@ -562,11 +564,9 @@ pub async fn rename_world(
 
 pub async fn reset_world_icon(instance: &Path, world: &str) -> Result<()> {
     let world = get_world_dir(instance, world);
-    let icon_png = world.join("icon.png");
-    let icon_jpeg = world.join("world_icon.jpeg");
+    let icon = world.join("icon.png");
     if let Some(_lock) = try_get_world_session_lock(&world).await? {
-        let _ = io::remove_file(icon_png).await;
-        let _ = io::remove_file(icon_jpeg).await;
+        let _ = io::remove_file(icon).await;
     }
     Ok(())
 }
@@ -717,50 +717,7 @@ pub async fn delete_world(instance: &Path, world: &str) -> Result<()> {
 }
 
 fn get_world_dir(instance: &Path, world: &str) -> PathBuf {
-    let bedrock_path = instance.join("com.mojang").join("minecraftWorlds").join(world);
-    if bedrock_path.exists() {
-        bedrock_path
-    } else {
-        instance.join("saves").join(world)
-    }
-}
-
-async fn read_bedrock_world(world_path: PathBuf) -> Result<World> {
-    let levelname_txt = world_path.join("levelname.txt");
-    let name = if levelname_txt.exists() {
-        tokio::fs::read_to_string(&levelname_txt).await.unwrap_or_else(|_| "Unknown World".to_string())
-    } else {
-        world_path.file_name().unwrap().to_string_lossy().into_owned()
-    };
-
-    let icon = if tokio::fs::try_exists(world_path.join("world_icon.jpeg"))
-        .await
-        .unwrap_or(false)
-    {
-        Some(Either::Left(world_path.join("world_icon.jpeg")))
-    } else {
-        None
-    };
-
-    let metadata = tokio::fs::metadata(world_path.join("level.dat")).await.map_err(|e| Error::from(e))?;
-    let modified = metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-
-    Ok(World {
-        name,
-        last_played: Some(chrono::DateTime::from(modified)),
-        icon,
-        display_status: DisplayStatus::Normal,
-        details: WorldDetails::Singleplayer {
-            path: world_path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-            game_mode: SingleplayerGameMode::Survival,
-            hardcore: false,
-            locked: false,
-        },
-    })
+    instance.join("saves").join(world)
 }
 
 async fn get_world_session_lock(world: &Path) -> Result<tokio::fs::File> {
@@ -800,16 +757,19 @@ async fn try_get_world_session_lock(
     Ok(locked.then_some(file))
 }
 
-pub async fn add_server_to_profile(
-    profile_path: &Path,
-    profile_path_id: &str,
+pub async fn add_server_to_instance(
+    instance_id: &str,
     name: String,
     address: String,
     pack_status: ServerPackStatus,
     project_id: Option<String>,
     content_kind: Option<String>,
 ) -> Result<usize> {
-    let mut servers = servers_data::read(profile_path).await?;
+    let state = State::get().await?;
+    let (instance_id, instance_path) =
+        resolve_instance_identity(instance_id, &state).await?;
+    let instance_dir = state.directories.instances_dir().join(instance_path);
+    let mut servers = servers_data::read(&instance_dir).await?;
     let insert_index = servers
         .iter()
         .position(|x| x.hidden)
@@ -824,13 +784,12 @@ pub async fn add_server_to_profile(
             icon: None,
         },
     );
-    servers_data::write(profile_path, &servers).await?;
+    servers_data::write(&instance_dir, &servers).await?;
 
     if project_id.is_some() || content_kind.is_some() {
-        let state = State::get().await?;
         if let Some(project_id) = &project_id {
             attached_world_data::set_project_id(
-                profile_path_id,
+                &instance_id,
                 WorldType::Server,
                 &address,
                 project_id,
@@ -840,7 +799,7 @@ pub async fn add_server_to_profile(
         }
         if let Some(content_kind) = &content_kind {
             attached_world_data::set_content_kind(
-                profile_path_id,
+                &instance_id,
                 WorldType::Server,
                 &address,
                 content_kind,
@@ -853,14 +812,18 @@ pub async fn add_server_to_profile(
     Ok(insert_index)
 }
 
-pub async fn edit_server_in_profile(
-    profile_path: &Path,
+pub async fn edit_server_in_instance(
+    instance_id: &str,
     index: usize,
     name: String,
     address: String,
     pack_status: ServerPackStatus,
 ) -> Result<()> {
-    let mut servers = servers_data::read(profile_path).await?;
+    let state = State::get().await?;
+    let (_, instance_path) =
+        resolve_instance_identity(instance_id, &state).await?;
+    let instance_dir = state.directories.instances_dir().join(instance_path);
+    let mut servers = servers_data::read(&instance_dir).await?;
     let server =
         servers
             .get_mut(index)
@@ -874,15 +837,19 @@ pub async fn edit_server_in_profile(
     server.name = name;
     server.ip = address;
     server.accept_textures = pack_status.into();
-    servers_data::write(profile_path, &servers).await?;
+    servers_data::write(&instance_dir, &servers).await?;
     Ok(())
 }
 
-pub async fn remove_server_from_profile(
-    profile_path: &Path,
+pub async fn remove_server_from_instance(
+    instance_id: &str,
     index: usize,
 ) -> Result<()> {
-    let mut servers = servers_data::read(profile_path).await?;
+    let state = State::get().await?;
+    let (_, instance_path) =
+        resolve_instance_identity(instance_id, &state).await?;
+    let instance_dir = state.directories.instances_dir().join(instance_path);
+    let mut servers = servers_data::read(&instance_dir).await?;
     if servers.get(index).as_ref().is_none_or(|x| x.hidden) {
         return Err(ErrorKind::InputError(format!(
             "No removable server at index {index}"
@@ -890,7 +857,7 @@ pub async fn remove_server_from_profile(
         .into());
     }
     servers.remove(index);
-    servers_data::write(profile_path, &servers).await?;
+    servers_data::write(&instance_dir, &servers).await?;
     Ok(())
 }
 
@@ -955,23 +922,28 @@ mod servers_data {
     }
 }
 
-pub async fn get_profile_protocol_version(
-    profile: &str,
+pub async fn get_instance_protocol_version(
+    instance_id: &str,
 ) -> Result<Option<ProtocolVersion>> {
-    let mut profile = super::profile::get(profile).await?.ok_or_else(|| {
-        ErrorKind::UnmanagedProfileError(format!(
-            "Could not find profile {profile}"
-        ))
-    })?;
-    if profile.install_stage != ProfileInstallStage::Installed {
+    let metadata =
+        crate::api::instance::get(instance_id)
+            .await?
+            .ok_or_else(|| {
+                ErrorKind::InputError(format!(
+                    "Could not find instance {instance_id}"
+                ))
+            })?;
+    if metadata.instance.install_stage != InstanceInstallStage::Installed {
         return Ok(None);
     }
 
-    if let Some(protocol_version) = profile.protocol_version {
+    if let Some(protocol_version) =
+        metadata.applied_content_set.protocol_version
+    {
         return Ok(Some(ProtocolVersion::modern(protocol_version)));
     }
     if let Some(protocol_version) =
-        OLD_PROTOCOL_VERSIONS.get(&profile.game_version)
+        OLD_PROTOCOL_VERSIONS.get(&metadata.applied_content_set.game_version)
     {
         return Ok(Some(*protocol_version));
     }
@@ -979,19 +951,21 @@ pub async fn get_profile_protocol_version(
     let state = State::get().await?;
     let (minecraft, version_index) =
         crate::launcher::resolve_minecraft_manifest(
-            &profile.game_version,
+            &metadata.applied_content_set.game_version,
             &state,
         )
         .await?;
     let version = &minecraft.versions[version_index];
 
     let loader_version = get_loader_version_from_profile(
-        &profile.game_version,
-        profile.loader,
-        profile.loader_version.as_deref(),
+        &metadata.applied_content_set.game_version,
+        metadata.applied_content_set.loader,
+        metadata.applied_content_set.loader_version.as_deref(),
     )
     .await?;
-    if profile.loader != ModLoader::Vanilla && loader_version.is_none() {
+    if metadata.applied_content_set.loader != ModLoader::Vanilla
+        && loader_version.is_none()
+    {
         return Ok(None);
     }
 
@@ -1012,8 +986,12 @@ pub async fn get_profile_protocol_version(
 
     let version = launcher::read_protocol_version_from_jar(client_path).await?;
     if version.is_some() {
-        profile.protocol_version = version;
-        profile.upsert(&state.pool).await?;
+        crate::state::instances::commands::set_applied_content_set_protocol_version(
+            &metadata.instance.id,
+            version,
+            &state.pool,
+        )
+        .await?;
     }
     Ok(version.map(ProtocolVersion::modern))
 }

@@ -27,10 +27,12 @@ pub async fn download_bedrock_package(
     loading_bar: &crate::event::LoadingBarId,
     client: &Client,
     repairing: bool,
+    reporter: Option<&crate::install::InstallProgressReporter>,
+    phase_details: Option<&crate::install::InstallPhaseDetails>,
 ) -> crate::Result<PathBuf> {
     let urls: Vec<&str> = url.split(',').collect();
     if urls.len() == 1 {
-        return download_single_file(url, filename, profile_name, profile_path, loading_bar, client, repairing).await;
+        return download_single_file(url, filename, profile_name, profile_path, loading_bar, client, repairing, reporter, phase_details).await;
     }
 
     let dirs = DirectoryInfo::global_handle_if_ready().ok_or_else(|| {
@@ -62,6 +64,8 @@ pub async fn download_bedrock_package(
             loading_bar,
             client,
             repairing,
+            reporter,
+            phase_details,
         )
         .await?;
 
@@ -110,6 +114,8 @@ pub async fn download_single_file(
     loading_bar: &crate::event::LoadingBarId,
     client: &Client,
     repairing: bool,
+    reporter: Option<&crate::install::InstallProgressReporter>,
+    phase_details: Option<&crate::install::InstallPhaseDetails>,
 ) -> crate::Result<PathBuf> {
     let dirs = DirectoryInfo::global_handle_if_ready().ok_or_else(|| {
         ErrorKind::FSError("App directories not initialized".to_string())
@@ -167,8 +173,8 @@ pub async fn download_single_file(
     let _ = crate::event::emit::edit_loading(
         loading_bar,
         LoadingBarType::MinecraftDownload {
-            profile_name: profile_name.to_string(),
-            profile_path: profile_path.to_string(),
+            instance_id: profile_path.to_string(),
+            instance_name: profile_name.to_string(),
         },
         total_size as f64,
         "Скачивание Bedrock...",
@@ -317,10 +323,27 @@ pub async fn download_single_file(
 
     drop(tx);
 
-    // Process progress updates sequentially in the current task
-    // Since download tasks are spawned, they run concurrently.
+    let mut current_bytes: u64 = state.chunks_completed.len() as u64 * CHUNK_SIZE;
     while let Some(bytes) = rx.recv().await {
-        let _ = emit_loading(loading_bar, bytes, Some("Загрузка пакета..."));
+        let _ = emit_loading(loading_bar, bytes, Some("Downloading Bedrock..."));
+        if bytes > 0.0 {
+            current_bytes = current_bytes.saturating_add(bytes as u64);
+        } else if bytes < 0.0 {
+            current_bytes = current_bytes.saturating_sub((-bytes) as u64);
+        }
+        if let (Some(rep), Some(det)) = (reporter, phase_details) {
+            let _ = rep
+                .update(
+                    crate::install::InstallPhaseId::DownloadingMinecraft,
+                    Some(crate::install::InstallProgress {
+                        current: current_bytes,
+                        total: total_size,
+                        secondary: None,
+                    }),
+                    det.clone(),
+                )
+                .await;
+        }
     }
 
     for task in tasks {

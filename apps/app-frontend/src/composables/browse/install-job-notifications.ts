@@ -384,7 +384,6 @@ export async function useInstallJobNotifications(opts: {
 		}
 		if (
 			job.phase === 'downloading_pack_file' ||
-			job.phase === 'extracting_overrides' ||
 			job.phase === 'downloading_minecraft'
 		) {
 			return 'bytes'

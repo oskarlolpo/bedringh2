@@ -9,8 +9,23 @@ pub async fn extract_bedrock_package(
     loading_bar: &LoadingBarId,
     profile_name: &str,
     profile_path: &str,
+    reporter: Option<&crate::install::InstallProgressReporter>,
+    phase_details: Option<&crate::install::model::InstallPhaseDetails>,
 ) -> crate::Result<()> {
     if target_dir.join("AppxManifest.xml").exists() {
+        if let Some(reporter) = reporter {
+            let _ = reporter
+                .update(
+                    crate::install::model::InstallPhaseId::ExtractingOverrides,
+                    Some(crate::install::model::InstallProgress {
+                        current: 100,
+                        total: 100,
+                        secondary: None,
+                    }),
+                    phase_details.cloned().unwrap_or(crate::install::model::InstallPhaseDetails::Empty),
+                )
+                .await;
+        }
         return Ok(());
     }
 
@@ -19,21 +34,34 @@ pub async fn extract_bedrock_package(
     let _ = edit_loading(
         loading_bar,
         LoadingBarType::MinecraftDownload {
-            profile_name: profile_name.to_string(),
-            profile_path: profile_path.to_string(),
+            instance_id: profile_path.to_string(),
+            instance_name: profile_name.to_string(),
         },
         100.0,
         "Распаковка пакета...",
     )
     .await;
 
+    if let Some(reporter) = reporter {
+        let _ = reporter
+            .update(
+                crate::install::model::InstallPhaseId::ExtractingOverrides,
+                Some(crate::install::model::InstallProgress {
+                    current: 0,
+                    total: 100,
+                    secondary: None,
+                }),
+                phase_details.cloned().unwrap_or(crate::install::model::InstallPhaseDetails::Empty),
+            )
+            .await;
+    }
 
     let ext = package_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let is_msixvc = ext == "msixvc";
     let is_7z = ext == "7z" || ext == "001" || package_path.to_string_lossy().contains(".7z");
 
     if is_7z {
-        extract_7z(package_path, target_dir.clone(), loading_bar).await?;
+        extract_7z(package_path, target_dir.clone(), loading_bar, reporter, phase_details).await?;
         
         // After 7z extraction, the archive might just contain a single msixvc or appx file.
         // If so, we need to extract that inner package too.
@@ -48,7 +76,7 @@ pub async fn extract_bedrock_package(
                         0.0,
                         Some("Распаковка внутреннего GDK пакета..."),
                     );
-                    extract_msixvc(path.clone(), target_dir.clone(), loading_bar).await?;
+                    extract_msixvc(path.clone(), target_dir.clone(), loading_bar, reporter, phase_details).await?;
                     let _ = tokio::fs::remove_file(&path).await;
                 } else if inner_ext == "appx" {
                     let _ = emit_loading(
@@ -56,15 +84,29 @@ pub async fn extract_bedrock_package(
                         0.0,
                         Some("Распаковка внутреннего UWP пакета..."),
                     );
-                    extract_zip(path.clone(), target_dir.clone(), loading_bar).await?;
+                    extract_zip(path.clone(), target_dir.clone(), loading_bar, reporter, phase_details).await?;
                     let _ = tokio::fs::remove_file(&path).await;
                 }
             }
         }
     } else if is_msixvc {
-        extract_msixvc(package_path, target_dir, loading_bar).await?;
+        extract_msixvc(package_path, target_dir, loading_bar, reporter, phase_details).await?;
     } else {
-        extract_zip(package_path, target_dir, loading_bar).await?;
+        extract_zip(package_path, target_dir, loading_bar, reporter, phase_details).await?;
+    }
+
+    if let Some(reporter) = reporter {
+        let _ = reporter
+            .update(
+                crate::install::model::InstallPhaseId::ExtractingOverrides,
+                Some(crate::install::model::InstallProgress {
+                    current: 100,
+                    total: 100,
+                    secondary: None,
+                }),
+                phase_details.cloned().unwrap_or(crate::install::model::InstallPhaseDetails::Empty),
+            )
+            .await;
     }
 
     Ok(())
@@ -74,8 +116,12 @@ async fn extract_zip(
     package_path: PathBuf,
     target_dir: PathBuf,
     loading_bar: &LoadingBarId,
+    reporter: Option<&crate::install::InstallProgressReporter>,
+    phase_details: Option<&crate::install::model::InstallPhaseDetails>,
 ) -> crate::Result<()> {
     let loading_bar = loading_bar.clone();
+    let reporter_cloned = reporter.cloned();
+    let phase_details_cloned = phase_details.cloned().unwrap_or(crate::install::model::InstallPhaseDetails::Empty);
 
     tokio::task::spawn_blocking(move || -> crate::Result<()> {
         let file = std::fs::File::open(&package_path)?;
@@ -116,6 +162,17 @@ async fn extract_zip(
                     inc,
                     Some("Распаковка архива..."),
                 );
+                if let Some(ref reporter) = reporter_cloned {
+                    let _ = tokio::runtime::Handle::current().block_on(reporter.update(
+                        crate::install::model::InstallPhaseId::ExtractingOverrides,
+                        Some(crate::install::model::InstallProgress {
+                            current: pct as u64,
+                            total: 100,
+                            secondary: None,
+                        }),
+                        phase_details_cloned.clone(),
+                    ));
+                }
             }
         }
 
@@ -129,6 +186,8 @@ async fn extract_msixvc(
     package_path: PathBuf,
     target_dir: PathBuf,
     loading_bar: &LoadingBarId,
+    _reporter: Option<&crate::install::InstallProgressReporter>,
+    _phase_details: Option<&crate::install::model::InstallPhaseDetails>,
 ) -> crate::Result<()> {
     let loading_bar = loading_bar.clone();
 
@@ -168,8 +227,12 @@ async fn extract_7z(
     package_path: PathBuf,
     target_dir: PathBuf,
     loading_bar: &LoadingBarId,
+    reporter: Option<&crate::install::InstallProgressReporter>,
+    phase_details: Option<&crate::install::model::InstallPhaseDetails>,
 ) -> crate::Result<()> {
     let loading_bar = loading_bar.clone();
+    let reporter_cloned = reporter.cloned();
+    let phase_details_cloned = phase_details.cloned().unwrap_or(crate::install::model::InstallPhaseDetails::Empty);
 
     tokio::task::spawn_blocking(move || -> crate::Result<()> {
         let _ = emit_loading(
@@ -198,6 +261,17 @@ async fn extract_7z(
                     inc,
                     Some("Распаковка 7z архива..."),
                 );
+                if let Some(ref reporter) = reporter_cloned {
+                    let _ = tokio::runtime::Handle::current().block_on(reporter.update(
+                        crate::install::model::InstallPhaseId::ExtractingOverrides,
+                        Some(crate::install::model::InstallProgress {
+                            current: pct as u64,
+                            total: 100,
+                            secondary: None,
+                        }),
+                        phase_details_cloned.clone(),
+                    ));
+                }
             }
             sevenz_rust::default_entry_extract_fn(entry, reader, dest)
         }).map_err(|e| {
@@ -209,4 +283,3 @@ async fn extract_7z(
     .await
     .map_err(|e| crate::Error::from(ErrorKind::OtherError(format!("Task joined error: {}", e))))?
 }
-

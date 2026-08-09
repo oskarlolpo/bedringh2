@@ -10,14 +10,11 @@ pub use crate::{
 pub async fn get_category_tags() -> crate::Result<Vec<Category>> {
     let state = State::get().await?;
     let categories =
-        match CachedEntry::get_categories(None, &state.pool, &state.api_semaphore).await {
-            Ok(Some(cats)) => cats,
-            Ok(None) => return Err(crate::ErrorKind::NoValueFor("category tags".to_string()).into()),
-            Err(e) => {
-                std::fs::write("C:\\Users\\oskar\\Desktop\\bedr\\bedringh2\\get_categories_err.log", format!("SQL/Cache error: {:?}", e)).ok();
-                return Err(e);
-            }
-        };
+        CachedEntry::get_categories(None, &state.pool, &state.api_semaphore)
+            .await?
+            .ok_or_else(|| {
+                crate::ErrorKind::NoValueFor("category tags".to_string())
+            })?;
 
     Ok(categories)
 }
@@ -41,14 +38,11 @@ pub async fn get_report_type_tags() -> crate::Result<Vec<String>> {
 pub async fn get_loader_tags() -> crate::Result<Vec<Loader>> {
     let state = State::get().await?;
     let loaders =
-        match CachedEntry::get_loaders(None, &state.pool, &state.api_semaphore).await {
-            Ok(Some(l)) => l,
-            Ok(None) => return Err(crate::ErrorKind::NoValueFor("loader tags".to_string()).into()),
-            Err(e) => {
-                std::fs::write("C:\\Users\\oskar\\Desktop\\bedr\\bedringh2\\get_loaders_err.log", format!("SQL/Cache error: {:?}", e)).ok();
-                return Err(e);
-            }
-        };
+        CachedEntry::get_loaders(None, &state.pool, &state.api_semaphore)
+            .await?
+            .ok_or_else(|| {
+                crate::ErrorKind::NoValueFor("loader tags".to_string())
+            })?;
 
     Ok(loaders)
 }

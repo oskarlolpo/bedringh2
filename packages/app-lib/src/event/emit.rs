@@ -1,11 +1,11 @@
 use super::{FriendPayload, LoadingBarId};
 use crate::event::{
-    CommandPayload, EventError, LoadingBar, LoadingBarType, ProcessPayloadType,
-    ProfilePayloadType,
+    CommandPayload, EventError, InstanceBulkUpdateProgressPayload,
+    InstancePayloadType, LoadingBar, LoadingBarType, ProcessPayloadType,
 };
 #[cfg(feature = "tauri")]
 use crate::event::{
-    LoadingPayload, ProcessPayload, ProfilePayload, WarningPayload,
+    InstancePayload, LoadingPayload, ProcessPayload, WarningPayload,
 };
 use futures::prelude::*;
 use serde_json::Value;
@@ -71,7 +71,7 @@ pub async fn init_loading_unsafe(
             message: title.to_string(),
             total,
             current: 0.0,
-            last_sent: -1.0,
+            last_sent: 0.0,
             bar_type,
             #[cfg(feature = "cli")]
             cli_progress_bar: {
@@ -94,21 +94,6 @@ pub async fn init_loading_unsafe(
     Ok(key)
 }
 
-pub async fn init_or_edit_loading(
-    id: Option<LoadingBarId>,
-    bar_type: LoadingBarType,
-    total: f64,
-    title: &str,
-) -> crate::Result<LoadingBarId> {
-    if let Some(id) = id {
-        edit_loading(&id, bar_type, total, title).await?;
-
-        Ok(id)
-    } else {
-        init_loading(bar_type, total, title).await
-    }
-}
-
 // Edits a loading bar's type
 // This also resets the bar's current progress to 0
 pub async fn edit_loading(
@@ -127,7 +112,7 @@ pub async fn edit_loading(
         bar.last_sent = -1.0;
         #[cfg(feature = "cli")]
         {
-            bar.cli_progress_bar.reset(); // indicatif::ProgressBar::new(CLI_PROGRESS_BAR_TOTAL as u64);
+            bar.cli_progress_bar.reset();
         }
     };
 
@@ -220,6 +205,21 @@ pub async fn emit_warning(message: &str) -> crate::Result<()> {
     Ok(())
 }
 
+#[allow(unused_variables)]
+pub async fn emit_instance_bulk_update_progress(
+    payload: InstanceBulkUpdateProgressPayload,
+) -> crate::Result<()> {
+    #[cfg(feature = "tauri")]
+    {
+        let event_state = crate::EventState::get()?;
+        event_state
+            .app
+            .emit("instance_bulk_update_progress", payload)
+            .map_err(EventError::from)?;
+    }
+    Ok(())
+}
+
 // emit_command(CommandPayload::Something { something })
 // ie: installing a pack, opening an .mrpack, etc
 // Generally used for url deep links and file opens that we want to handle in the frontend
@@ -243,7 +243,7 @@ pub async fn emit_command(command: CommandPayload) -> crate::Result<()> {
 // emit_process(uuid, pid, event, message)
 #[allow(unused_variables)]
 pub async fn emit_process(
-    profile_path: &str,
+    instance_id: &str,
     uuid: Uuid,
     event: ProcessPayloadType,
     message: &str,
@@ -256,7 +256,7 @@ pub async fn emit_process(
             .emit(
                 "process",
                 ProcessPayload {
-                    profile_path_id: profile_path.to_string(),
+                    instance_id: instance_id.to_string(),
                     uuid,
                     event,
                     message: message.to_string(),
@@ -267,11 +267,11 @@ pub async fn emit_process(
     Ok(())
 }
 
-// emit_profile(path, event)
+// emit_instance(path, event)
 #[allow(unused_variables)]
-pub async fn emit_profile(
-    profile_path_id: &str,
-    event: ProfilePayloadType,
+pub async fn emit_instance(
+    instance_id: &str,
+    event: InstancePayloadType,
 ) -> crate::Result<()> {
     #[cfg(feature = "tauri")]
     {
@@ -279,9 +279,9 @@ pub async fn emit_profile(
         event_state
             .app
             .emit(
-                "profile",
-                ProfilePayload {
-                    profile_path_id: profile_path_id.to_string(),
+                "instance",
+                InstancePayload {
+                    instance_id: instance_id.to_string(),
                     event,
                 },
             )

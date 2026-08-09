@@ -1,4 +1,4 @@
-use crate::{Result, ErrorKind};
+﻿use crate::{Result, ErrorKind};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::fs;
@@ -16,7 +16,7 @@ pub struct BedrockWorld {
 }
 
 pub async fn list_bedrock_worlds(profile_path: &str) -> Result<Vec<BedrockWorld>> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let worlds_dir = instance_path.join("com.mojang").join("minecraftWorlds");
     
     let mut worlds = Vec::new();
@@ -105,7 +105,7 @@ pub async fn list_bedrock_worlds(profile_path: &str) -> Result<Vec<BedrockWorld>
 }
 
 pub async fn delete_bedrock_world(profile_path: &str, folder_name: &str) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let path = instance_path.join("com.mojang").join("minecraftWorlds").join(folder_name);
     
     if path.exists() && path.is_dir() {
@@ -116,7 +116,7 @@ pub async fn delete_bedrock_world(profile_path: &str, folder_name: &str) -> Resu
 }
 
 pub async fn export_bedrock_world(profile_path: &str, folder_name: &str, out_path: &str) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let world_dir = instance_path.join("com.mojang").join("minecraftWorlds").join(folder_name);
     
     if !world_dir.exists() {
@@ -159,7 +159,7 @@ pub async fn import_bedrock_world(profile_path: &str, archive_path: &str) -> Res
         return Err(ErrorKind::OtherError("Archive not found".into()).into());
     }
     
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let target_uuid = uuid::Uuid::new_v4().to_string();
     let out_dir = instance_path.join("com.mojang").join("minecraftWorlds").join(&target_uuid);
     
@@ -230,7 +230,7 @@ pub struct BedrockWorldBackup {
 /// Stores up to [`MAX_WORLD_BACKUPS`] latest snapshots per world to prevent data
 /// loss from crashes/power loss.
 pub async fn auto_backup_bedrock_worlds(profile_path: &str) -> Result<()> {
-    let instance_path = match crate::api::profile::get_full_path(profile_path).await {
+    let instance_path = match crate::api::instance::get_full_path_by_path(profile_path).await {
         Ok(p) => p,
         Err(_) => return Ok(()),
     };
@@ -289,7 +289,7 @@ pub async fn auto_backup_bedrock_worlds(profile_path: &str) -> Result<()> {
 /// Lists all backup snapshots for every world of the given profile,
 /// newest first. Reads from the `auto_world_backups` directory.
 pub async fn list_bedrock_world_backups(profile_path: &str) -> Result<Vec<BedrockWorldBackup>> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let backups_base_dir = instance_path.join("auto_world_backups");
 
     let mut backups = Vec::new();
@@ -367,7 +367,7 @@ pub async fn restore_bedrock_world_backup(
     folder_name: &str,
     backup_name: &str,
 ) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let backup_path = instance_path
         .join("auto_world_backups")
         .join(folder_name)
@@ -397,7 +397,7 @@ pub async fn delete_bedrock_world_backup(
     folder_name: &str,
     backup_name: &str,
 ) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let backup_path = instance_path
         .join("auto_world_backups")
         .join(folder_name)
@@ -412,7 +412,7 @@ pub async fn delete_bedrock_world_backup(
 /// Manually creates a backup snapshot of a single world (used by the
 /// "Backups" UI button). Applies the same rotation limit.
 pub async fn backup_bedrock_world_now(profile_path: &str, folder_name: &str) -> Result<()> {
-    let instance_path = crate::api::profile::get_full_path(profile_path).await?;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
     let world_path = instance_path
         .join("com.mojang")
         .join("minecraftWorlds")
@@ -454,7 +454,7 @@ pub async fn backup_bedrock_world_now(profile_path: &str, folder_name: &str) -> 
 /// Checks if any Bedrock world was corrupted during a crash (missing db files)
 /// and automatically restores the latest safe backup if available.
 pub async fn verify_and_restore_corrupted_worlds(profile_path: &str) -> Result<()> {
-    let instance_path = match crate::api::profile::get_full_path(profile_path).await {
+    let instance_path = match crate::api::instance::get_full_path_by_path(profile_path).await {
         Ok(p) => p,
         Err(_) => return Ok(()),
     };

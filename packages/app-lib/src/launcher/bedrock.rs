@@ -1,13 +1,12 @@
 use crate::State;
-use crate::api::profile::get_full_path;
+use crate::api::instance::get_full_path_by_path;
 use crate::error::{ErrorKind, Result};
-use crate::state::{ProcessMetadata, Profile};
+use crate::state::{InstanceLaunchContext, ProcessMetadata};
 use std::os::windows::fs::MetadataExt;
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::process::Command;
-use crate::state::emit_legacy_log;
 
 const BEDROCK_UWP_FAMILY: &str = "Microsoft.MinecraftUWP_8wekyb3d8bbwe";
 const BEDROCK_PREVIEW_FAMILY: &str =
@@ -116,7 +115,7 @@ async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::
 }
 
 struct BedrockJunctionGuard {
-    profile_path: String,
+    instance_id: String,
     mojang_dir: PathBuf,
     instance_mojang: PathBuf,
     backup_dir: PathBuf,
@@ -149,42 +148,44 @@ impl Drop for BedrockJunctionGuard {
                 let _ = std::fs::rename(&self.backup_dir, &self.mojang_dir);
             }
         }
-        crate::state::emit_legacy_log(&self.profile_path, "Восстановление оригинальных системных сохранений...");
+        crate::state::emit_legacy_log_pub(&self.instance_id, "Восстановление оригинальных системных сохранений...");
     }
 }
 
-pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
+pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMetadata> {
     let launch_start_time = std::time::Instant::now();
     let state = State::get().await?;
-    let instance_path = get_full_path(&profile.path).await?;
+    let instance = &context.instance;
+    let content_set = &context.applied_content_set;
+    let instance_path = get_full_path_by_path(&instance.path).await?;
     let versions_dir = state
         .directories
         .caches_dir()
         .join("versions")
-        .join(format!("bedrock_{}", profile.game_version));
+        .join(format!("bedrock_{}", content_set.game_version));
 
     let log_metric = |msg: &str| {
         let elapsed = launch_start_time.elapsed().as_secs_f64();
-        emit_legacy_log(&profile.path, &format!("[+{:>6.2}s] [METRICS] {}", elapsed, msg));
+        crate::state::emit_legacy_log_pub(&instance.id, &format!("[+{:>6.2}s] [METRICS] {}", elapsed, msg));
     };
 
-    log_metric(&format!("Initializing Bedrock launch sequence for version '{}'...", profile.game_version));
+    log_metric(&format!("Initializing Bedrock launch sequence for version '{}'...", content_set.game_version));
 
     let is_gdk_unpacked = versions_dir.join("MicrosoftGame.config").exists()
         || versions_dir.join("gdk_config.json").exists()
         || versions_dir.join("Microsoft.GamePackageInfo.xml").exists();
 
     let install_type =
-        if profile.game_version.to_lowercase().contains("preview")
-            || profile.game_version.to_lowercase().contains("beta")
+        if content_set.game_version.to_lowercase().contains("preview")
+            || content_set.game_version.to_lowercase().contains("beta")
         {
-            if is_gdk_unpacked || profile.game_version.to_lowercase().contains("gdk") {
+            if is_gdk_unpacked || content_set.game_version.to_lowercase().contains("gdk") {
                 BedrockInstallationType::GdkPreview
             } else {
                 BedrockInstallationType::UwpPreview
             }
         } else {
-            if is_gdk_unpacked || profile.game_version.to_lowercase().contains("gdk") {
+            if is_gdk_unpacked || content_set.game_version.to_lowercase().contains("gdk") {
                 BedrockInstallationType::Gdk
             } else {
                 BedrockInstallationType::Uwp
@@ -289,7 +290,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         .ok()
         .flatten()
         .map(|cred| cred.offline_profile.name)
-        .unwrap_or_else(|| profile.name.clone());
+        .unwrap_or_else(|| instance.name.clone());
 
     let mcpe_dir = instance_mojang.join("minecraftpe");
     if !mcpe_dir.exists() {
@@ -332,7 +333,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     log_metric("Granting application package access permissions to profile data...");
     let settings_dir = state.directories.settings_dir.clone();
     let config_dir = state.directories.config_dir.clone();
-    let profiles_dir = state.directories.profiles_dir();
+    let profiles_dir = state.directories.instances_dir();
     let instance_path_clone = instance_path.clone();
     let instance_mojang_clone = instance_mojang.clone();
     tokio::spawn(async move {
@@ -469,17 +470,18 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
     let _ = crate::launcher::inject::grant_all_application_packages_access(&mojang_dir).await;
 
     let junction_guard = BedrockJunctionGuard {
-        profile_path: profile.path.clone(),
+        instance_id: instance.id.clone(),
         mojang_dir,
         instance_mojang: instance_mojang.clone(),
         backup_dir: actual_backup_dir,
         is_uwp: install_type.is_uwp(),
     };
 
-    crate::api::profile::edit(&profile.path, |prof| {
-        prof.last_played = Some(chrono::Utc::now());
-        async { Ok(()) }
-    })
+    crate::state::instances::commands::set_instance_last_played(
+        &instance.id,
+        chrono::Utc::now(),
+        &state.pool,
+    )
     .await?;
 
     let main_class_keep_alive = tempfile::tempdir()?;
@@ -500,7 +502,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         // Deploy xgameruntime.dll and Store DLL unconditionally for all launches so Gaming Runtime is available
         let xgameruntime_path = exe_dir.join("xgameruntime.dll");
         if !xgameruntime_path.exists() {
-            emit_legacy_log(&profile.path, "Downloading xgameruntime.dll from GitHub releases...");
+            crate::state::emit_legacy_log_pub(&instance.id, "Downloading xgameruntime.dll from GitHub releases...");
             if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("xgameruntime.dll", &xgameruntime_path).await {
                 tracing::error!("Failed to download xgameruntime.dll: {}", e);
             }
@@ -508,7 +510,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let store_dll_path = exe_dir.join("Windows.ApplicationModel.Store_x64.dll");
         let store_dll_alias = exe_dir.join("Windows.ApplicationModel.Store.dll");
         if !store_dll_path.exists() {
-            emit_legacy_log(&profile.path, "Downloading Windows.ApplicationModel.Store_x64.dll from GitHub releases...");
+            crate::state::emit_legacy_log_pub(&instance.id, "Downloading Windows.ApplicationModel.Store_x64.dll from GitHub releases...");
             if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("Windows.ApplicationModel.Store_x64.dll", &store_dll_path).await {
                 tracing::error!("Failed to download Windows.ApplicationModel.Store_x64.dll: {}", e);
             }
@@ -530,7 +532,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let injector_target_path = exe_dir.join(injector_name);
 
         if !injector_target_path.exists() {
-            emit_legacy_log(&profile.path, "Downloading BLoader.dll from GitHub releases...");
+            crate::state::emit_legacy_log_pub(&instance.id, "Downloading BLoader.dll from GitHub releases...");
             if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll("BLoader.dll", &injector_target_path).await {
                 tracing::error!("Failed to download BLoader.dll: {}", e);
             }
@@ -547,7 +549,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let _ = crate::launcher::inject::grant_all_application_packages_access_multiple(&dll_batch).await;
 
         // Apply permissions required for game to run outside AppContainer
-        emit_legacy_log(&profile.path, "Granting application package access permissions...");
+        crate::state::emit_legacy_log_pub(&instance.id, "Granting application package access permissions...");
         let local_data_root = exe_dir.join("Minecraft Bedrock");
         let _ = crate::launcher::inject::grant_all_application_packages_access(&local_data_root).await;
         let _ = crate::launcher::inject::grant_all_application_packages_access(exe_dir).await;
@@ -558,9 +560,9 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         if crate::launcher::pe::is_file_patched(&exe_path) {
             tracing::info!("PE already patched, skipping.");
-            emit_legacy_log(&profile.path, "Minecraft.Windows.exe is already PE-patched.");
+            crate::state::emit_legacy_log_pub(&instance.id, "Minecraft.Windows.exe is already PE-patched.");
         } else {
-            emit_legacy_log(&profile.path, "Patching Minecraft.Windows.exe PE to load BLoader.dll...");
+            crate::state::emit_legacy_log_pub(&instance.id, "Patching Minecraft.Windows.exe PE to load BLoader.dll...");
             let _ = crate::launcher::pe::restore_original_pe(&exe_path);
             
             if let Ok(metadata) = std::fs::metadata(&exe_path) {
@@ -574,7 +576,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             
             crate::launcher::pe::inject_dll_import(&exe_path, injector_name, None)
                 .map_err(|e| ErrorKind::LauncherError(format!("PE modification failed: {}", e)))?;
-            emit_legacy_log(&profile.path, "PE patching successful.");
+            crate::state::emit_legacy_log_pub(&instance.id, "PE patching successful.");
         }
 
         // Check if Bedrock Unlocker for GDK is enabled in settings
@@ -589,11 +591,11 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let mods_list: Vec<String> = Vec::new();
 
         if gdk_unlocker_enabled {
-            emit_legacy_log(&profile.path, "Applying GDK Unlocker file changes (Enable)...");
+            crate::state::emit_legacy_log_pub(&instance.id, "Applying GDK Unlocker file changes (Enable)...");
             for file_name in &gdk_unlocker_files {
                 let dest = exe_dir.join(file_name);
                 if !dest.exists() {
-                    emit_legacy_log(&profile.path, &format!("Downloading {} from GitHub releases...", file_name));
+                    crate::state::emit_legacy_log_pub(&instance.id, &format!("Downloading {} from GitHub releases...", file_name));
                     if let Err(e) = crate::api::bedrock_preflight::download_fallback_dll(file_name, &dest).await {
                         tracing::warn!("Failed to download GDK unlocker file {}: {}", file_name, e);
                     }
@@ -623,7 +625,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         // Use direct execution to capture stdout/stderr through pipes
         let exe_path_str = exe_path.to_str().unwrap().to_string();
 
-        emit_legacy_log(&profile.path, "Spawning Minecraft.Windows.exe process...");
+        crate::state::emit_legacy_log_pub(&instance.id, "Spawning Minecraft.Windows.exe process...");
         let mut command = Command::new(&exe_path_str);
         if let Some(parent) = exe_path.parent() {
             command.current_dir(parent);
@@ -636,25 +638,25 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
             Box::new(main_class_keep_alive),
             Box::new(junction_guard),
         ];
-        
+
         let process = state
             .process_manager
             .insert_new_process(
-                &profile.path,
+                &instance.id,
+                &instance.path,
+                &instance.name,
                 command,
                 None,
-                state.directories.profile_logs_dir(&profile.path),
+                state.directories.instance_logs_dir(&instance.path),
                 false,
                 keep_alive,
                 rpc_server,
                 async |metadata, _, pid| {
-                    emit_legacy_log(&metadata.profile_path, "Minecraft.Windows.exe successfully launched");
+                    crate::state::emit_legacy_log_pub(&metadata.instance_id, "Minecraft.Windows.exe successfully launched");
                     if gdk_unlocker_enabled {
-                        if let Some(pid) = pid {
-                            #[cfg(target_os = "windows")]
-                            if let Err(e) = crate::launcher::inject::hook_shellexecute_in_process(pid).await {
-                                tracing::warn!("Failed to apply ShellExecuteW in-memory hook to PID {}: {}", pid, e);
-                            }
+                        #[cfg(target_os = "windows")]
+                        if let Err(e) = crate::launcher::inject::hook_shellexecute_in_process(pid.unwrap_or(0)).await {
+                            tracing::warn!("Failed to apply ShellExecuteW in-memory hook to PID {}: {}", pid.unwrap_or(0), e);
                         }
                     }
                     Ok(())
@@ -699,7 +701,7 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         let is_patched = current_size == cracked_size;
 
         if is_patched != uwp_unlocker_enabled {
-            emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: patch state mismatch, requesting elevation...");
+            crate::state::emit_legacy_log_pub(&instance.id, "UWP Bedrock Unlocker: patch state mismatch, requesting elevation...");
 
             let temp_dir = std::env::temp_dir().join("bedrin_uwp_unlocker");
             let _ = std::fs::create_dir_all(temp_dir.join("System32"));
@@ -723,15 +725,15 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
             if let Ok(st) = status {
                 if st.success() {
-                    emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: successfully applied patch.");
+                    crate::state::emit_legacy_log_pub(&instance.id, "UWP Bedrock Unlocker: successfully applied patch.");
                 } else {
-                    emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: UAC prompt declined or script failed. Disabling UWP unlocker.");
+                    crate::state::emit_legacy_log_pub(&instance.id, "UWP Bedrock Unlocker: UAC prompt declined or script failed. Disabling UWP unlocker.");
                     let mut updated_settings = settings.clone();
                     updated_settings.feature_flags.insert(crate::state::FeatureFlag::BedrockUnlockerUwp, false);
                     let _ = updated_settings.update(&state.pool).await;
                 }
             } else {
-                emit_legacy_log(&profile.path, "UWP Bedrock Unlocker: patch process failed to spawn. Disabling UWP unlocker.");
+                crate::state::emit_legacy_log_pub(&instance.id, "UWP Bedrock Unlocker: patch process failed to spawn. Disabling UWP unlocker.");
                 let mut updated_settings = settings.clone();
                 updated_settings.feature_flags.insert(crate::state::FeatureFlag::BedrockUnlockerUwp, false);
                 let _ = updated_settings.update(&state.pool).await;
@@ -739,10 +741,11 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
         }
 
         let launch_target = format!("{}!{}", pfn_to_use, app_id);
-        emit_legacy_log(&profile.path, &format!("Launching UWP via shell:appsFolder\\{}", launch_target));
+        crate::state::emit_legacy_log_pub(&instance.id, &format!("Launching UWP via shell:appsFolder\\{}", launch_target));
 
         let ps_script = format!(
-            "Write-Output 'Starting Bedrock UWP via shell:appsFolder\\{0}'; \
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; \
+            Write-Output 'Starting Bedrock UWP via shell:appsFolder\\{0}'; \
             Start-Process 'shell:appsFolder\\{0}'; \
             $timeout = 60; \
             while ($timeout -gt 0) {{ \
@@ -762,17 +765,24 @@ pub async fn launch_bedrock(profile: &Profile) -> Result<ProcessMetadata> {
 
         let mut command = Command::new("powershell");
         command.args(&["-WindowStyle", "Hidden", "-Command", &ps_script]);
-        emit_legacy_log(&profile.path, &format!("Launching system UWP application: {}", pfn_to_use));
+        crate::state::emit_legacy_log_pub(&instance.id, &format!("Launching system UWP application: {}", pfn_to_use));
+
+        let keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>> = vec![
+            Box::new(main_class_keep_alive),
+            Box::new(junction_guard),
+        ];
 
         let process = state
             .process_manager
             .insert_new_process(
-                &profile.path,
+                &instance.id,
+                &instance.path,
+                &instance.name,
                 command,
                 None,
-                state.directories.profile_logs_dir(&profile.path),
+                state.directories.instance_logs_dir(&instance.path),
                 false,
-                vec![Box::new(main_class_keep_alive), Box::new(junction_guard)],
+                keep_alive,
                 rpc_server,
                 async |_, _, _| Ok(()),
             )

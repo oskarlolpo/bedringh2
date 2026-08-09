@@ -2,13 +2,12 @@ use crate::database;
 use crate::database::PgPool;
 use crate::database::models::ids::DBUserId;
 use crate::database::models::notification_item::NotificationBuilder;
-use crate::database::redis::RedisPool;
 use crate::file_hosting::FileHost;
 use crate::models::notifications::NotificationBody;
 use crate::queue::analytics::cache::cache_analytics;
 use crate::queue::billing::{index_billing, index_subscriptions};
 use crate::queue::email::EmailQueue;
-use crate::queue::file_scan::scan_all_files;
+use crate::queue::file_scan::scan_all_pending_files;
 use crate::queue::payouts::{
     PayoutsQueue, index_payouts_notifications,
     insert_bank_balances_and_webhook, process_affiliate_payouts,
@@ -19,7 +18,8 @@ use crate::util::anrok;
 use actix_web::web;
 use clap::ValueEnum;
 use eyre::WrapErr;
-use tracing::info;
+use tracing::{info, instrument};
+use xredis::RedisPool;
 
 #[derive(ValueEnum, Debug, Copy, Clone, PartialEq, Eq)]
 #[clap(rename_all = "kebab_case")]
@@ -43,13 +43,14 @@ pub enum BackgroundTask {
     /// Finds files of versions which have not been scanned for attributions
     /// yet, extracts them to find file overrides, and finds any overrides which
     /// require attribution from the creator.
-    ScanFiles,
+    ScanPendingFiles,
     /// Queues Discord Creator Club role claim emails for newly eligible users.
     DiscordRoleEmailCampaign,
 }
 
 impl BackgroundTask {
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all, fields(background_task = ?self))]
     pub async fn run(
         self,
         pool: PgPool,
@@ -119,7 +120,14 @@ impl BackgroundTask {
                 )
                 .await
             }
-            ScanFiles => scan_all_files(&pool, &redis_pool, &**file_host).await,
+            ScanPendingFiles => {
+                scan_all_pending_files(
+                    &pool,
+                    &redis_pool,
+                    file_host.into_inner(),
+                )
+                .await
+            }
             DiscordRoleEmailCampaign => {
                 discord_role_email_campaign(pool, redis_pool).await
             }
@@ -169,7 +177,7 @@ pub async fn index_search(
     search_backend: web::Data<dyn SearchBackend>,
 ) -> eyre::Result<()> {
     info!("Indexing local database");
-    search_backend.index_projects(ro_pool, redis_pool).await
+    search_backend.rebuild_index(ro_pool, redis_pool).await
 }
 
 pub async fn release_scheduled(pool: PgPool) -> eyre::Result<()> {
@@ -379,11 +387,11 @@ mod version_updater {
 
     use crate::database::PgPool;
     use crate::database::models::legacy_loader_fields::MinecraftGameVersion;
-    use crate::database::redis::RedisPool;
     use chrono::{DateTime, Utc};
     use serde::Deserialize;
     use thiserror::Error;
     use tracing::warn;
+    use xredis::RedisPool;
 
     #[derive(Deserialize)]
     struct InputFormat<'a> {

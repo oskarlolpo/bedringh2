@@ -1,4 +1,3 @@
-
 use crate::event::emit::{edit_loading, emit_loading};
 use crate::event::{LoadingBarId, LoadingBarType};
 use std::path::Path;
@@ -18,8 +17,8 @@ pub async fn patch_manifest(
     let _ = edit_loading(
         loading_bar,
         LoadingBarType::MinecraftDownload {
-            profile_name: profile_name.to_string(),
-            profile_path: profile_path.to_string(),
+            instance_id: profile_path.to_string(),
+            instance_name: profile_name.to_string(),
         },
         100.0,
         "Патчинг манифеста...",
@@ -44,7 +43,7 @@ pub async fn patch_manifest(
     // Оригинальный Identity Name (Microsoft.MinecraftUWP) необходим для работы интеграции со Store и Xbox.
     tokio::fs::write(&manifest_path, content).await?;
 
-    // Удаляем AppxSignature.p7x, чтобы Windows не ругалась на несовпадение сертификатов 
+    // Удаляем AppxSignature.p7x, чтобы Windows не ругалась на несоответствие сертификатов 
     // при регистрации (HRESULT: 0x80073CFF) в режиме разработчика.
     let signature_path = versions_dir.join("AppxSignature.p7x");
     if signature_path.exists() {
@@ -58,7 +57,7 @@ pub async fn patch_manifest(
 
 pub async fn create_instance_skeleton(profile_path: &str) -> crate::Result<()> {
     let instance_path =
-        crate::api::profile::get_full_path(profile_path).await?;
+        crate::api::instance::get_full_path_by_path(profile_path).await?;
 
     let base_dir = instance_path.join("com.mojang");
     tokio::fs::create_dir_all(&base_dir).await?;

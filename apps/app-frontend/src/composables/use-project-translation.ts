@@ -1,5 +1,4 @@
-import { isRef, ref } from 'vue'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { isRef, ref, triggerRef } from 'vue'
 import i18n from '@/i18n.config'
 
 function targetLanguage(): string {
@@ -26,19 +25,10 @@ export function useProjectTranslation() {
 		const tl = targetLanguage()
 		const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`
 		try {
-			let res: any = null
-			if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-				res = await tauriFetch(url, { headers: TRANSLATE_HEADERS }).catch((e) => {
-					console.error('tauriFetch threw for translate chunk:', e)
-					return null
-				})
-			}
-			if (!res || !res.ok) {
-				res = await fetch(url, { headers: TRANSLATE_HEADERS }).catch((e) => {
-					console.error('browser fetch failed for translate chunk:', e)
-					return null
-				})
-			}
+			const res = await fetch(url, { headers: TRANSLATE_HEADERS }).catch((e) => {
+				console.error('browser fetch failed for translate chunk:', e)
+				return null
+			})
 			if (!res || !res.ok) {
 				console.error('Translation request failed. Final status:', res?.status, res?.statusText)
 				return { text, ok: false }
@@ -118,6 +108,7 @@ export function useProjectTranslation() {
 			}
 			if (isRef(projectRef)) {
 				projectRef.value = restored
+				triggerRef(projectRef)
 			} else {
 				Object.assign(proj, restored)
 			}
@@ -137,7 +128,7 @@ export function useProjectTranslation() {
 				originalDescription.value = proj.description ?? ''
 			}
 			if (originalBody.value === null) {
-				originalBody.value = proj.body || proj.description || ''
+				originalBody.value = proj.body || proj.description || proj.summary || ''
 			}
 
 			const [titleResult, summaryResult, descriptionResult, bodyResult] = await Promise.all([
@@ -165,6 +156,7 @@ export function useProjectTranslation() {
 
 			if (isRef(projectRef)) {
 				projectRef.value = updated
+				triggerRef(projectRef)
 			} else {
 				Object.assign(proj, updated)
 			}
