@@ -6,6 +6,7 @@ and launching Modrinth mod packs
 */
 #![warn(unused_import_braces)]
 #![deny(unused_must_use)]
+#![allow(dead_code, unused_variables, unused_imports, unused_mut)]
 
 #[macro_use]
 mod util;
