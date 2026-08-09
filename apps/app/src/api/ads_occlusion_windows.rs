@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_variables, unused_imports, unused_mut)]
+
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,

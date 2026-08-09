@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 #![recursion_limit = "256"]
+#![allow(dead_code, unused_variables, unused_imports, unused_mut)]
 
 use native_dialog::{DialogBuilder, MessageLevel};
 use std::env;
