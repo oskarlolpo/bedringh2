@@ -1,0 +1,115 @@
+import type { Labrinth } from '@modrinth/api-client'
+import type { RouteLocationRaw } from 'vue-router'
+
+import type { Option as OverflowMenuOption } from '#ui/components/base/OverflowMenu.vue'
+
+export type ContentCardProject = Pick<
+	Labrinth.Projects.v2.Project,
+	'id' | 'slug' | 'title' | 'icon_url'
+>
+
+export type ContentCardVersion = Pick<Labrinth.Versions.v2.Version, 'id' | 'version_number'> & {
+	file_name: string
+	date_published?: string
+}
+
+export interface ContentOwner {
+	id: string
+	name: string
+	avatar_url?: string
+	type: 'user' | 'organization'
+	link?: string | RouteLocationRaw | (() => void)
+}
+
+export interface ContentSource {
+	project: ContentCardProject
+	link?: string | RouteLocationRaw | (() => void)
+}
+
+export type ClientWarningType = 'retained' | 'depends' | 'environment'
+
+export type ContentSourceKind =
+	| 'local'
+	| 'modrinth_modpack'
+	| 'server_project'
+	| 'modrinth_hosting'
+	| 'imported_modpack'
+	| 'shared_instance'
+
+export interface ContentActionWarning {
+	admonitionHeader: string
+	admonitionBody: string
+	actionLabel: string
+}
+
+export interface ContentCardTableItem {
+	id: string
+	project: ContentCardProject
+	projectLink?: string | RouteLocationRaw
+	version?: ContentCardVersion
+	versionLink?: string | RouteLocationRaw
+	owner?: ContentOwner
+	source?: ContentSource
+	enabled?: boolean
+	disabled?: boolean
+	disabledTooltip?: string | null
+	toggleDisabled?: boolean
+	toggleDisabledTooltip?: string | null
+	installing?: boolean
+	hasUpdate?: boolean
+	isClientOnly?: boolean
+	clientWarning?: ClientWarningType | null
+	hideDelete?: boolean
+	hideSwitchVersion?: boolean
+	overflowOptions?: OverflowMenuOption[]
+}
+
+export type ContentCardTableSortColumn = 'project' | 'version'
+export type ContentCardTableSortDirection = 'asc' | 'desc'
+
+export interface BulkOperationStatus {
+	message?: string
+	progress?: number
+	total?: number
+	waiting?: boolean
+}
+
+/** Content item returned from the app backend API - maps to ContentCardTableItem for display */
+export interface ContentItem extends Omit<
+	ContentCardTableItem,
+	'id' | 'projectLink' | 'disabled' | 'overflowOptions'
+> {
+	id: string
+	file_name: string
+	file_path?: string
+	size?: number
+	project_type: string
+	has_update: boolean
+	update_version_id: string | null
+	date_added?: string
+	environment?: string
+	pack_client_retained?: boolean
+	pack_client_depends?: boolean
+	installing?: boolean
+	source_kind?: ContentSourceKind | null
+	external?: boolean
+	external_url?: string
+}
+
+export type ContentModpackCardProject = Pick<
+	Labrinth.Projects.v2.Project,
+	'id' | 'slug' | 'title' | 'icon_url' | 'description'
+> & {
+	downloads?: number | null
+	followers?: number | null
+	filename?: string | null
+}
+
+export type ContentModpackCardVersion = Pick<
+	Labrinth.Versions.v2.Version,
+	'id' | 'version_number' | 'date_published'
+>
+
+export type ContentModpackCardCategory = Labrinth.Tags.v2.Category & {
+	action?: (event: MouseEvent) => void
+}

@@ -1,0 +1,221 @@
+use crate::auth::get_user_from_headers;
+use crate::database::PgPool;
+use crate::database::models::blocked_user_item::DBBlockedUser;
+use crate::database::models::friend_item::DBFriend;
+use crate::database::models::{DBUser, DBUserId};
+use crate::models::pats::Scopes;
+use crate::models::users::UserFriend;
+use crate::queue::session::AuthQueue;
+use crate::queue::socket::ActiveSockets;
+use crate::routes::ApiError;
+use crate::routes::internal::statuses::{
+    broadcast_friends_message, send_message_to_user,
+};
+use crate::sync::friends::RedisFriendsMessage;
+use crate::sync::status::get_user_status;
+use actix_web::{HttpRequest, HttpResponse, delete, get, post, web};
+use ariadne::networking::message::ServerToClientMessage;
+use chrono::Utc;
+use xredis::RedisPool;
+
+pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
+    cfg.service(add_friend);
+    cfg.service(remove_friend);
+    cfg.service(friends);
+}
+
+/// Add a friend.  
+#[utoipa::path(tag = "friends", responses((status = NO_CONTENT)))]
+#[post("/friend/{id}")]
+pub async fn add_friend(
+    req: HttpRequest,
+    info: web::Path<(String,)>,
+    pool: web::Data<PgPool>,
+    redis: web::Data<RedisPool>,
+    session_queue: web::Data<AuthQueue>,
+    db: web::Data<ActiveSockets>,
+) -> Result<HttpResponse, ApiError> {
+    let user = get_user_from_headers(
+        &req,
+        &**pool,
+        &redis,
+        &session_queue,
+        Scopes::USER_WRITE,
+    )
+    .await?
+    .1;
+
+    let string = info.into_inner().0;
+    let Some(friend) = DBUser::get(&string, &**pool, &redis).await? else {
+        return Err(ApiError::NotFound);
+    };
+
+    if DBBlockedUser::is_blocked(friend.id, user.id.into(), &**pool).await? {
+        return Err(ApiError::InvalidInput(
+            "You've been blocked the other user!".to_string(),
+        ));
+    } else if DBBlockedUser::is_blocked(user.id.into(), friend.id, &**pool)
+        .await?
+    {
+        return Err(ApiError::InvalidInput(
+            "You've blocked the other user!".to_string(),
+        ));
+    }
+
+    let mut transaction = pool.begin().await?;
+
+    if let Some(friend) =
+        DBFriend::get_friend(user.id.into(), friend.id, &**pool).await?
+    {
+        if friend.accepted {
+            return Err(ApiError::InvalidInput(
+                "You are already friends with this user!".to_string(),
+            ));
+        }
+
+        if !friend.accepted && user.id != friend.friend_id.into() {
+            return Err(ApiError::InvalidInput(
+                "You cannot accept your own friend request!".to_string(),
+            ));
+        }
+
+        DBFriend::update_friend(
+            friend.user_id,
+            friend.friend_id,
+            true,
+            &mut transaction,
+        )
+        .await?;
+
+        async fn send_friend_status(
+            user_id: DBUserId,
+            friend_id: DBUserId,
+            sockets: &ActiveSockets,
+            redis: &RedisPool,
+        ) -> Result<(), ApiError> {
+            if let Some(friend_status) =
+                get_user_status(user_id.into(), sockets, redis).await
+            {
+                broadcast_friends_message(
+                    redis,
+                    RedisFriendsMessage::DirectStatusUpdate {
+                        to_user: friend_id.into(),
+                        status: friend_status,
+                    },
+                )
+                .await?;
+            }
+
+            Ok(())
+        }
+
+        send_friend_status(friend.user_id, friend.friend_id, &db, &redis)
+            .await?;
+        send_friend_status(friend.friend_id, friend.user_id, &db, &redis)
+            .await?;
+    } else {
+        if friend.id == user.id.into() {
+            return Err(ApiError::InvalidInput(
+                "You cannot add yourself as a friend!".to_string(),
+            ));
+        }
+
+        if !friend.allow_friend_requests {
+            return Err(ApiError::InvalidInput(
+                "Friend requests are disabled for this user!".to_string(),
+            ));
+        }
+
+        DBFriend {
+            user_id: user.id.into(),
+            friend_id: friend.id,
+            created: Utc::now(),
+            accepted: false,
+        }
+        .insert(&mut transaction)
+        .await?;
+
+        send_message_to_user(
+            &db,
+            friend.id.into(),
+            &ServerToClientMessage::FriendRequest { from: user.id },
+        )
+        .await?;
+    }
+
+    transaction.commit().await?;
+
+    Ok(HttpResponse::NoContent().body(""))
+}
+
+/// Remove a friend.  
+#[utoipa::path(tag = "friends", responses((status = NO_CONTENT)))]
+#[delete("/friend/{id}")]
+pub async fn remove_friend(
+    req: HttpRequest,
+    info: web::Path<(String,)>,
+    pool: web::Data<PgPool>,
+    redis: web::Data<RedisPool>,
+    session_queue: web::Data<AuthQueue>,
+    db: web::Data<ActiveSockets>,
+) -> Result<HttpResponse, ApiError> {
+    let user = get_user_from_headers(
+        &req,
+        &**pool,
+        &redis,
+        &session_queue,
+        Scopes::USER_WRITE,
+    )
+    .await?
+    .1;
+
+    let string = info.into_inner().0;
+    let friend = DBUser::get(&string, &**pool, &redis).await?;
+
+    if let Some(friend) = friend {
+        let mut transaction = pool.begin().await?;
+
+        DBFriend::remove(user.id.into(), friend.id, &mut transaction).await?;
+
+        send_message_to_user(
+            &db,
+            friend.id.into(),
+            &ServerToClientMessage::FriendRequestRejected { from: user.id },
+        )
+        .await?;
+
+        transaction.commit().await?;
+
+        Ok(HttpResponse::NoContent().body(""))
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
+/// List friends.  
+#[utoipa::path(tag = "friends", responses((status = OK, body = Vec<UserFriend>)))]
+#[get("/friends")]
+pub async fn friends(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    redis: web::Data<RedisPool>,
+    session_queue: web::Data<AuthQueue>,
+) -> Result<HttpResponse, ApiError> {
+    let user = get_user_from_headers(
+        &req,
+        &**pool,
+        &redis,
+        &session_queue,
+        Scopes::USER_READ,
+    )
+    .await?
+    .1;
+
+    let friends = DBFriend::get_user_friends(user.id.into(), None, &**pool)
+        .await?
+        .into_iter()
+        .map(UserFriend::from)
+        .collect::<Vec<_>>();
+
+    Ok(HttpResponse::Ok().json(friends))
+}

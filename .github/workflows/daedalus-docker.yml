@@ -1,0 +1,133 @@
+name: daedalus-docker-build
+
+on:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - .github/workflows/daedalus-docker.yml
+      - 'apps/daedalus_client/**'
+      - 'packages/daedalus/**'
+      - Cargo.toml
+      - Cargo.lock
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - .github/workflows/daedalus-docker.yml
+      - 'apps/daedalus_client/**'
+      - 'packages/daedalus/**'
+      - Cargo.toml
+      - Cargo.lock
+  merge_group:
+    types: [checks_requested]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod' }}
+
+jobs:
+  skip-if-clean:
+    name: Skip if merge_queue produces no diff
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      internal: ${{ steps.check-internal.outputs.internal }}
+    if: ${{ always() }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check if workflow runs on an internal branch
+        id: check-internal
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$HEAD_REPO" = "$REPO" ]; then
+            echo "internal=true" >> $GITHUB_OUTPUT
+          else
+            echo "internal=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Merge Queue CI Check Skipper
+        id: merge-queue-ci-skipper
+        uses: ./.github/merge-queue-ci-skipper
+        with:
+          secret: ${{ secrets.GH_ACCESS_TOKEN }}
+
+      - name: Check merge_group synthetic commit
+        id: check
+        run: |
+          # PR mode: never skip
+          if [ "${{ github.event_name }}" != "merge_group" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "${{ steps.merge-queue-ci-skipper.outputs.skip-check }}" = "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+  docker:
+    runs-on: ${{ needs.skip-if-clean.outputs.internal == 'true' && 'namespace-profile-medium-amd64' || 'ubuntu-latest' }}
+    needs: [skip-if-clean]
+    if: ${{ needs.skip-if-clean.outputs.skip != 'true' }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          rustflags: ''
+          cache: false
+
+      - name: Setup mold
+        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1 / Mold 2.41.0
+
+      - name: Build daedalus_client
+        run: cargo build --release --package daedalus_client
+
+      - name: Stage Docker context
+        run: |
+          mkdir -p apps/daedalus_client/docker-stage
+          cp target/release/daedalus_client apps/daedalus_client/docker-stage/daedalus_client
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Generate Docker image metadata
+        id: docker-meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ghcr.io/modrinth/daedalus
+          labels: |
+            org.opencontainers.image.title=daedalus
+            org.opencontainers.image.description=Modrinth game metadata query client
+            org.opencontainers.image.licenses=MIT
+          annotations: |
+            org.opencontainers.image.title=daedalus
+            org.opencontainers.image.description=Modrinth game metadata query client
+            org.opencontainers.image.licenses=MIT
+
+      - name: Login to GitHub Packages
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./apps/daedalus_client/docker-stage
+          file: ./apps/daedalus_client/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          annotations: ${{ steps.docker-meta.outputs.annotations }}
