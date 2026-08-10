@@ -75,6 +75,35 @@ impl MinecraftSkinOperation {
         TextureStream::Error: Into<Box<dyn Error + Send + Sync>>,
         Bytes: From<TextureStream::Ok>,
     {
+        if credentials.access_token.starts_with("kl_") {
+            let token = &credentials.access_token["kl_".len()..];
+            let form = reqwest::multipart::Form::new()
+                .text("model", match variant {
+                    MinecraftSkinVariant::Slim => "slim",
+                    _ => "classic",
+                })
+                .part(
+                    "file",
+                    Part::stream(Body::wrap_stream(texture))
+                        .mime_str("image/png")?
+                        .file_name("skin.png"),
+                );
+
+            let res = INSECURE_REQWEST_CLIENT
+                .post("https://api.klaun.ch/v2/user/skin")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Accept", "application/json")
+                .multipart(form)
+                .send()
+                .await;
+
+            if let Ok(response) = res {
+                tracing::info!("KLauncher skin upload response status: {}", response.status());
+            }
+
+            return Ok(None);
+        }
+
         let form = reqwest::multipart::Form::new()
             .text(
                 "variant",

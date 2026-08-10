@@ -12,6 +12,7 @@ import {
 	ShieldIcon,
 	ToggleRightIcon,
 	UserIcon,
+	PlugIcon,
 } from '@modrinth/assets'
 import {
 	commonMessages,
@@ -35,6 +36,7 @@ import BedrockSettings from '@/components/ui/settings/BedrockSettings.vue'
 import BehaviorSettings from '@/components/ui/settings/display/BehaviorSettings.vue'
 import FeatureFlagSettings from '@/components/ui/settings/display/FeatureFlagSettings.vue'
 import LanguageSettings from '@/components/ui/settings/display/LanguageSettings.vue'
+import KLauncherSettings from '@/components/ui/settings/KLauncherSettings.vue'
 import DefaultInstanceSettings from '@/components/ui/settings/instances/DefaultInstanceSettings.vue'
 import JavaSettings from '@/components/ui/settings/instances/JavaSettings.vue'
 import ResourceManagementSettings from '@/components/ui/settings/instances/ResourceManagementSettings.vue'
@@ -70,6 +72,10 @@ const tabCategories = defineMessages({
 	instances: {
 		id: 'app.settings.sidebar.label.instances',
 		defaultMessage: 'Instances',
+	},
+	klauncher: {
+		id: 'settings.sidebar.label.klauncher',
+		defaultMessage: 'KLauncher',
 	},
 })
 
@@ -165,6 +171,15 @@ const tabs = [
 		category: tabCategories.instances,
 		icon: GaugeIcon,
 		content: ResourceManagementSettings,
+	},
+	{
+		name: defineMessage({
+			id: 'klauncher.settings.title',
+			defaultMessage: 'KLauncher',
+		}),
+		category: tabCategories.klauncher,
+		icon: PlugIcon,
+		content: KLauncherSettings,
 	},
 ]
 

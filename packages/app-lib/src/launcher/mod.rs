@@ -37,6 +37,7 @@ pub mod bedrock;
 pub mod download;
 pub mod inject;
 pub mod job;
+pub mod klauncher;
 pub mod pe;
 pub mod quick_play_version;
 
@@ -1121,13 +1122,32 @@ pub async fn launch_minecraft(
             &natives_dir,
             &state.directories.libraries_dir(),
             &state.directories.log_configs_dir(),
-            &args::get_class_paths(
-                &state.directories.libraries_dir(),
-                version_info.libraries.as_slice(),
-                &[&main_class_path, &client_path],
-                &java_version.architecture,
-                minecraft_updated,
-            )?,
+            &{
+                let raw_cp = args::get_class_paths(
+                    &state.directories.libraries_dir(),
+                    version_info.libraries.as_slice(),
+                    &[&main_class_path, &client_path],
+                    &java_version.architecture,
+                    minecraft_updated,
+                )?;
+                if klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token) {
+                    let settings = crate::state::Settings::get(&state.pool).await.ok();
+                    let use_klmaster = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherKLMaster).copied()).unwrap_or(true);
+                    let use_skins = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherSkinSystem).copied()).unwrap_or(true);
+
+                    if use_klmaster {
+                        klauncher::inject_klmaster_mod(&instance_path, content_set.loader, &content_set.game_version);
+                    }
+
+                    if use_skins {
+                        klauncher::prepare_klauncher_authlib(&state.directories.libraries_dir(), &raw_cp)
+                    } else {
+                        raw_cp
+                    }
+                } else {
+                    raw_cp
+                }
+            },
             &main_class_path,
             &version_jar,
             *memory,

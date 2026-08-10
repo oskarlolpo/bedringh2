@@ -205,7 +205,120 @@ pub async fn offline_auth(
     Ok(credentials)
 }
 
-#[derive(Deserialize, Debug)]
+#[tracing::instrument]
+pub async fn klauncher_auth(
+    name: &str,
+    password: Option<&str>,
+    exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
+) -> crate::Result<Credentials> {
+    let name_trimmed = name.trim();
+    let access_token = if let Some(pass) = password {
+        let client = &*INSECURE_REQWEST_CLIENT;
+        let resp = client
+            .post("https://api.klaun.ch/v2/user/auth/login")
+            .json(&serde_json::json!({
+                "login": name_trimmed,
+                "password": pass,
+            }))
+            .send()
+            .await;
+
+        match resp {
+            Ok(res) if res.status().is_success() => {
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    json.get("token")
+                        .and_then(|t| t.as_str())
+                        .map(|t| format!("kl_{}", t))
+                        .unwrap_or("kl".to_string())
+                } else {
+                    "kl".to_string()
+                }
+            }
+            _ => "kl".to_string(),
+        }
+    } else {
+        "kl".to_string()
+    };
+
+    let uuid = Uuid::new_v4();
+    let refresh_token = "kl_refresh".to_string();
+
+    let mut credentials = Credentials {
+        offline_profile: MinecraftProfile::default(),
+        access_token: access_token.clone(),
+        refresh_token,
+        expires: Utc::now() + Duration::days(365 * 99),
+        active: true,
+    };
+
+    credentials.offline_profile = MinecraftProfile {
+        id: uuid,
+        name: name_trimmed.to_string(),
+        ..credentials.offline_profile
+    };
+
+    credentials.upsert(exec).await?;
+
+    // Загружаем скин — если есть токен, используем авторизованный запрос
+    let client = &*INSECURE_REQWEST_CLIENT;
+    let skin_request = if access_token.starts_with("kl_") {
+        let token = &access_token["kl_".len()..];
+        client
+            .get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name_trimmed))
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+    } else {
+        client
+            .get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name_trimmed))
+            .send()
+            .await
+    };
+
+    if let Ok(resp) = skin_request {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(skin_url) = json
+                .get("textures")
+                .and_then(|t| t.get("SKIN"))
+                .and_then(|s| s.get("url"))
+                .and_then(|u| u.as_str())
+            {
+                let https_url = skin_url.replace("http://", "https://");
+                if let Ok(bytes_resp) = client.get(&https_url).send().await {
+                    if let Ok(bytes) = bytes_resp.bytes().await {
+                        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+                        if let Ok(state) = crate::State::get().await {
+                            let mut has_skins = false;
+                            if let Ok(stream) = crate::state::minecraft_skins::CustomMinecraftSkin::get_all(uuid, &state.pool).await {
+                                use futures_lite::StreamExt;
+                                if stream.collect::<Vec<_>>().await.len() > 0 {
+                                    has_skins = true;
+                                }
+                            }
+
+                            if !has_skins {
+                                let _ = crate::state::minecraft_skins::CustomMinecraftSkin::add(
+                                    uuid,
+                                    &texture_key,
+                                    &bytes,
+                                    MinecraftSkinVariant::Classic,
+                                    None,
+                                    crate::state::minecraft_skins::CustomMinecraftSkinInsertPosition::Top,
+                                    &state.pool,
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(credentials)
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Credentials {
     /// The offline profile of the user these credentials are for.
     ///

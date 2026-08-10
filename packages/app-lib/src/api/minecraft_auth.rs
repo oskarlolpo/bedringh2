@@ -43,6 +43,15 @@ pub async fn offline_auth(name: &str) -> crate::Result<Credentials> {
 }
 
 #[tracing::instrument]
+pub async fn klauncher_auth(
+    name: &str,
+    password: Option<&str>,
+) -> crate::Result<Credentials> {
+    let state = State::get().await?;
+    crate::state::klauncher_auth(name, password, &state.pool).await
+}
+
+#[tracing::instrument]
 pub async fn get_default_user() -> crate::Result<Option<uuid::Uuid>> {
     let state = State::get().await?;
     let user = Credentials::get_active(&state.pool).await?;
@@ -52,16 +61,20 @@ pub async fn get_default_user() -> crate::Result<Option<uuid::Uuid>> {
 #[tracing::instrument]
 pub async fn set_default_user(user: uuid::Uuid) -> crate::Result<()> {
     let state = State::get().await?;
-    let users = Credentials::get_all(&state.pool).await?;
-    let (_, mut user) = users.remove(&user).ok_or_else(|| {
+
+    let users = crate::state::Credentials::get_all(&state.pool).await?;
+
+    let (_, mut target) = users.remove(&user).ok_or_else(|| {
         crate::ErrorKind::OtherError(format!(
             "Tried to get nonexistent user with ID {user}"
         ))
         .as_error()
     })?;
 
-    user.active = true;
-    user.upsert(&state.pool).await?;
+    // upsert internally runs `UPDATE minecraft_users SET active = FALSE`
+    // when self.active == true, so this correctly deactivates all others
+    target.active = true;
+    target.upsert(&state.pool).await?;
 
     Ok(())
 }

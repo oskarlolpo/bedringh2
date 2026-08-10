@@ -373,11 +373,50 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
     let mut custom_skins = Vec::new();
     let mut saved_default_skins = Vec::new();
 
-    for mut custom_skin in CustomMinecraftSkin::get_all(profile_id, &state.pool)
+    let mut saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
         .await?
         .collect::<Vec<_>>()
-        .await
-    {
+        .await;
+
+    let name = &selected_credentials.offline_profile.name;
+    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
+    if let Ok(res) = client.get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name)).send().await {
+        if let Ok(json) = res.json::<serde_json::Value>().await {
+            if let Some(skin_url) = json.get("textures").and_then(|t| t.get("SKIN")).and_then(|s| s.get("url")).and_then(|u| u.as_str()) {
+                let https_url = skin_url.replace("http://", "https://");
+                if let Ok(bytes_resp) = client.get(&https_url).send().await {
+                    if let Ok(bytes) = bytes_resp.bytes().await {
+                        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+                        let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
+                        if !already_saved {
+                            let insert_pos = if saved_custom_skins.is_empty() {
+                                CustomMinecraftSkinInsertPosition::Top
+                            } else {
+                                CustomMinecraftSkinInsertPosition::Bottom
+                            };
+                            let _ = CustomMinecraftSkin::add(
+                                profile_id,
+                                &texture_key,
+                                &bytes,
+                                MinecraftSkinVariant::Classic,
+                                None,
+                                insert_pos,
+                                &state.pool,
+                            )
+                            .await;
+
+                            saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
+                                .await?
+                                .collect::<Vec<_>>()
+                                .await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for mut custom_skin in saved_custom_skins {
         let is_saved_default_skin =
             is_bundled_skin(&custom_skin.texture_key, custom_skin.variant);
         let current_skin_sync =
@@ -586,12 +625,22 @@ async fn add_and_equip_custom_skin_now(
 ) -> crate::Result<()> {
     let state = State::get().await?;
 
-    let previous_profile = selected_credentials
-        .online_profile_fresh()
-        .await
-        .ok_or_else(|| ErrorKind::OnlineMinecraftProfileUnavailable {
-            user_name: selected_credentials.offline_profile.name.clone(),
-        })?;
+    let previous_profile = if selected_credentials.access_token.starts_with("kl_") {
+        Arc::new(MinecraftProfile {
+            id: selected_credentials.offline_profile.id,
+            name: selected_credentials.offline_profile.name.clone(),
+            skins: vec![],
+            capes: vec![],
+            fetch_time: None,
+        })
+    } else {
+        selected_credentials
+            .online_profile_fresh()
+            .await
+            .ok_or_else(|| ErrorKind::OnlineMinecraftProfileUnavailable {
+                user_name: selected_credentials.offline_profile.name.clone(),
+            })?
+    };
 
     preserve_current_profile_skin(&state, &previous_profile).await?;
 
@@ -709,12 +758,22 @@ async fn equip_skin_now(
 ) -> crate::Result<()> {
     let state = State::get().await?;
 
-    let profile = selected_credentials
-        .online_profile_fresh()
-        .await
-        .ok_or_else(|| ErrorKind::OnlineMinecraftProfileUnavailable {
-            user_name: selected_credentials.offline_profile.name.clone(),
-        })?;
+    let profile = if selected_credentials.access_token.starts_with("kl_") {
+        Arc::new(MinecraftProfile {
+            id: selected_credentials.offline_profile.id,
+            name: selected_credentials.offline_profile.name.clone(),
+            skins: vec![],
+            capes: vec![],
+            fetch_time: None,
+        })
+    } else {
+        selected_credentials
+            .online_profile_fresh()
+            .await
+            .ok_or_else(|| ErrorKind::OnlineMinecraftProfileUnavailable {
+                user_name: selected_credentials.offline_profile.name.clone(),
+            })?
+    };
 
     preserve_current_profile_skin(&state, &profile).await?;
 

@@ -72,3 +72,12 @@ export async function users() {
 export async function offline_login(name) {
 	return await invoke('plugin:auth|offline_login', { name })
 }
+
+/**
+ * Authenticates via KLauncher account or KLauncher offline mode
+ * @param {string} name
+ * @param {string} [password]
+ */
+export async function klauncher_login(name, password) {
+	return await invoke('plugin:auth|klauncher_login', { name, password: password || null })
+}

@@ -36,9 +36,18 @@
 					"
 				/>
 				<div class="flex flex-col items-start w-full min-w-0">
-					<span class="truncate w-full text-left">{{
-						selectedAccount ? selectedAccount.profile.name : formatMessage(messages.selectAccount)
-					}}</span>
+					<div class="flex items-center gap-2 w-full min-w-0">
+						<span class="truncate text-left">{{
+							selectedAccount ? selectedAccount.profile.name : formatMessage(messages.selectAccount)
+						}}</span>
+						<span
+							v-if="selectedAccount"
+							class="px-1.5 py-0.5 text-[10px] font-semibold rounded shrink-0"
+							:class="getAccountTypeBadgeClass(selectedAccount)"
+						>
+							{{ getAccountTypeName(selectedAccount) }}
+						</span>
+					</div>
 					<span class="text-secondary text-xs">{{ formatMessage(messages.minecraftAccount) }}</span>
 				</div>
 			</div>
@@ -56,16 +65,24 @@
 						/>
 						<RadioButtonIcon v-else class="w-5 h-5 text-secondary shrink-0" />
 						<Avatar :src="getAccountAvatarUrl(account)" size="24px" />
-						<p
-							class="m-0 truncate min-w-0"
-							:class="
-								selectedAccount && selectedAccount.profile.id === account.profile.id
-									? 'text-contrast font-semibold'
-									: 'text-primary'
-							"
-						>
-							{{ account.profile.name }}
-						</p>
+						<div class="flex items-center gap-1.5 min-w-0">
+							<p
+								class="m-0 truncate min-w-0"
+								:class="
+									selectedAccount && selectedAccount.profile.id === account.profile.id
+										? 'text-contrast font-semibold'
+										: 'text-primary'
+								"
+							>
+								{{ account.profile.name }}
+							</p>
+							<span
+								class="px-1.5 py-0.5 text-[10px] font-semibold rounded shrink-0"
+								:class="getAccountTypeBadgeClass(account)"
+							>
+								{{ getAccountTypeName(account) }}
+							</span>
+						</div>
 					</button>
 					<ButtonStyled circular color="red" color-fill="none" hover-color-fill="background">
 						<button
@@ -91,18 +108,28 @@
 						{{ formatMessage(messages.createOfflineAccount) }}
 					</button>
 				</ButtonStyled>
+				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="brand" type="outlined">
+					<button :disabled="loginDisabled" @click="addKLauncherAccount()">
+						<PlusIcon />
+						Вход KLauncher
+					</button>
+				</ButtonStyled>
 			</div>
 		</div>
 	</Accordion>
 	<AccountsInputModals
 		ref="accountsInputModals"
 		v-model:offlinePlayerName="offlinePlayerName"
+		v-model:kLauncherLoginValue="kLauncherLoginValue"
+		v-model:kLauncherPassword="kLauncherPassword"
 		:ely-by-login-disabled="false"
 		ely-by-login-value=""
 		ely-by-password=""
 		ely-by-two-factor-code=""
 		:offline-login-disabled="offlineLoginDisabled"
+		:k-launcher-login-disabled="kLauncherLoginDisabled"
 		@submit-offline="addOfflineProfile"
+		@submit-klauncher="addKLauncherProfile"
 	/>
 </template>
 
@@ -165,6 +192,9 @@ const headUrlCache = ref(new Map<string, string>())
 const accountsInputModals = ref<InstanceType<typeof AccountsInputModals> | null>(null)
 const offlinePlayerName = ref('')
 const offlineLoginDisabled = ref(false)
+const kLauncherLoginValue = ref('')
+const kLauncherPassword = ref('')
+const kLauncherLoginDisabled = ref(false)
 
 async function refreshValues() {
 	defaultUser.value = await get_default_user().catch(handleError)
@@ -344,6 +374,65 @@ async function addOfflineProfile() {
 	} finally {
 		offlineLoginDisabled.value = false
 		offlinePlayerName.value = ''
+	}
+}
+
+function addKLauncherAccount() {
+	accountsInputModals.value?.showKLauncher()
+}
+
+async function addKLauncherProfile() {
+	if (!kLauncherLoginValue.value) return
+
+	const trimmedName = kLauncherLoginValue.value.trim()
+	if (trimmedName.length < 3 || trimmedName.length > 30) {
+		handleError('Логин должен быть от 3 до 30 символов.')
+		return
+	}
+	
+	try {
+		kLauncherLoginDisabled.value = true
+		accountsInputModals.value?.hideKLauncher()
+		const result = await import('@/helpers/auth').then(m => m.klauncher_login(trimmedName, kLauncherPassword.value || null))
+		if (result) {
+			await setAccount(result)
+			await refreshValues()
+		}
+	} catch (error) {
+		handleError(error)
+	} finally {
+		kLauncherLoginDisabled.value = false
+		kLauncherLoginValue.value = ''
+		kLauncherPassword.value = ''
+	}
+}
+
+function getAccountTypeName(account: MinecraftCredential | null | undefined): string {
+	if (!account) return ''
+	const token = account.access_token || ''
+	const refresh = account.refresh_token || ''
+	// Офлайн аккаунты имеют токены "null" (строка)
+	if (token === 'null' && refresh === 'null') return 'Офлайн'
+	// KLauncher аккаунты
+	if (refresh === 'kl_refresh' || token === 'kl' || token.startsWith('kl_')) return 'KLauncher'
+	// Ely.by
+	if (token.includes('elyby') || refresh.includes('elyby')) return 'Ely.by'
+	// Microsoft (OAuth)
+	return 'Microsoft'
+}
+
+function getAccountTypeBadgeClass(account: MinecraftCredential | null | undefined): string {
+	if (!account) return ''
+	const type = getAccountTypeName(account)
+	switch (type) {
+		case 'KLauncher':
+			return 'bg-red-500/20 text-red-400 border border-red-500/30'
+		case 'Офлайн':
+			return 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+		case 'Ely.by':
+			return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+		default:
+			return 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
 	}
 }
 

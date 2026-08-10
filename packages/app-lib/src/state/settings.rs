@@ -68,6 +68,9 @@ pub enum FeatureFlag {
     HideInstalledModpacks,
     BedrockUnlockerGdk,
     BedrockUnlockerUwp,
+    KLauncherSkinSystem,
+    KLauncherCensorship,
+    KLauncherKLMaster,
 }
 
 impl Settings {

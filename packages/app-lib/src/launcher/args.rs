@@ -360,10 +360,16 @@ fn parse_minecraft_argument(
     resolution: WindowSize,
     quick_play_type: &QuickPlayType,
 ) -> crate::Result<String> {
+    let raw_token = if access_token.starts_with("kl_") {
+        &access_token["kl_".len()..]
+    } else {
+        access_token
+    };
+
     Ok(argument
-        .replace("${accessToken}", access_token)
-        .replace("${auth_access_token}", access_token)
-        .replace("${auth_session}", access_token)
+        .replace("${accessToken}", raw_token)
+        .replace("${auth_access_token}", raw_token)
+        .replace("${auth_session}", raw_token)
         .replace("${auth_player_name}", username)
         // TODO: add auth xuid eventually
         .replace("${auth_xuid}", "0")

@@ -8,6 +8,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     tauri::plugin::Builder::<R>::new("auth")
         .invoke_handler(tauri::generate_handler![
             offline_login,
+            klauncher_login,
             check_reachable,
             login,
             remove_user,
@@ -22,6 +23,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 #[tauri::command]
 pub async fn offline_login(name: &str) -> Result<Credentials> {
     let credentials = minecraft_auth::offline_auth(name).await?;
+    Ok(credentials)
+}
+
+/// Authenticate with KLauncher account or KLauncher offline mode
+#[tauri::command]
+pub async fn klauncher_login(name: &str, password: Option<&str>) -> Result<Credentials> {
+    let credentials = minecraft_auth::klauncher_auth(name, password).await?;
     Ok(credentials)
 }
 
