@@ -1,13 +1,13 @@
 <script setup lang="ts">
+import { DownloadIcon, HammerIcon, SpinnerIcon } from '@modrinth/assets'
+import { ButtonStyled, Combobox,ConfirmRepairModal, injectNotificationManager } from '@modrinth/ui'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { computed, ref } from 'vue'
-import { injectNotificationManager, ButtonStyled, ConfirmRepairModal, Combobox } from '@modrinth/ui'
-import { HammerIcon, DownloadIcon, SpinnerIcon } from '@modrinth/assets'
 import { invoke } from '@tauri-apps/api/core'
+import { computed, ref } from 'vue'
 
-import { injectInstanceSettings } from '@/providers/instance-settings'
-import { edit } from '@/helpers/instance'
 import { install_existing_instance as install } from '@/helpers/install'
+import { edit } from '@/helpers/instance'
+import { injectInstanceSettings } from '@/providers/instance-settings'
 
 const { instance } = injectInstanceSettings()
 const { handleError, addNotification } = injectNotificationManager()
@@ -25,42 +25,19 @@ const bedrockVersionsQuery = useQuery({
     }
 })
 
-const bedrockPackagesQuery = useQuery({
-    queryKey: ['bedrock-packages-cache'],
-    queryFn: async () => {
-        return (await invoke('plugin:cache|get_bedrock_packages')) as { name: string, is_valid: boolean }[]
-    }
-})
-
 const versionsSelectOptions = computed(() => {
     if (!bedrockVersionsQuery.data.value) return []
     return bedrockVersionsQuery.data.value.map(v => {
         let label = v.version
         if (v.is_preview) label += ' (Preview)'
         if (v.is_gdk) label += ' [GDK]'
-        
-        let disabled = false
-        let subLabel: string | undefined
-        if (bedrockPackagesQuery.data.value) {
-            const pkg = bedrockPackagesQuery.data.value.find(p => p.name === `bedrock_${v.version}`)
-            if (pkg && !pkg.is_valid) {
-                disabled = true
-                subLabel = 'Broken installation'
-            }
-        }
 
         return {
             value: v.version,
             label,
-            subLabel,
-            disabled
+            disabled: false
         }
     })
-})
-
-const currentPackage = computed(() => {
-    if (!bedrockPackagesQuery.data.value) return null
-    return bedrockPackagesQuery.data.value.find(p => p.name === `bedrock_${instance.value.game_version}`)
 })
 
 const repairIntegrity = async () => {
@@ -72,7 +49,6 @@ const repairIntegrity = async () => {
             text: 'Целостность файлов восстановлена. Недостающие компоненты были скачаны и распакованы.',
             type: 'success'
         })
-        await queryClient.invalidateQueries({ queryKey: ['bedrock-packages-cache'] })
     } catch (e) {
         handleError(e as Error)
     } finally {
@@ -89,7 +65,7 @@ const changeVersion = async () => {
     try {
         await edit(instance.value.id, {
             game_version: selectedVersion.value,
-            loader_version: v.identifier
+            loader_version: selectedVersion.value
         })
         await install(instance.value.id, true)
         addNotification({
@@ -97,7 +73,6 @@ const changeVersion = async () => {
             text: 'Версия изменена.',
             type: 'success'
         })
-        await queryClient.invalidateQueries({ queryKey: ['bedrock-packages-cache'] })
     } catch (e) {
         handleError(e as Error)
     } finally {
@@ -122,8 +97,8 @@ const changeVersion = async () => {
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-primary">Status</span>
-                    <span class="font-semibold" :class="currentPackage?.is_valid ? 'text-green' : 'text-red'">
-                        {{ currentPackage?.is_valid ? 'Installed' : 'Broken' }}
+                    <span class="font-semibold text-green">
+                        Ready
                     </span>
                 </div>
             </div>

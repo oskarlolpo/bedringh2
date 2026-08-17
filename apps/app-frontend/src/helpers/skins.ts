@@ -1,33 +1,51 @@
-import { arrayBufferToBase64 } from '@modrinth/utils'
-import { invoke } from '@tauri-apps/api/core'
+import { arrayBufferToBase64 } from '@modrinth/utils';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface Cape {
-	id: string
-	name: string
-	texture: string
-	is_equipped: boolean
+	id: string;
+	name: string;
+	texture: string;
+	/** Vertical sprite sheet for animated capes, when supplied by the launcher API. */
+	animated_url?: string;
+	/** KLauncher-compatible delay field; APIs in the wild use either spelling. */
+	delay?: number;
+	animation_delay?: number;
+	is_equipped: boolean;
 }
 
-export type SkinModel = 'CLASSIC' | 'SLIM' | 'UNKNOWN'
-export type SkinSource = 'default' | 'custom_external' | 'custom'
+export function getCapeFrameDuration(cape: Cape | undefined): number | undefined {
+	if (!cape) return undefined;
+
+	let candidate = cape.animation_delay ?? cape.delay;
+	if (typeof candidate !== 'number' || !Number.isFinite(candidate) || candidate <= 0) {
+		return 100;
+	}
+	if (candidate <= 10) {
+		candidate = candidate * 50;
+	}
+	return Math.max(20, candidate);
+}
+
+export type SkinModel = 'CLASSIC' | 'SLIM' | 'UNKNOWN';
+export type SkinSource = 'default' | 'custom_external' | 'custom';
 
 export interface Skin {
-	texture_key: string
-	name?: string
-	section?: string
-	variant: SkinModel
-	cape_id?: string
-	texture: string
-	source: SkinSource
-	is_equipped: boolean
+	texture_key: string;
+	name?: string;
+	section?: string;
+	variant: SkinModel;
+	cape_id?: string;
+	texture: string;
+	source: SkinSource;
+	is_equipped: boolean;
 }
 
 export interface SkinTextureUrl {
-	original: string
-	normalized: string
+	original: string;
+	normalized: string;
 }
 
-export const DEFAULT_MODEL_SORTING = ['Steve', 'Alex'] as string[]
+export const DEFAULT_MODEL_SORTING = ['Steve', 'Alex'] as string[];
 
 export const DEFAULT_MODELS: Record<string, SkinModel> = {
 	Steve: 'CLASSIC',
@@ -39,60 +57,82 @@ export const DEFAULT_MODELS: Record<string, SkinModel> = {
 	Kai: 'CLASSIC',
 	Efe: 'SLIM',
 	Ari: 'CLASSIC',
-}
+};
 
 export function filterSavedSkins(list: Skin[]) {
-	const customSkins = list.filter((s) => s.source !== 'default')
-	fixUnknownSkins(customSkins)
-	return customSkins
+	const customSkins = list.filter((s) => s.source !== 'default');
+	fixUnknownSkins(customSkins);
+	return customSkins;
+}
+
+export function isHdSkinTexture(width: number, height: number): boolean {
+	// A skin frame keeps the 64×64 layout at an integer scale. Animated skins
+	// append whole square frames vertically, so their height is a multiple of width.
+	return width >= 64 && width % 64 === 0 && height >= width && height % width === 0;
+}
+
+function getImageDimensions(texture: string): Promise<{ width: number; height: number } | null> {
+	return new Promise((resolve) => {
+		const image = new Image();
+		image.onload = () => resolve({ width: image.width, height: image.height });
+		image.onerror = () => resolve(null);
+		image.src = texture;
+	});
 }
 
 export async function determineModelType(texture: string): Promise<'SLIM' | 'CLASSIC'> {
 	return new Promise((resolve, reject) => {
-		const canvas = document.createElement('canvas')
-		const context = canvas.getContext('2d')
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('2d');
 
 		if (!context) {
-			return reject(new Error('Failed to create canvas rendering context.'))
+			return reject(new Error('Failed to create canvas rendering context.'));
 		}
 
-		const image = new Image()
-		image.crossOrigin = 'anonymous'
-		image.src = texture
+		const image = new Image();
+		image.crossOrigin = 'anonymous';
+		image.src = texture;
 
 		image.onload = () => {
-			canvas.width = image.width
-			canvas.height = image.height
+			canvas.width = image.width;
+			canvas.height = image.height;
 
-			context.drawImage(image, 0, 0)
+			context.drawImage(image, 0, 0);
 
-			const armX = 54
-			const armY = 20
-			const armWidth = 2
-			const armHeight = 12
-			const imageData = context.getImageData(armX, armY, armWidth, armHeight).data
+			const scale = image.width / 64;
+			if (!Number.isInteger(scale) || scale < 1 || image.height < 64 * scale) {
+				canvas.remove();
+				reject(new Error(`Unsupported skin dimensions: ${image.width}×${image.height}`));
+				return;
+			}
+
+			const armX = 54 * scale;
+			const armY = 20 * scale;
+			const armWidth = 2 * scale;
+			const armHeight = 12 * scale;
+			const imageData = context.getImageData(armX, armY, armWidth, armHeight).data;
 			for (let alphaIndex = 3; alphaIndex < imageData.length; alphaIndex += 4) {
 				if (imageData[alphaIndex] !== 0) {
-					resolve('CLASSIC')
-					return
+					resolve('CLASSIC');
+					return;
 				}
 			}
 
-			canvas.remove()
-			resolve('SLIM')
-		}
+			canvas.remove();
+			resolve('SLIM');
+		};
 
 		image.onerror = () => {
-			canvas.remove()
-			reject(new Error('Failed to load the image.'))
-		}
-	})
+			canvas.remove();
+			reject(new Error('Failed to load the image.'));
+		};
+	});
 }
 
 export async function fixUnknownSkins(list: Skin[]) {
-	const unknownSkins = list.filter((s) => s.variant === 'UNKNOWN')
+	const unknownSkins = list.filter((s) => s.variant === 'UNKNOWN');
 	for (const unknownSkin of unknownSkins) {
-		unknownSkin.variant = await determineModelType(unknownSkin.texture)
+		unknownSkin.variant = await determineModelType(unknownSkin.texture);
 	}
 }
 
@@ -104,18 +144,18 @@ export function filterDefaultSkins(list: Skin[]) {
 				(!s.name || !(s.name in DEFAULT_MODELS) || s.variant === DEFAULT_MODELS[s.name]),
 		)
 		.sort((a, b) => {
-			const aIndex = a.name ? DEFAULT_MODEL_SORTING.indexOf(a.name) : -1
-			const bIndex = b.name ? DEFAULT_MODEL_SORTING.indexOf(b.name) : -1
-			return (aIndex === -1 ? Infinity : aIndex) - (bIndex === -1 ? Infinity : bIndex)
-		})
+			const aIndex = a.name ? DEFAULT_MODEL_SORTING.indexOf(a.name) : -1;
+			const bIndex = b.name ? DEFAULT_MODEL_SORTING.indexOf(b.name) : -1;
+			return (aIndex === -1 ? Infinity : aIndex) - (bIndex === -1 ? Infinity : bIndex);
+		});
 }
 
 export async function get_available_capes(): Promise<Cape[]> {
-	return invoke('plugin:minecraft-skins|get_available_capes', {})
+	return invoke('plugin:minecraft-skins|get_available_capes', {});
 }
 
 export async function get_available_skins(): Promise<Skin[]> {
-	return invoke('plugin:minecraft-skins|get_available_skins', {})
+	return invoke('plugin:minecraft-skins|get_available_skins', {});
 }
 
 export async function add_and_equip_custom_skin(
@@ -127,25 +167,25 @@ export async function add_and_equip_custom_skin(
 		textureBlob,
 		variant,
 		cape,
-	})
+	});
 }
 
 export async function equip_skin(skin: Skin): Promise<void> {
 	await invoke('plugin:minecraft-skins|equip_skin', {
 		skin,
-	})
+	});
 }
 
 export async function remove_custom_skin(skin: Skin): Promise<void> {
 	await invoke('plugin:minecraft-skins|remove_custom_skin', {
 		skin,
-	})
+	});
 }
 
 export async function set_custom_skin_order(textureKeys: string[]): Promise<void> {
 	await invoke('plugin:minecraft-skins|set_custom_skin_order', {
 		textureKeys,
-	})
+	});
 }
 
 export async function save_custom_skin(
@@ -161,34 +201,41 @@ export async function save_custom_skin(
 		variant,
 		cape,
 		replaceTexture,
-	})
+	});
 }
 
 export async function get_normalized_skin_texture(skin: Skin): Promise<string> {
-	const data = await normalize_skin_texture(skin.texture)
-	const base64 = arrayBufferToBase64(data)
-	return `data:image/png;base64,${base64}`
+	const dimensions = await getImageDimensions(skin.texture);
+	if (dimensions && isHdSkinTexture(dimensions.width, dimensions.height)) {
+		// The WebGL renderer samples the original HD frame; sending it through the
+		// backend normalizer would reduce it to the vanilla 64px layout.
+		return skin.texture;
+	}
+
+	const data = await normalize_skin_texture(skin.texture);
+	const base64 = arrayBufferToBase64(data);
+	return `data:image/png;base64,${base64}`;
 }
 
 export async function normalize_skin_texture(texture: Uint8Array | string): Promise<Uint8Array> {
-	return await invoke('plugin:minecraft-skins|normalize_skin_texture', { texture })
+	return await invoke('plugin:minecraft-skins|normalize_skin_texture', { texture });
 }
 
 export async function unequip_skin(): Promise<void> {
-	await invoke('plugin:minecraft-skins|unequip_skin')
+	await invoke('plugin:minecraft-skins|unequip_skin');
 }
 
 export async function flush_pending_skin_change(): Promise<void> {
-	await invoke('plugin:minecraft-skins|flush_pending_skin_change')
+	await invoke('plugin:minecraft-skins|flush_pending_skin_change');
 }
 
 export async function flush_pending_skin_change_for_profile(profileId: string): Promise<void> {
 	await invoke('plugin:minecraft-skins|flush_pending_skin_change_for_profile', {
 		profileId,
-	})
+	});
 }
 
 export async function get_dragged_skin_data(path: string): Promise<Uint8Array> {
-	const data = await invoke('plugin:minecraft-skins|get_dragged_skin_data', { path })
-	return new Uint8Array(data)
+	const data = await invoke('plugin:minecraft-skins|get_dragged_skin_data', { path });
+	return new Uint8Array(data);
 }

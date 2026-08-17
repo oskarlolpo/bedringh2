@@ -82,7 +82,7 @@ struct CompactedLog {
     stats: LogCompactionStats,
 }
 
-async fn resolve_instance_path(
+pub async fn resolve_instance_path(
     instance: &str,
     state: &State,
 ) -> crate::Result<String> {

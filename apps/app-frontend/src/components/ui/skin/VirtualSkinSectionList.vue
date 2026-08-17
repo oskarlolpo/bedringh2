@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DropdownIcon, EditIcon, PlusIcon, TrashIcon, UnknownIcon } from '@modrinth/assets'
+import { DropdownIcon, EditIcon, PlusIcon, UnknownIcon } from '@modrinth/assets'
 import {
 	Accordion,
 	ButtonStyled,
@@ -10,7 +10,7 @@ import {
 	useScrollViewport,
 	useVIntl,
 } from '@modrinth/ui'
-import { useElementSize, useWindowSize } from '@vueuse/core'
+import { useElementSize } from '@vueuse/core'
 import { Tooltip } from 'floating-vue'
 import { computed, nextTick, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import Draggable from 'vuedraggable'
@@ -109,18 +109,17 @@ let isEnableLayoutTransitionsScheduled = false
 let isUnmounted = false
 
 const { width: listWidth } = useElementSize(listContainer)
-const { width: windowWidth } = useWindowSize()
 
 const columnCount = computed(() => {
-	if (windowWidth.value >= 2050) {
+	if (listWidth.value >= 2050) {
 		return 6
 	}
 
-	if (windowWidth.value >= 1750) {
+	if (listWidth.value >= 1750) {
 		return 5
 	}
 
-	if (windowWidth.value >= 1300) {
+	if (listWidth.value >= 1300) {
 		return 4
 	}
 
@@ -462,27 +461,17 @@ defineExpose({ getAddSkinButtonElement })
 								:is-dragging="isDraggingSavedSkin"
 								@select="emit('select', skin)"
 							>
-								<template v-if="!readOnly" #overlay-buttons>
-									<ButtonStyled color="brand">
-										<button
-											:aria-label="formatMessage(messages.editSkinButton)"
-											class="pointer-events-auto"
-											@click.stop="(event: MouseEvent) => emit('edit', skin, event)"
-										>
-											<EditIcon /> {{ formatMessage(commonMessages.editButton) }}
-										</button>
-									</ButtonStyled>
-									<ButtonStyled v-show="!skin.is_equipped" circular color="red">
-										<button
-											v-tooltip="formatMessage(messages.deleteSkinButton)"
-											:aria-label="formatMessage(messages.deleteSkinButton)"
-											class="!rounded-[100%] pointer-events-auto"
-											@click.stop="emit('delete', skin)"
-										>
-											<TrashIcon />
-										</button>
-									</ButtonStyled>
-								</template>
+							<template v-if="!readOnly" #overlay-buttons>
+								<ButtonStyled color="brand">
+									<button
+										:aria-label="formatMessage(messages.editSkinButton)"
+										class="pointer-events-auto"
+										@click.stop="(event: MouseEvent) => emit('edit', skin, event)"
+									>
+										<EditIcon /> {{ formatMessage(commonMessages.editButton) }}
+									</button>
+								</ButtonStyled>
+							</template>
 							</SkinButton>
 						</div>
 					</template>
@@ -502,27 +491,17 @@ defineExpose({ getAddSkinButtonElement })
 								:is-dragging="isDraggingSavedSkin"
 								@select="emit('select', skin)"
 							>
-								<template v-if="!readOnly" #overlay-buttons>
-									<ButtonStyled color="brand">
-										<button
-											:aria-label="formatMessage(messages.editSkinButton)"
-											class="pointer-events-auto"
-											@click.stop="(event: MouseEvent) => emit('edit', skin, event)"
-										>
-											<EditIcon /> {{ formatMessage(commonMessages.editButton) }}
-										</button>
-									</ButtonStyled>
-									<ButtonStyled v-show="!skin.is_equipped" circular color="red">
-										<button
-											v-tooltip="formatMessage(messages.deleteSkinButton)"
-											:aria-label="formatMessage(messages.deleteSkinButton)"
-											class="!rounded-[100%] pointer-events-auto"
-											@click.stop="emit('delete', skin)"
-										>
-											<TrashIcon />
-										</button>
-									</ButtonStyled>
-								</template>
+							<template v-if="!readOnly" #overlay-buttons>
+								<ButtonStyled color="brand">
+									<button
+										:aria-label="formatMessage(messages.editSkinButton)"
+										class="pointer-events-auto"
+										@click.stop="(event: MouseEvent) => emit('edit', skin, event)"
+									>
+										<EditIcon /> {{ formatMessage(commonMessages.editButton) }}
+									</button>
+								</ButtonStyled>
+							</template>
 							</SkinButton>
 						</div>
 					</template>

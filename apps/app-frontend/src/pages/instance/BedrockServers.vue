@@ -21,7 +21,7 @@
 					<h3 class="text-lg font-bold m-0 truncate pr-8">{{ server.name }}</h3>
 					<div class="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
 						<ButtonStyled type="transparent" color="red" circular size="small">
-							<button @click="removeServer(server.id)" v-tooltip="'Remove server'">
+							<button v-tooltip="'Remove server'" @click="removeServer(server.id)">
 								<TrashIcon />
 							</button>
 						</ButtonStyled>
@@ -52,7 +52,7 @@
 					<button @click="addModal?.hide()">Cancel</button>
 				</ButtonStyled>
 				<ButtonStyled color="brand">
-					<button @click="addServer" :disabled="!newServer.name || !newServer.address">Save</button>
+					<button :disabled="!newServer.name || !newServer.address" @click="addServer">Save</button>
 				</ButtonStyled>
 			</div>
 		</NewModal>
@@ -60,10 +60,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { GlobeIcon, HashIcon,PlusIcon, TrashIcon } from '@modrinth/assets'
+import { ButtonStyled, injectNotificationManager,NewModal, ProgressSpinner, StyledInput } from '@modrinth/ui'
 import { invoke } from '@tauri-apps/api/core'
-import { PlusIcon, TrashIcon, GlobeIcon, HashIcon } from '@modrinth/assets'
-import { ButtonStyled, StyledInput, NewModal, ProgressSpinner, injectNotificationManager } from '@modrinth/ui'
+import { onMounted,ref } from 'vue'
 
 const { handleError, addNotification } = injectNotificationManager()
 const favoriteServers = ref([])

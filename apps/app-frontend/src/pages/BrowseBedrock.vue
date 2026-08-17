@@ -4,10 +4,10 @@ import {
 	CheckIcon,
 	ClipboardCopyIcon,
 	ExternalIcon,
+	getCategoryIcon,
 	GlobeIcon,
 	PlusIcon,
 	SpinnerIcon,
-	getCategoryIcon,
 } from '@modrinth/assets'
 import type { BrowseInstallContentType, CardAction, ProjectType, Tags } from '@modrinth/ui'
 import {
@@ -28,7 +28,7 @@ import {
 	useVIntl,
 } from '@modrinth/ui'
 import { useQueryClient } from '@tanstack/vue-query'
-import { convertFileSrc } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke  } from '@tauri-apps/api/core'
 import type { Ref } from 'vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { LocationQuery } from 'vue-router'
@@ -43,11 +43,11 @@ import {
 	get_version_many,
 } from '@/helpers/cache.js'
 import { instance_listener } from '@/helpers/events.js'
-import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
 import {
 	get as getInstance,
 	get_installed_project_ids as getInstalledProjectIds,
 } from '@/helpers/instance'
+import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
 import { get_instance_worlds } from '@/helpers/worlds'
 import { injectContentInstall } from '@/providers/content-install'
@@ -976,8 +976,6 @@ function onSearchResultsInstalled(ids: string[]) {
 	}
 	newlyInstalled.value = Array.from(new Set([...newlyInstalled.value, ...ids]))
 }
-
-import { invoke } from '@tauri-apps/api/core'
 
 async function search(requestParams: string) {
 	debugLog('searching curseforge', requestParams)

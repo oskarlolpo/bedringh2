@@ -154,14 +154,22 @@
 	);
 	--brand-gradient-button: rgba(255, 255, 255, 0.5);
 	--brand-gradient-border: hsl(var(--brand-h) var(--brand-s) 20% / 0.15);
-	--brand-gradient-fade-out-color: linear-gradient(to bottom, hsl(var(--brand-h) 30% 88% / 0), hsl(var(--brand-h) 30% 88%) 70%);
+	--brand-gradient-fade-out-color: linear-gradient(
+		to bottom,
+		hsl(var(--brand-h) 30% 88% / 0),
+		hsl(var(--brand-h) 30% 88%) 70%
+	);
 
 	--color-button-bg-selected: var(--color-brand);
 	--color-button-text-selected: var(--color-accent-contrast);
 
 	--color-gradient-button-bg: linear-gradient(180deg, #f8f9fa 0%, #dce0e6 100%);
 
-	--loading-bar-gradient: linear-gradient(to right, var(--color-brand) 0%, hsl(var(--brand-h) var(--brand-s) 60%) 100%);
+	--loading-bar-gradient: linear-gradient(
+		to right,
+		var(--color-brand) 0%,
+		hsl(var(--brand-h) var(--brand-s) 60%) 100%
+	);
 
 	--color-platform-fabric: #8a7b71;
 	--color-platform-quilt: #8b61b4;
@@ -367,18 +375,34 @@ html {
 
 	--shadow-card: rgba(0, 0, 0, 0.25) 0px 2px 4px 0px;
 
-	--brand-gradient-bg: linear-gradient(0deg, hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.08) 0%, transparent 100%);
-	--brand-gradient-strong-bg: linear-gradient(270deg, hsl(var(--brand-h) 30% 5%) 10%, hsl(var(--brand-h) 25% 10%) 100%);
+	--brand-gradient-bg: linear-gradient(
+		0deg,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.08) 0%,
+		transparent 100%
+	);
+	--brand-gradient-strong-bg: linear-gradient(
+		270deg,
+		hsl(var(--brand-h) 30% 5%) 10%,
+		hsl(var(--brand-h) 25% 10%) 100%
+	);
 	--brand-gradient-button: rgba(255, 255, 255, 0.08);
 	--brand-gradient-border: hsl(var(--brand-h) 100% 80% / 0.08);
-	--brand-gradient-fade-out-color: linear-gradient(to bottom, transparent 0%, var(--surface-2) 100%);
+	--brand-gradient-fade-out-color: linear-gradient(
+		to bottom,
+		transparent 0%,
+		var(--surface-2) 100%
+	);
 
 	--color-button-bg-selected: var(--color-brand-highlight);
 	--color-button-text-selected: var(--color-brand);
 
 	--color-gradient-button-bg: linear-gradient(180deg, #3a3d47 0%, #33363d 100%);
 
-	--loading-bar-gradient: linear-gradient(to right, var(--color-brand) 0%, hsl(var(--brand-h) var(--brand-s) 70%) 100%);
+	--loading-bar-gradient: linear-gradient(
+		to right,
+		var(--color-brand) 0%,
+		hsl(var(--brand-h) var(--brand-s) 70%) 100%
+	);
 
 	--color-platform-fabric: #dbb69b;
 	--color-platform-quilt: #c796f9;
@@ -421,7 +445,7 @@ html {
 	);
 	--brand-gradient-strong-bg: linear-gradient(
 		270deg,
-		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.20) 10%,
+		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.2) 10%,
 		hsl(var(--brand-h) var(--brand-s) var(--brand-l) / 0.08) 100%
 	);
 
@@ -467,64 +491,109 @@ html {
 }
 
 html.theme-green {
-	--brand-h: 153; --brand-s: 100%; --brand-l: 34%;
+	--brand-h: 153;
+	--brand-s: 100%;
+	--brand-l: 34%;
 }
-html.dark.theme-green, html.oled-mode.theme-green {
-	--brand-h: 145; --brand-s: 78%; --brand-l: 48%;
+html.dark.theme-green,
+html.oled-mode.theme-green {
+	--brand-h: 145;
+	--brand-s: 78%;
+	--brand-l: 48%;
 }
 
 html.theme-purple {
-	--brand-h: 272; --brand-s: 95%; --brand-l: 55%;
+	--brand-h: 272;
+	--brand-s: 95%;
+	--brand-l: 55%;
 }
-html.dark.theme-purple, html.oled-mode.theme-purple {
-	--brand-h: 272; --brand-s: 100%; --brand-l: 68%;
+html.dark.theme-purple,
+html.oled-mode.theme-purple {
+	--brand-h: 272;
+	--brand-s: 100%;
+	--brand-l: 68%;
 }
 
 html.theme-blue {
-	--brand-h: 211; --brand-s: 90%; --brand-l: 50%;
+	--brand-h: 211;
+	--brand-s: 90%;
+	--brand-l: 50%;
 }
-html.dark.theme-blue, html.oled-mode.theme-blue {
-	--brand-h: 214; --brand-s: 100%; --brand-l: 58%;
+html.dark.theme-blue,
+html.oled-mode.theme-blue {
+	--brand-h: 214;
+	--brand-s: 100%;
+	--brand-l: 58%;
 }
 
 html.theme-red {
-	--brand-h: 355; --brand-s: 95%; --brand-l: 50%;
+	--brand-h: 355;
+	--brand-s: 95%;
+	--brand-l: 50%;
 }
-html.dark.theme-red, html.oled-mode.theme-red {
-	--brand-h: 355; --brand-s: 100%; --brand-l: 60%;
+html.dark.theme-red,
+html.oled-mode.theme-red {
+	--brand-h: 355;
+	--brand-s: 100%;
+	--brand-l: 60%;
 }
 
 html.theme-orange {
-	--brand-h: 28; --brand-s: 100%; --brand-l: 50%;
+	--brand-h: 28;
+	--brand-s: 100%;
+	--brand-l: 50%;
 }
-html.dark.theme-orange, html.oled-mode.theme-orange {
-	--brand-h: 30; --brand-s: 99%; --brand-l: 55%;
+html.dark.theme-orange,
+html.oled-mode.theme-orange {
+	--brand-h: 30;
+	--brand-s: 99%;
+	--brand-l: 55%;
 }
 
 html.theme-pink {
-	--brand-h: 322; --brand-s: 100%; --brand-l: 52%;
+	--brand-h: 322;
+	--brand-s: 100%;
+	--brand-l: 52%;
 }
-html.dark.theme-pink, html.oled-mode.theme-pink {
-	--brand-h: 322; --brand-s: 100%; --brand-l: 62%;
+html.dark.theme-pink,
+html.oled-mode.theme-pink {
+	--brand-h: 322;
+	--brand-s: 100%;
+	--brand-l: 62%;
 }
 
 html.theme-teal {
-	--brand-h: 168; --brand-s: 90%; --brand-l: 38%;
+	--brand-h: 168;
+	--brand-s: 90%;
+	--brand-l: 38%;
 }
-html.dark.theme-teal, html.oled-mode.theme-teal {
-	--brand-h: 168; --brand-s: 95%; --brand-l: 48%;
+html.dark.theme-teal,
+html.oled-mode.theme-teal {
+	--brand-h: 168;
+	--brand-s: 95%;
+	--brand-l: 48%;
 }
 
 html.theme-cyan {
-	--brand-h: 186; --brand-s: 100%; --brand-l: 42%;
+	--brand-h: 186;
+	--brand-s: 100%;
+	--brand-l: 42%;
 }
-html.dark.theme-cyan, html.oled-mode.theme-cyan {
-	--brand-h: 186; --brand-s: 100%; --brand-l: 50%;
+html.dark.theme-cyan,
+html.oled-mode.theme-cyan {
+	--brand-h: 186;
+	--brand-s: 100%;
+	--brand-l: 50%;
 }
 
 html.theme-yellow {
-	--brand-h: 48; --brand-s: 100%; --brand-l: 45%;
+	--brand-h: 48;
+	--brand-s: 100%;
+	--brand-l: 45%;
 }
-html.dark.theme-yellow, html.oled-mode.theme-yellow {
-	--brand-h: 48; --brand-s: 100%; --brand-l: 55%;
+html.dark.theme-yellow,
+html.oled-mode.theme-yellow {
+	--brand-h: 48;
+	--brand-s: 100%;
+	--brand-l: 55%;
 }

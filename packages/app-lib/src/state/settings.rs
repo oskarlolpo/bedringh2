@@ -71,6 +71,7 @@ pub enum FeatureFlag {
     KLauncherSkinSystem,
     KLauncherCensorship,
     KLauncherKLMaster,
+    KLauncherKLMasterAlways,
 }
 
 impl Settings {

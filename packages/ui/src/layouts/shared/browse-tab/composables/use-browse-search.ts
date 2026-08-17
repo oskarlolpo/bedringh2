@@ -66,6 +66,7 @@ export interface BrowseSearchState {
 	setPage: (page: number) => Promise<void>
 	clearSearch: () => void
 	onFilterChange: () => void
+	fetchRandomItem?: () => Promise<Labrinth.Search.v3.ResultSearchProject | undefined>
 }
 
 export function useBrowseSearch(options: UseBrowseSearchOptions): BrowseSearchState {
@@ -343,6 +344,52 @@ export function useBrowseSearch(options: UseBrowseSearchOptions): BrowseSearchSt
 		},
 	)
 
+	async function fetchRandomItem(): Promise<Labrinth.Search.v3.ResultSearchProject | undefined> {
+		if (totalHits.value <= 0) return undefined
+
+		const count = totalHits.value
+		const randomOffset = Math.floor(Math.random() * count)
+
+		const currentOffset = (currentPage.value - 1) * maxResults.value
+		const hits = isServerType.value ? serverHits.value : projectHits.value
+		if (
+			hits.length > 0 &&
+			randomOffset >= currentOffset &&
+			randomOffset < currentOffset + hits.length
+		) {
+			const index = randomOffset - currentOffset
+			return hits[index]
+		}
+
+		let params = effectiveRequestParams.value
+		if (/([?&])limit=\d+/.test(params)) {
+			params = params.replace(/([?&])limit=\d+/, `$1limit=1`)
+		} else {
+			params += `${params.includes('?') ? '&' : '?'}limit=1`
+		}
+
+		if (/([?&])offset=\d+/.test(params)) {
+			params = params.replace(/([?&])offset=\d+/, `$1offset=${randomOffset}`)
+		} else {
+			params += `&offset=${randomOffset}`
+		}
+
+		try {
+			const response = await options.search(params)
+			const responseHits = isServerType.value ? response.serverHits : response.projectHits
+			if (responseHits && responseHits.length > 0) {
+				return responseHits[0]
+			}
+		} catch (err) {
+			console.error('Failed to search random project:', err)
+		}
+
+		if (hits.length > 0) {
+			return hits[Math.floor(Math.random() * hits.length)]
+		}
+		return undefined
+	}
+
 	return {
 		query,
 		filters,
@@ -369,5 +416,6 @@ export function useBrowseSearch(options: UseBrowseSearchOptions): BrowseSearchSt
 		setPage,
 		clearSearch,
 		onFilterChange,
+		fetchRandomItem,
 	}
 }

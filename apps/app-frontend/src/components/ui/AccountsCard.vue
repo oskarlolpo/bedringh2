@@ -27,14 +27,16 @@
 	>
 		<template #title>
 			<div class="flex gap-2 w-full min-w-0">
-				<Avatar
-					size="36px"
-					:src="
-						selectedAccount
-							? avatarUrl
-							: 'https://launcher-files.modrinth.com/assets/steve_head.png'
-					"
-				/>
+				<div class="image-pixelated">
+					<Avatar
+						size="36px"
+						:src="
+							selectedAccount
+								? avatarUrl
+								: (localSteveHeadUrl.value || 'https://launcher-files.modrinth.com/assets/steve_head.png')
+						"
+					/>
+				</div>
 				<div class="flex flex-col items-start w-full min-w-0">
 					<div class="flex items-center gap-2 w-full min-w-0">
 						<span class="truncate text-left">{{
@@ -64,7 +66,9 @@
 							class="w-5 h-5 text-brand shrink-0"
 						/>
 						<RadioButtonIcon v-else class="w-5 h-5 text-secondary shrink-0" />
-						<Avatar :src="getAccountAvatarUrl(account)" size="24px" />
+						<div class="image-pixelated">
+							<Avatar :src="getAccountAvatarUrl(account)" size="24px" />
+						</div>
 						<div class="flex items-center gap-1.5 min-w-0">
 							<p
 								class="m-0 truncate min-w-0"
@@ -119,9 +123,9 @@
 	</Accordion>
 	<AccountsInputModals
 		ref="accountsInputModals"
-		v-model:offlinePlayerName="offlinePlayerName"
-		v-model:kLauncherLoginValue="kLauncherLoginValue"
-		v-model:kLauncherPassword="kLauncherPassword"
+		v-model:offline-player-name="offlinePlayerName"
+		v-model:k-launcher-login-value="kLauncherLoginValue"
+		v-model:k-launcher-password="kLauncherPassword"
 		:ely-by-login-disabled="false"
 		ely-by-login-value=""
 		ely-by-password=""
@@ -153,8 +157,7 @@ import {
 import type { Ref } from 'vue'
 import { computed, onUnmounted, ref } from 'vue'
 
-import AccountsInputModals from './astralrinth/accounts/input/AccountsInputModals.vue'
-
+import steveHeadImage from '@/assets/skins/steve.png'
 import { trackEvent } from '@/helpers/analytics'
 import {
 	get_default_user,
@@ -164,10 +167,13 @@ import {
 	users,
 } from '@/helpers/auth'
 import { process_listener } from '@/helpers/events'
-import { getPlayerHeadUrl } from '@/helpers/rendering/batch-skin-renderer.ts'
+import { fetchExternalJson } from '@/helpers/external-image.ts'
+import { generatePlayerHeadBlob, getPlayerHeadUrl } from '@/helpers/rendering/batch-skin-renderer.ts'
 import type { Skin } from '@/helpers/skins'
 import { get_available_skins } from '@/helpers/skins'
 import { handleSevereError } from '@/store/error.js'
+
+import AccountsInputModals from './astralrinth/accounts/input/AccountsInputModals.vue'
 
 const { formatMessage } = useVIntl()
 const { handleError } = injectNotificationManager()
@@ -177,6 +183,8 @@ const emit = defineEmits<{
 }>()
 
 type MinecraftCredential = {
+	access_token?: string
+	refresh_token?: string
 	profile: {
 		id: string
 		name: string
@@ -188,6 +196,8 @@ const loginDisabled = ref(false)
 const defaultUser = ref<string | undefined>()
 const equippedSkin = ref<Skin | null>(null)
 const headUrlCache = ref(new Map<string, string>())
+const accountHeadCache = ref(new Map<string, string>())
+const localSteveHeadUrl = ref<string | null>(null)
 
 const accountsInputModals = ref<InstanceType<typeof AccountsInputModals> | null>(null)
 const offlinePlayerName = ref('')
@@ -196,11 +206,82 @@ const kLauncherLoginValue = ref('')
 const kLauncherPassword = ref('')
 const kLauncherLoginDisabled = ref(false)
 
-async function refreshValues() {
-	defaultUser.value = await get_default_user().catch(handleError)
-	const userList = await users().catch(handleError)
-	accounts.value = Array.isArray(userList) ? [...userList] : []
-	accounts.value.sort((a, b) => (a.profile?.name ?? '').localeCompare(b.profile?.name ?? ''))
+async function generateLocalSteveHead() {
+	try {
+		const headBlob = await generatePlayerHeadBlob(steveHeadImage, 64)
+		localSteveHeadUrl.value = URL.createObjectURL(headBlob)
+	} catch {
+		localSteveHeadUrl.value = null
+	}
+}
+
+generateLocalSteveHead()
+
+async function fetchAccountHead(account: MinecraftCredential) {
+	const name = account.profile?.name
+	const profileId = account.profile?.id
+	if (!name || !profileId) return
+
+	const accountType = getAccountTypeName(account)
+	let skinUrl: string | null = null
+
+	try {
+		if (accountType === 'KLauncher') {
+			// KLauncher accounts: fetch skin from KLauncher API (routed through the
+			// Tauri HTTP plugin to bypass the webview CSP connect-src list).
+			const json = await fetchExternalJson<{
+				textures?: { SKIN?: { url?: string } }
+			}>(`https://api.klaun.ch/v2/user/skin?nick=${encodeURIComponent(name)}`)
+			skinUrl = json?.textures?.SKIN?.url ?? null
+		} else if (accountType === 'Microsoft') {
+			// Microsoft accounts: use mc-heads.net which resolves by UUID or username
+			skinUrl = `https://mc-heads.net/skin/${profileId}`
+		} else {
+			// Offline / Ely.by / unknown: no reliable skin source
+			return
+		}
+
+		if (skinUrl) {
+			const httpsUrl = skinUrl.replace('http://', 'https://')
+			const headBlob = await generatePlayerHeadBlob(httpsUrl, 64)
+			const headUrl = URL.createObjectURL(headBlob)
+			accountHeadCache.value = new Map(accountHeadCache.value).set(profileId, headUrl)
+		}
+	} catch {
+		// ignore
+	}
+}
+
+	function getAccountTypeWeight(account: MinecraftCredential): number {
+		const type = getAccountTypeName(account)
+		switch (type) {
+			case 'Microsoft':
+				return 0
+			case 'KLauncher':
+				return 1
+			case 'Ely.by':
+				return 2
+			case 'Офлайн':
+				return 3
+			default:
+				return 4
+		}
+	}
+
+	async function refreshValues() {
+		defaultUser.value = await get_default_user().catch(handleError)
+		const userList = await users().catch(handleError)
+		accounts.value = Array.isArray(userList) ? [...userList] : []
+		accounts.value.sort((a, b) => {
+			const weightDiff = getAccountTypeWeight(a) - getAccountTypeWeight(b)
+			if (weightDiff !== 0) return weightDiff
+			return (a.profile?.name ?? '').localeCompare(b.profile?.name ?? '')
+		})
+
+	// Fetch head for each account in background
+	for (const account of accounts.value) {
+		void fetchAccountHead(account)
+	}
 
 	try {
 		const skins = await get_available_skins()
@@ -250,23 +331,29 @@ const selectedAccount = computed(() =>
 	accounts.value.find((account) => account.profile.id === defaultUser.value),
 )
 
+const STEVE_HEAD_URL = 'https://launcher-files.modrinth.com/assets/steve_head.png'
+
 const avatarUrl = computed(() => {
 	if (equippedSkin.value?.texture_key) {
 		const cachedUrl = headUrlCache.value.get(equippedSkin.value.texture_key)
 		if (cachedUrl) {
 			return cachedUrl
 		}
-		return `https://mc-heads.net/avatar/${equippedSkin.value.texture_key}/128`
 	}
-	if (selectedAccount.value?.profile?.id) {
-		return `https://mc-heads.net/avatar/${selectedAccount.value.profile.id}/128`
-	}
-	return 'https://launcher-files.modrinth.com/assets/steve_head.png'
+	return localSteveHeadUrl.value || STEVE_HEAD_URL
 })
 
 function getAccountAvatarUrl(account: MinecraftCredential) {
+	const profileId = account.profile?.id
+	if (!profileId) return localSteveHeadUrl.value || STEVE_HEAD_URL
+
+	const cachedHead = accountHeadCache.value.get(profileId)
+	if (cachedHead) {
+		return cachedHead
+	}
+
 	if (
-		account.profile.id === selectedAccount.value?.profile?.id &&
+		profileId === selectedAccount.value?.profile?.id &&
 		equippedSkin.value?.texture_key
 	) {
 		const cachedUrl = headUrlCache.value.get(equippedSkin.value.texture_key)
@@ -274,7 +361,7 @@ function getAccountAvatarUrl(account: MinecraftCredential) {
 			return cachedUrl
 		}
 	}
-	return `https://mc-heads.net/avatar/${account.profile.id}/128`
+	return localSteveHeadUrl.value || STEVE_HEAD_URL
 }
 
 async function setAccount(account: MinecraftCredential) {
@@ -437,3 +524,9 @@ function getAccountTypeBadgeClass(account: MinecraftCredential | null | undefine
 }
 
 </script>
+
+<style scoped lang="scss">
+.image-pixelated {
+	image-rendering: pixelated;
+}
+</style>

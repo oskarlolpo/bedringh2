@@ -78,7 +78,7 @@
 						
 						<div class="mt-auto pt-3 flex gap-2 justify-end items-center border-t border-surface-4/60">
 							<ButtonStyled size="small" type="outlined">
-								<button @click="backupNow(world)" :disabled="backingUp === world.folderName" title="Создать снапшот мира">
+								<button :disabled="backingUp === world.folderName" title="Создать снапшот мира" @click="backupNow(world)">
 									<ArchiveIcon v-if="backingUp !== world.folderName" class="size-4" />
 									<SpinnerIcon v-else class="size-4 animate-spin" />
 								</button>
@@ -89,7 +89,7 @@
 								</button>
 							</ButtonStyled>
 							<ButtonStyled size="small" color="red" type="transparent">
-								<button @click="deleteWorld(world)" title="Удалить мир">
+								<button title="Удалить мир" @click="deleteWorld(world)">
 									<TrashIcon class="size-4" />
 								</button>
 							</ButtonStyled>
@@ -149,10 +149,10 @@
 
 <script setup lang="ts">
 import { ArchiveIcon, CompassIcon, DownloadIcon, GlobeIcon, SearchIcon, SpinnerIcon, TrashIcon } from '@modrinth/assets'
-import { ButtonStyled, EmptyState, NewModal, ReadyTransition, StyledInput, injectNotificationManager } from '@modrinth/ui'
-import { invoke, convertFileSrc } from '@tauri-apps/api/core'
+import { ButtonStyled, EmptyState, injectNotificationManager,NewModal, ReadyTransition, StyledInput } from '@modrinth/ui'
+import { convertFileSrc,invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted,ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { GameInstance } from '@/helpers/types'

@@ -23,15 +23,14 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import {
+	autoResolveAddonMetadata,
+	loadBedrockMetadataMap,
+	metadataVersion,
+} from '@/composables/use-bedrock-metadata'
 import { get_full_path } from '@/helpers/instance'
 import type { GameInstance } from '@/helpers/types'
 import { highlightInFolder } from '@/helpers/utils.js'
-
-import {
-	loadBedrockMetadataMap,
-	autoResolveAddonMetadata,
-	metadataVersion,
-} from '@/composables/use-bedrock-metadata'
 
 const props = defineProps<{
 	instance: GameInstance

@@ -259,6 +259,21 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
                     .output();
             }
 
+            // Ensure ALL APPLICATION PACKAGES have read/execute permissions on unpacked UWP files
+            let _ = std::process::Command::new("icacls")
+                .creation_flags(0x08000000)
+                .args(&[
+                    versions_dir.to_str().unwrap_or(""),
+                    "/grant",
+                    "*S-1-15-2-1:(OI)(CI)(RX)",
+                    "/grant",
+                    "*S-1-15-2-2:(OI)(CI)(RX)",
+                    "/T",
+                    "/C",
+                    "/Q",
+                ])
+                .output();
+
             log_metric("Registering unpacked UWP package...");
             let install_output = std::process::Command::new("powershell")
                 .creation_flags(0x08000000)
@@ -441,9 +456,15 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
         }
     }
 
-    log_metric("Syncing custom skin pack...");
-    let _ = sync_bedrock_custom_skin_pack(&instance_mojang).await;
-    let _ = crate::api::bedrock_addons::sync_valid_known_packs(&instance_mojang).await;
+    let is_ancient_bedrock = content_set.game_version.starts_with("0.")
+        || content_set.game_version.starts_with("1.0.")
+        || content_set.game_version.starts_with("1.1.");
+
+    if !is_ancient_bedrock {
+        log_metric("Syncing custom skin pack...");
+        let _ = sync_bedrock_custom_skin_pack(&instance_mojang).await;
+        let _ = crate::api::bedrock_addons::sync_valid_known_packs(&instance_mojang).await;
+    }
 
     log_metric("Mounting isolated profile filesystem...");
     if install_type.is_uwp() {
@@ -746,20 +767,47 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
         let ps_script = format!(
             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; \
             Write-Output 'Starting Bedrock UWP via shell:appsFolder\\{0}'; \
+            $startTime = Get-Date; \
             Start-Process 'shell:appsFolder\\{0}'; \
-            $timeout = 60; \
-            while ($timeout -gt 0) {{ \
-                $p = Get-Process -Name 'GameLaunchHelper','Minecraft.Windows','Minecraft.UWP','MinecraftUWP','Minecraft' -ErrorAction SilentlyContinue; \
-                if ($p) {{ Write-Output ('Found Bedrock process(es) with PID(s): ' + ($p.Id -join ', ')); break }}; \
-                Write-Output 'Waiting for Bedrock to launch... (' + $timeout + 's left)'; \
-                Start-Sleep -Seconds 1; $timeout-- \
+            $procNames = @('Minecraft.Win10.DX11','Minecraft.Win10','Minecraft.Windows','Minecraft.UWP','MinecraftUWP','Minecraft','GameLaunchHelper'); \
+            $foundProc = $false; \
+            for ($i = 0; $i -lt 30; $i++) {{ \
+                Start-Sleep -Milliseconds 500; \
+                $p = Get-Process -Name $procNames -ErrorAction SilentlyContinue; \
+                if ($p) {{ \
+                    Write-Output ('Found Bedrock process(es) with PID(s): ' + ($p.Id -join ', ')); \
+                    $foundProc = $true; \
+                    break \
+                }}; \
+                $twinui = Get-WinEvent -FilterHashtable @{{LogName='Microsoft-Windows-TWinUI/Operational'; StartTime=$startTime}} -MaxEvents 5 -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -eq 5961 }}; \
+                if ($twinui) {{ \
+                    Write-Output ('[ACTIVATION ERROR] UWP failed to activate: ' + $twinui[0].Message.Trim()); \
+                    break \
+                }}; \
+                $crash = Get-WinEvent -FilterHashtable @{{LogName='Application'; ProviderName='Application Error'; StartTime=$startTime}} -MaxEvents 5 -ErrorAction SilentlyContinue | Where-Object {{ $_.Message -match 'Minecraft' -or $_.Message -match 'Win10' }}; \
+                if ($crash) {{ \
+                    Write-Output ('[CRASH ERROR] Minecraft crashed on launch: ' + $crash[0].Message.Trim()); \
+                    break \
+                }}; \
             }}; \
-            if ($timeout -eq 0) {{ Write-Output 'ERROR: Bedrock process did not start within 60 seconds!' }}; \
-            Write-Output 'Monitoring Bedrock process...'; \
-            while (Get-Process -Name 'GameLaunchHelper','Minecraft.Windows','Minecraft.UWP','MinecraftUWP','Minecraft' -ErrorAction SilentlyContinue) {{ \
-                Start-Sleep -Seconds 2 \
-            }}; \
-            Write-Output 'Bedrock process exited.'",
+            if (-not $foundProc) {{ \
+                Write-Output 'Bedrock process did not stay running or failed to initialize.'; \
+            }} else {{ \
+                Write-Output 'Monitoring Bedrock process...'; \
+                $procStartTime = Get-Date; \
+                while (Get-Process -Name $procNames -ErrorAction SilentlyContinue) {{ \
+                    Start-Sleep -Seconds 1 \
+                }}; \
+                $duration = ((Get-Date) - $procStartTime).TotalSeconds; \
+                Write-Output ('Bedrock process exited after ' + [math]::Round($duration, 1) + 's.'); \
+                if ($duration -lt 10) {{ \
+                    $crash = Get-WinEvent -FilterHashtable @{{LogName='Application'; ProviderName='Application Error'; StartTime=$startTime}} -MaxEvents 5 -ErrorAction SilentlyContinue | Where-Object {{ $_.Message -match 'Minecraft' -or $_.Message -match 'Win10' }}; \
+                    if ($crash) {{ \
+                        Write-Output '[CRASH REPORT] Faulting details from Windows Event Log:'; \
+                        Write-Output ($crash[0].Message.Trim()); \
+                    }} \
+                }} \
+            }}",
             launch_target
         );
 

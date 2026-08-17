@@ -88,6 +88,22 @@ pub fn remove_log_buffer(instance_id: &str) {
 pub fn emit_legacy_log_pub(instance_id: &str, message: &str) {
     push_log_line(instance_id, message.to_string());
 
+    let instance_id_clone = instance_id.to_string();
+    let msg_clone = message.to_string();
+    tokio::spawn(async move {
+        if let Ok(state) = crate::State::get().await {
+            if let Ok(instance_path) = crate::api::logs::resolve_instance_path(&instance_id_clone, &state).await {
+                let logs_folder = state.directories.instance_logs_dir(&instance_path);
+                let _ = tokio::fs::create_dir_all(&logs_folder).await;
+                let latest_log = logs_folder.join("latest.log");
+                let launcher_log = logs_folder.join(LAUNCHER_LOG_PATH);
+                let line_with_nl = format!("{}\n", msg_clone);
+                let _ = Process::append_to_log_file(&latest_log, &line_with_nl);
+                let _ = Process::append_to_log_file(&launcher_log, &line_with_nl);
+            }
+        }
+    });
+
     #[cfg(feature = "tauri")]
     {
         if let Ok(event_state) = crate::EventState::get() {
@@ -183,29 +199,30 @@ impl ProcessManager {
                 .map_err(|e| IOError::with_path(e, &logs_folder))?;
         }
 
+        // Rotate previous latest.log into an archived YYYY-MM-DD-N.log file
+        Self::rotate_latest_log(&logs_folder);
+
         let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
+        let latest_log_path = logs_folder.join("latest.log");
 
         clear_log_buffer(instance_id);
 
-        {
-            let mut log_file = OpenOptions::new()
+        for target_log in [&log_path, &latest_log_path] {
+            if let Ok(mut log_file) = OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .open(&log_path)
-                .map_err(|e| IOError::with_path(e, &log_path))?;
-
-            // Initialize with timestamp header
-            let now = chrono::Local::now();
-            writeln!(
-                log_file,
-                "# Minecraft launcher log started at {}",
-                now.format("%Y-%m-%d %H:%M:%S")
-            )
-            .map_err(|e| IOError::with_path(e, &log_path))?;
-            writeln!(log_file, "# Instance: {instance_path} \n")
-                .map_err(|e| IOError::with_path(e, &log_path))?;
-            writeln!(log_file).map_err(|e| IOError::with_path(e, &log_path))?;
+                .open(target_log)
+            {
+                let now = chrono::Local::now();
+                let _ = writeln!(
+                    log_file,
+                    "# Minecraft launcher log started at {}",
+                    now.format("%Y-%m-%d %H:%M:%S")
+                );
+                let _ = writeln!(log_file, "# Instance: {instance_path} \n");
+                let _ = writeln!(log_file);
+            }
         }
 
         if let Some(stdout) = stdout {
@@ -330,6 +347,36 @@ impl ProcessManager {
 
     fn remove(&self, id: Uuid) {
         self.processes.remove(&id);
+    }
+
+    pub fn rotate_latest_log(logs_folder: &std::path::Path) {
+        let latest_log_path = logs_folder.join("latest.log");
+        if latest_log_path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&latest_log_path) {
+                if metadata.len() > 0 {
+                    let date_str = metadata
+                        .modified()
+                        .or_else(|_| metadata.created())
+                        .ok()
+                        .map(|st| {
+                            let dt: chrono::DateTime<chrono::Local> = st.into();
+                            dt.format("%Y-%m-%d").to_string()
+                        })
+                        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+
+                    let mut count = 1;
+                    loop {
+                        let filename = format!("{date_str}-{count}.log");
+                        let archived_path = logs_folder.join(&filename);
+                        if !archived_path.exists() {
+                            let _ = std::fs::rename(&latest_log_path, &archived_path);
+                            break;
+                        }
+                        count += 1;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -585,8 +632,10 @@ impl Process {
                 }
 
                 if !line.is_empty() {
-                    if let Err(e) = Self::append_to_log_file(&log_path, &line) {
-                        tracing::warn!("Failed to write to log file: {}", e);
+                    let _ = Self::append_to_log_file(&log_path, &line);
+                    if let Some(parent) = log_path.as_ref().parent() {
+                        let latest_log = parent.join("latest.log");
+                        let _ = Self::append_to_log_file(&latest_log, &line);
                     }
                     Self::emit_legacy_log(instance_id, line.trim_ascii_end());
                     if let Err(e) = Self::maybe_handle_old_server_join_logging(

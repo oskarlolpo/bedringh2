@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { ref } from 'vue'
 
 export interface BedrockAddonMeta {
 	projectId?: string
@@ -110,7 +110,7 @@ export async function autoResolveAddonMetadata(
 				const hit = list[0]
 				let authorName = 'CurseForge Creator'
 				let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${hit.slug}`
-				let authorAvatar = hit.authors?.[0]?.avatarUrl || hit.authors?.[0]?.avatar_url || hit.logo?.thumbnailUrl || hit.logo?.url
+				const authorAvatar = hit.authors?.[0]?.avatarUrl || hit.authors?.[0]?.avatar_url || hit.logo?.thumbnailUrl || hit.logo?.url
 
 				if (hit.authors && hit.authors.length > 0) {
 					authorName = hit.authors[0].name

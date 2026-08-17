@@ -15,7 +15,7 @@ export async function get_loader_versions(loader) {
 			gameVersions: versions.map((v) => ({
 				id: v.version,
 				stable: !v.is_preview,
-				loaders: [{ id: v.identifier, stable: !v.is_preview }],
+				loaders: [{ id: v.version, stable: !v.is_preview }],
 			})),
 		}
 	}

@@ -8,11 +8,11 @@ import {
 	LanguagesIcon,
 	ModrinthIcon,
 	PaintbrushIcon,
+	PlugIcon,
 	Settings2Icon,
 	ShieldIcon,
 	ToggleRightIcon,
 	UserIcon,
-	PlugIcon,
 } from '@modrinth/assets'
 import {
 	commonMessages,
@@ -31,15 +31,15 @@ import { computed, provide, ref, watch } from 'vue'
 import PrivacySettings from '@/components/ui/settings/account/PrivacySettings.vue'
 import ProfileSettings from '@/components/ui/settings/account/ProfileSettings.vue'
 import SocialSettings from '@/components/ui/settings/account/SocialSettings.vue'
-import AppearanceSettings from '@/components/ui/settings/display/AppearanceSettings.vue'
 import BedrockSettings from '@/components/ui/settings/BedrockSettings.vue'
+import AppearanceSettings from '@/components/ui/settings/display/AppearanceSettings.vue'
 import BehaviorSettings from '@/components/ui/settings/display/BehaviorSettings.vue'
 import FeatureFlagSettings from '@/components/ui/settings/display/FeatureFlagSettings.vue'
 import LanguageSettings from '@/components/ui/settings/display/LanguageSettings.vue'
-import KLauncherSettings from '@/components/ui/settings/KLauncherSettings.vue'
 import DefaultInstanceSettings from '@/components/ui/settings/instances/DefaultInstanceSettings.vue'
 import JavaSettings from '@/components/ui/settings/instances/JavaSettings.vue'
 import ResourceManagementSettings from '@/components/ui/settings/instances/ResourceManagementSettings.vue'
+import KLauncherSettings from '@/components/ui/settings/KLauncherSettings.vue'
 import { get, set } from '@/helpers/settings.ts'
 import {
 	appSettingsModalContextKey,

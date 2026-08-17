@@ -75,13 +75,15 @@ impl MinecraftSkinOperation {
         TextureStream::Error: Into<Box<dyn Error + Send + Sync>>,
         Bytes: From<TextureStream::Ok>,
     {
-        if credentials.access_token.starts_with("kl_") {
-            let token = &credentials.access_token["kl_".len()..];
+        if let Some(token) = credentials
+            .access_token
+            .strip_prefix("kl_")
+            .filter(|token| !token.is_empty())
+        {
+            // Mirror the original KLauncher client: skins are uploaded through
+            // `POST /v2/user/skin/upload` with `file` + `type`="skin" fields.
             let form = reqwest::multipart::Form::new()
-                .text("model", match variant {
-                    MinecraftSkinVariant::Slim => "slim",
-                    _ => "classic",
-                })
+                .text("type", "skin")
                 .part(
                     "file",
                     Part::stream(Body::wrap_stream(texture))
@@ -89,18 +91,22 @@ impl MinecraftSkinOperation {
                         .file_name("skin.png"),
                 );
 
-            let res = INSECURE_REQWEST_CLIENT
-                .post("https://api.klaun.ch/v2/user/skin")
+            INSECURE_REQWEST_CLIENT
+                .post("https://api.klaun.ch/v2/user/skin/upload")
                 .header("Authorization", format!("Bearer {}", token))
                 .header("Accept", "application/json")
                 .multipart(form)
                 .send()
-                .await;
+                .await
+                .and_then(|response| response.error_for_status())
+                .map_err(|error| {
+                    ErrorKind::OtherError(format!(
+                        "Failed to upload KLauncher skin: {error}"
+                    ))
+                    .as_error()
+                })?;
 
-            if let Ok(response) = res {
-                tracing::info!("KLauncher skin upload response status: {}", response.status());
-            }
-
+            // The KLauncher API does not return a Mojang-style profile.
             return Ok(None);
         }
 

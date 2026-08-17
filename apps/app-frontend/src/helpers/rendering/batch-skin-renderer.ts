@@ -284,7 +284,27 @@ export async function generatePlayerHeadBlob(skinUrl: string, size: number = 64)
 
 				outputCtx.imageSmoothingEnabled = false
 
-				const headImageData = sourceCtx.getImageData(8, 8, 8, 8)
+				// Координаты (8,8)/(40,8) области головы/шапки верны только для
+				// ванильного 64x64 скина. HD-скины — это тот же макет, просто
+				// с большим разрешением (128x128, 512x512 и т.д.), поэтому
+				// область головы масштабируется вместе с шириной картинки.
+				// Высоту при этом не берём в расчёт: для анимированных скинов
+				// (см. configureFrameStrip в skin-rendering.ts) высота файла —
+				// это несколько склеенных по вертикали кадров, а голова нам
+				// нужна только с первого кадра, который всегда сверху.
+				const scale = img.width / 64
+				const headRegionSize = Math.max(1, Math.round(8 * scale))
+				const headRegionX = Math.round(8 * scale)
+				const headRegionY = Math.round(8 * scale)
+				const hatRegionX = Math.round(40 * scale)
+				const hatRegionY = Math.round(8 * scale)
+
+				const headImageData = sourceCtx.getImageData(
+					headRegionX,
+					headRegionY,
+					headRegionSize,
+					headRegionSize,
+				)
 
 				const headCanvas = document.createElement('canvas')
 				const headCtx = headCanvas.getContext('2d')
@@ -293,13 +313,28 @@ export async function generatePlayerHeadBlob(skinUrl: string, size: number = 64)
 					throw new Error('Could not get 2D context from head canvas')
 				}
 
-				headCanvas.width = 8
-				headCanvas.height = 8
+				headCanvas.width = headRegionSize
+				headCanvas.height = headRegionSize
 				headCtx.putImageData(headImageData, 0, 0)
 
-				outputCtx.drawImage(headCanvas, 0, 0, 8, 8, 0, 0, size, size)
+				outputCtx.drawImage(
+					headCanvas,
+					0,
+					0,
+					headRegionSize,
+					headRegionSize,
+					0,
+					0,
+					size,
+					size,
+				)
 
-				const hatImageData = sourceCtx.getImageData(40, 8, 8, 8)
+				const hatImageData = sourceCtx.getImageData(
+					hatRegionX,
+					hatRegionY,
+					headRegionSize,
+					headRegionSize,
+				)
 
 				const hatCanvas = document.createElement('canvas')
 				const hatCtx = hatCanvas.getContext('2d')
@@ -308,8 +343,8 @@ export async function generatePlayerHeadBlob(skinUrl: string, size: number = 64)
 					throw new Error('Could not get 2D context from hat canvas')
 				}
 
-				hatCanvas.width = 8
-				hatCanvas.height = 8
+				hatCanvas.width = headRegionSize
+				hatCanvas.height = headRegionSize
 				hatCtx.putImageData(hatImageData, 0, 0)
 
 				const hatPixels = hatImageData.data
@@ -323,7 +358,17 @@ export async function generatePlayerHeadBlob(skinUrl: string, size: number = 64)
 				}
 
 				if (hasHat) {
-					outputCtx.drawImage(hatCanvas, 0, 0, 8, 8, 0, 0, size, size)
+					outputCtx.drawImage(
+						hatCanvas,
+						0,
+						0,
+						headRegionSize,
+						headRegionSize,
+						0,
+						0,
+						size,
+						size,
+					)
 				}
 
 				outputCanvas.toBlob(

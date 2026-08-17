@@ -98,9 +98,9 @@
 </template>
 
 <script setup lang="ts">
-import { ClassicPlayerModel, SlimPlayerModel, UnfoldHorizontalIcon } from '@modrinth/assets'
-import { TresCanvas } from '@tresjs/core'
-import * as THREE from 'three'
+import { ClassicPlayerModel, SlimPlayerModel, UnfoldHorizontalIcon } from '@modrinth/assets';
+import { TresCanvas } from '@tresjs/core';
+import * as THREE from 'three';
 import {
 	computed,
 	nextTick,
@@ -111,49 +111,52 @@ import {
 	useSlots,
 	useTemplateRef,
 	watch,
-} from 'vue'
+} from 'vue';
 
 import type {
 	SkinPreviewAnimationConfig,
 	SkinPreviewFitPadding,
 	SkinPreviewFraming,
 	SkinPreviewTuple,
-} from '#ui/composables/skin-rendering'
+} from '#ui/composables/skin-rendering';
 import {
 	useSkinPreviewAnimation,
 	useSkinPreviewControls,
 	useSkinPreviewFit,
 	useSkinPreviewLoading,
 	useSkinPreviewScene,
-} from '#ui/composables/skin-rendering'
+} from '#ui/composables/skin-rendering';
 
-import { useDynamicFontSize } from '../../composables'
-import { createRadialSpotlightShader, syncDamageFlashShader } from './skin-preview-shader'
+import { useDynamicFontSize } from '../../composables';
+import { createRadialSpotlightShader, syncDamageFlashShader } from './skin-preview-shader';
 
 const props = withDefaults(
 	defineProps<{
-		textureSrc: string
-		earsTextureSrc?: string
-		capeSrc?: string
-		variant?: 'SLIM' | 'CLASSIC' | 'UNKNOWN'
-		nametag?: string
-		fit?: boolean
-		lockFit?: boolean
-		framing?: SkinPreviewFraming
-		fitZoom?: number
-		fitPadding?: Partial<SkinPreviewFitPadding>
+		textureSrc: string;
+		earsTextureSrc?: string;
+		capeSrc?: string;
+		/** Delay between animated cape positions in milliseconds. */
+		capeFrameDurationMs?: number;
+		variant?: 'SLIM' | 'CLASSIC' | 'UNKNOWN';
+		nametag?: string;
+		fit?: boolean;
+		lockFit?: boolean;
+		framing?: SkinPreviewFraming;
+		fitZoom?: number;
+		fitPadding?: Partial<SkinPreviewFitPadding>;
 		/** @deprecated Manual framing fallback. */
-		scale?: number
+		scale?: number;
 		/** @deprecated Manual framing fallback, or auto-fit FOV override when fit=true. */
-		fov?: number
-		initialRotation?: number
-		animationConfig?: SkinPreviewAnimationConfig
-		earsEnabled?: boolean
+		fov?: number;
+		initialRotation?: number;
+		animationConfig?: SkinPreviewAnimationConfig;
+		earsEnabled?: boolean;
 	}>(),
 	{
 		variant: 'CLASSIC',
 		earsTextureSrc: undefined,
 		capeSrc: undefined,
+		capeFrameDurationMs: undefined,
 		initialRotation: 15.75,
 		nametag: undefined,
 		fit: undefined,
@@ -168,74 +171,74 @@ const props = withDefaults(
 			transitionDuration: 0.2,
 		}),
 	},
-)
+);
 
 const emit = defineEmits<{
-	earsFeaturesDetected: [detected: boolean]
-}>()
+	earsFeaturesDetected: [detected: boolean];
+}>();
 
-const skinPreviewContainer = useTemplateRef<HTMLElement>('skinPreviewContainer')
-const subtitleElement = useTemplateRef<HTMLElement>('subtitleElement')
-const slots = useSlots()
-const nametagText = computed(() => props.nametag)
-const hasSubtitle = computed(() => Boolean(slots.subtitle))
-const hasNametagBadge = computed(() => Boolean(slots['nametag-badge']))
-const isSubtitleWrapped = ref(false)
+const skinPreviewContainer = useTemplateRef<HTMLElement>('skinPreviewContainer');
+const subtitleElement = useTemplateRef<HTMLElement>('subtitleElement');
+const slots = useSlots();
+const nametagText = computed(() => props.nametag);
+const hasSubtitle = computed(() => Boolean(slots.subtitle));
+const hasNametagBadge = computed(() => Boolean(slots['nametag-badge']));
+const isSubtitleWrapped = ref(false);
 const selectedModelSrc = computed(() =>
 	props.variant === 'SLIM' ? SlimPlayerModel : ClassicPlayerModel,
-)
+);
 
-let subtitleResizeObserver: ResizeObserver | undefined
+let subtitleResizeObserver: ResizeObserver | undefined;
 
 function getSubtitleLayoutRoot(element: HTMLElement) {
 	const elementChildren = Array.from(element.children).filter(
 		(child): child is HTMLElement => child instanceof HTMLElement,
-	)
+	);
 
-	return elementChildren.length === 1 ? elementChildren[0] : element
+	return elementChildren.length === 1 ? elementChildren[0] : element;
 }
 
 function updateSubtitleWrapped() {
-	const element = subtitleElement.value
+	const element = subtitleElement.value;
 	if (!element) {
-		isSubtitleWrapped.value = false
-		return
+		isSubtitleWrapped.value = false;
+		return;
 	}
 
-	const layoutRoot = getSubtitleLayoutRoot(element)
+	const layoutRoot = getSubtitleLayoutRoot(element);
 	const children = Array.from(layoutRoot.children).filter(
 		(child): child is HTMLElement => child instanceof HTMLElement,
-	)
+	);
 
 	if (children.length < 2) {
-		isSubtitleWrapped.value = false
-		return
+		isSubtitleWrapped.value = false;
+		return;
 	}
 
-	const firstTop = children[0].getBoundingClientRect().top
+	const firstTop = children[0].getBoundingClientRect().top;
 	isSubtitleWrapped.value = children.some(
 		(child) => Math.abs(child.getBoundingClientRect().top - firstTop) > 1,
-	)
+	);
 }
 
 function observeSubtitleElement() {
-	subtitleResizeObserver?.disconnect()
+	subtitleResizeObserver?.disconnect();
 
-	const element = subtitleElement.value
+	const element = subtitleElement.value;
 	if (!element) {
-		isSubtitleWrapped.value = false
-		return
+		isSubtitleWrapped.value = false;
+		return;
 	}
 
-	const layoutRoot = getSubtitleLayoutRoot(element)
+	const layoutRoot = getSubtitleLayoutRoot(element);
 
-	subtitleResizeObserver = new ResizeObserver(updateSubtitleWrapped)
-	subtitleResizeObserver.observe(element)
+	subtitleResizeObserver = new ResizeObserver(updateSubtitleWrapped);
+	subtitleResizeObserver.observe(element);
 	if (layoutRoot !== element) {
-		subtitleResizeObserver.observe(layoutRoot)
+		subtitleResizeObserver.observe(layoutRoot);
 	}
 
-	void nextTick(updateSubtitleWrapped)
+	void nextTick(updateSubtitleWrapped);
 }
 
 const {
@@ -251,7 +254,7 @@ const {
 	playAnimation,
 	playClickInteraction,
 	stopAnimations,
-} = useSkinPreviewAnimation(toRef(props, 'animationConfig'))
+} = useSkinPreviewAnimation(toRef(props, 'animationConfig'));
 
 const {
 	ignoreControlClick,
@@ -263,9 +266,9 @@ const {
 } = useSkinPreviewControls({
 	initialRotation: toRef(props, 'initialRotation'),
 	onClickWithoutDrag: () => {
-		playClickInteraction()
+		playClickInteraction();
 	},
-})
+});
 
 const { hasEarsFeatures, isModelLoaded, isTextureLoaded, modelCenter, modelSize, scene } =
 	useSkinPreviewScene({
@@ -273,13 +276,14 @@ const { hasEarsFeatures, isModelLoaded, isTextureLoaded, modelCenter, modelSize,
 		textureSrc: toRef(props, 'textureSrc'),
 		earsTextureSrc: toRef(props, 'earsTextureSrc'),
 		capeSrc: toRef(props, 'capeSrc'),
+		capeFrameDurationMs: toRef(props, 'capeFrameDurationMs'),
 		earsEnabled: toRef(props, 'earsEnabled'),
 		initializeAnimations,
 		cleanupAnimationState,
-	})
+	});
 
 function syncDamageFlashShaderMaterials() {
-	syncDamageFlashShader(scene.value, damageFlashIntensity.value)
+	syncDamageFlashShader(scene.value, damageFlashIntensity.value);
 }
 
 const {
@@ -311,29 +315,31 @@ const {
 	modelCenter,
 	modelSize,
 	isModelLoaded,
-})
+});
 
-const rendererDpr: [number, number] = [1, 1.5]
-const radialSpotlightShader = createRadialSpotlightShader()
-const isReady = computed(() => isModelLoaded.value && isTextureLoaded.value && hasResolvedFit.value)
-const { isPreviewVisible, showLoading } = useSkinPreviewLoading(isReady)
+const rendererDpr: [number, number] = [1, 1.5];
+const radialSpotlightShader = createRadialSpotlightShader();
+const isReady = computed(
+	() => isModelLoaded.value && isTextureLoaded.value && hasResolvedFit.value,
+);
+const { isPreviewVisible, showLoading } = useSkinPreviewLoading(isReady);
 
-onMounted(observeSubtitleElement)
+onMounted(observeSubtitleElement);
 
-watch(hasSubtitle, () => nextTick(observeSubtitleElement), { flush: 'post' })
+watch(hasSubtitle, () => nextTick(observeSubtitleElement), { flush: 'post' });
 watch(
 	hasEarsFeatures,
 	(detected) => {
-		emit('earsFeaturesDetected', detected)
+		emit('earsFeaturesDetected', detected);
 	},
 	{ immediate: true },
-)
-watch(scene, syncDamageFlashShaderMaterials, { immediate: true })
-watch(damageFlashIntensity, syncDamageFlashShaderMaterials)
+);
+watch(scene, syncDamageFlashShaderMaterials, { immediate: true });
+watch(damageFlashIntensity, syncDamageFlashShaderMaterials);
 
 onUnmounted(() => {
-	subtitleResizeObserver?.disconnect()
-})
+	subtitleResizeObserver?.disconnect();
+});
 
 const { fontSize: nametagFontSize } = useDynamicFontSize({
 	containerElement: skinPreviewContainer,
@@ -343,29 +349,29 @@ const { fontSize: nametagFontSize } = useDynamicFontSize({
 	maxFontSize: 2,
 	padding: 24,
 	fontFamily: 'inherit',
-})
+});
 
 const nametagStyle = computed(() => ({
 	fontSize: nametagFontSize.value,
 	top: nametagTop.value,
 	transform: fitEnabled.value ? 'translate(-50%, calc(-100% - 0.75rem))' : 'translateX(-50%)',
-}))
+}));
 
 const animatedModelGroupRotation = computed<SkinPreviewTuple>(() => [
 	0,
 	modelRotation.value,
 	clickImpulseRotationZ.value,
-])
+]);
 
 const animatedModelGroupPosition = computed<SkinPreviewTuple>(() => {
-	const [x, y, z] = modelGroupPosition.value
-	return [x + clickImpulseOffsetX.value, y, z]
-})
+	const [x, y, z] = modelGroupPosition.value;
+	return [x + clickImpulseOffsetX.value, y, z];
+});
 
 const animatedModelGroupScale = computed<SkinPreviewTuple>(() => {
-	const [x, y, z] = modelGroupScale.value
-	return [x * clickImpulseScaleX.value, y * clickImpulseScaleY.value, z]
-})
+	const [x, y, z] = modelGroupScale.value;
+	return [x * clickImpulseScaleX.value, y * clickImpulseScaleY.value, z];
+});
 
 defineExpose({
 	playAnimation,
@@ -373,13 +379,16 @@ defineExpose({
 	stopAnimations,
 	getAvailableAnimations,
 	getCurrentAnimation: () => currentAnimation.value,
-})
+});
 </script>
 
 <style scoped lang="scss">
 .nametag-bg {
-	background:
-		linear-gradient(308.68deg, rgba(50, 50, 50, 0.2) -52.46%, rgba(100, 100, 100, 0.2) 94.75%),
+	background: linear-gradient(
+			308.68deg,
+			rgba(50, 50, 50, 0.2) -52.46%,
+			rgba(100, 100, 100, 0.2) 94.75%
+		),
 		rgba(0, 0, 0, 0.2);
 	box-shadow:
 		inset -0.5px -0.5px 0px rgba(0, 0, 0, 0.25),

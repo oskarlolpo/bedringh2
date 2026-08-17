@@ -17,12 +17,15 @@ import { useStickyObserver } from '#ui/composables/sticky-observer'
 import { commonMessages, formatProjectTypeSentence } from '#ui/utils/common-messages'
 import type { SortType } from '#ui/utils/search'
 
+import { useRouter } from 'vue-router'
+
 import SelectedProjectsFloatingBar from './components/SelectedProjectsFloatingBar.vue'
 import { useSearchTranslation } from './composables/use-search-translation'
 import BrowseInstallHeader from './header.vue'
 import { injectBrowseManager } from './providers/browse-manager'
 
 const ctx = injectBrowseManager()
+const router = useRouter()
 const { formatMessage } = useVIntl()
 const lockedMessages = computed(() => toValue(ctx.lockedFilterMessages))
 const stickyInstallHeaderRef = ref<HTMLElement | null>(null)
@@ -30,6 +33,41 @@ const { isStuck: isInstallHeaderStuck } = useStickyObserver(
 	stickyInstallHeaderRef,
 	'BrowseInstallHeader',
 )
+
+const isPickingRandom = ref(false)
+
+async function handleRandomProject() {
+	if (!ctx || isPickingRandom.value) return
+	try {
+		isPickingRandom.value = true
+		const item = ctx.fetchRandomItem
+			? await ctx.fetchRandomItem()
+			: (() => {
+					const hits = ctx.isServerType.value ? ctx.serverHits.value : ctx.projectHits.value
+					return hits && hits.length > 0 ? hits[Math.floor(Math.random() * hits.length)] : undefined
+			  })()
+
+		if (!item) return
+
+		const link = ctx.isServerType.value
+			? ctx.getServerProjectLink(item)
+			: ctx.getProjectLink(item)
+
+		if (typeof link === 'string') {
+			if (router) {
+				router.push(link)
+			} else {
+				window.location.href = link
+			}
+		} else if (link && router) {
+			router.push(link)
+		}
+	} catch (err) {
+		console.error('Failed to get random project:', err)
+	} finally {
+		isPickingRandom.value = false
+	}
+}
 
 const {
 	isTranslated: isSearchTranslated,
@@ -100,7 +138,7 @@ const messages = defineMessages({
 	},
 	offline: {
 		id: 'browse.offline',
-		defaultMessage: 'You are currently offline. Connect to the internet to browse Modrinth!',
+		defaultMessage: 'You are currently offline. Connect to the internet to browse!',
 	},
 	noResults: {
 		id: 'browse.no-results',
@@ -113,6 +151,10 @@ const messages = defineMessages({
 	showOriginal: {
 		id: 'browse.show-original',
 		defaultMessage: 'Show original',
+	},
+	randomProject: {
+		id: 'browse.random-project',
+		defaultMessage: 'Случайный проект (Мне повезёт!)',
 	},
 })
 </script>
@@ -132,6 +174,42 @@ const messages = defineMessages({
 	<div v-if="ctx.showProjectTypeTabs.value || !ctx.installContext?.value" class="flex items-center justify-between gap-4">
 		<NavTabs v-if="ctx.showProjectTypeTabs.value" :links="ctx.selectableProjectTypes.value" />
 		<div v-if="!ctx.installContext?.value" class="flex items-center gap-2 ml-auto">
+			<ButtonStyled
+				v-if="ctx"
+				circular
+				size="large"
+				color="standard"
+			>
+				<button
+					v-tooltip="formatMessage(messages.randomProject)"
+					:aria-label="formatMessage(messages.randomProject)"
+					:disabled="isPickingRandom || ctx.loading.value || (ctx.totalHits.value === 0 && (ctx.isServerType.value ? ctx.serverHits.value.length === 0 : ctx.projectHits.value.length === 0))"
+					@click="handleRandomProject"
+				>
+					<SpinnerIcon v-if="isPickingRandom" class="animate-spin size-5" />
+					<svg
+						v-else
+						xmlns="http://www.w3.org/2000/svg"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						class="size-5"
+					>
+						<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+						<rect x="3" y="3" width="18" height="18" rx="3" />
+						<circle cx="8.5" cy="8.5" r="1" fill="currentColor" />
+						<circle cx="15.5" cy="8.5" r="1" fill="currentColor" />
+						<circle cx="8.5" cy="15.5" r="1" fill="currentColor" />
+						<circle cx="15.5" cy="15.5" r="1" fill="currentColor" />
+						<circle cx="12" cy="12" r="1" fill="currentColor" />
+					</svg>
+				</button>
+			</ButtonStyled>
 			<ButtonStyled
 				v-if="ctx"
 				circular
@@ -235,6 +313,38 @@ const messages = defineMessages({
 				</button>
 			</ButtonStyled>
 		</div>
+
+		<ButtonStyled circular>
+			<button
+				v-tooltip="formatMessage(messages.randomProject)"
+				:aria-label="formatMessage(messages.randomProject)"
+				:disabled="isPickingRandom || ctx.loading.value || (ctx.totalHits.value === 0 && (ctx.isServerType.value ? ctx.serverHits.value.length === 0 : ctx.projectHits.value.length === 0))"
+				@click="handleRandomProject"
+			>
+				<SpinnerIcon v-if="isPickingRandom" class="animate-spin size-4" />
+				<svg
+					v-else
+					xmlns="http://www.w3.org/2000/svg"
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					class="size-4"
+				>
+					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+					<rect x="3" y="3" width="18" height="18" rx="3" />
+					<circle cx="8.5" cy="8.5" r="1" fill="currentColor" />
+					<circle cx="15.5" cy="8.5" r="1" fill="currentColor" />
+					<circle cx="8.5" cy="15.5" r="1" fill="currentColor" />
+					<circle cx="15.5" cy="15.5" r="1" fill="currentColor" />
+					<circle cx="12" cy="12" r="1" fill="currentColor" />
+				</svg>
+			</button>
+		</ButtonStyled>
 
 		<ButtonStyled v-if="ctx.cycleDisplayMode" circular>
 			<button @click="ctx.cycleDisplayMode!()">

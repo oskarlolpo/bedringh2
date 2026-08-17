@@ -226,7 +226,10 @@ pub async fn klauncher_auth(
         match resp {
             Ok(res) if res.status().is_success() => {
                 if let Ok(json) = res.json::<serde_json::Value>().await {
-                    json.get("token")
+                    // kLauncher reads `res.data.access_token` from the login
+                    // response; keep `token` as a fallback for older responses.
+                    json.get("access_token")
+                        .or_else(|| json.get("token"))
                         .and_then(|t| t.as_str())
                         .map(|t| format!("kl_{}", t))
                         .unwrap_or("kl".to_string())

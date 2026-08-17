@@ -32,6 +32,15 @@ const messages = defineMessages({
 		defaultMessage:
 			'HD скины на 1.17+, анимированные и зачарованные плащи и прочие весомые улучшения игрового процесса Minecraft',
 	},
+	klmasterAlwaysTitle: {
+		id: 'klauncher.settings.klmaster-always.title',
+		defaultMessage: 'Загружать KL:Master для всех профилей',
+	},
+	klmasterAlwaysDescription: {
+		id: 'klauncher.settings.klmaster-always.description',
+		defaultMessage:
+			'Автоматически внедрять мод KL:Master в сборки даже при игре с лицензионных аккаунтов Microsoft или в офлайн-режиме',
+	},
 })
 
 const settings = ref(await get())
@@ -39,6 +48,7 @@ const settings = ref(await get())
 const skinSystem = ref(settings.value.feature_flags?.KLauncherSkinSystem ?? true)
 const censorship = ref(settings.value.feature_flags?.KLauncherCensorship ?? false)
 const klmaster = ref(settings.value.feature_flags?.KLauncherKLMaster ?? true)
+const klmasterAlways = ref(settings.value.feature_flags?.KLauncherKLMasterAlways ?? false)
 
 async function saveFlags() {
 	settings.value.feature_flags = {
@@ -46,11 +56,12 @@ async function saveFlags() {
 		KLauncherSkinSystem: skinSystem.value,
 		KLauncherCensorship: censorship.value,
 		KLauncherKLMaster: klmaster.value,
+		KLauncherKLMasterAlways: klmasterAlways.value,
 	}
 	await set(settings.value)
 }
 
-watch([skinSystem, censorship, klmaster], saveFlags)
+watch([skinSystem, censorship, klmaster, klmasterAlways], saveFlags)
 </script>
 
 <template>
@@ -92,6 +103,19 @@ watch([skinSystem, censorship, klmaster], saveFlags)
 				</p>
 			</div>
 			<Toggle id="klauncher-klmaster" v-model="klmaster" />
+		</div>
+
+		<!-- Мод KL:Master для всех профилей (включая лицензию) -->
+		<div class="flex items-center justify-between gap-4">
+			<div>
+				<h2 class="m-0 text-lg font-semibold text-contrast">
+					{{ formatMessage(messages.klmasterAlwaysTitle) }}
+				</h2>
+				<p class="m-0 mt-1 text-sm text-secondary">
+					{{ formatMessage(messages.klmasterAlwaysDescription) }}
+				</p>
+			</div>
+			<Toggle id="klauncher-klmaster-always" v-model="klmasterAlways" />
 		</div>
 	</div>
 </template>

@@ -17,7 +17,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
+
 import { ChibiLauncherRenderer } from './chibi-skin-renderer';
 
 const props = withDefaults(

@@ -1,11 +1,12 @@
 import { useGLTF } from '@tresjs/cientos'
-import { useTexture } from '@tresjs/core'
+import { useRenderLoop, useTexture } from '@tresjs/core'
 import * as THREE from 'three'
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import {
 	type ComputedRef,
 	markRaw,
 	onBeforeMount,
+	onMounted,
 	onUnmounted,
 	type Ref,
 	ref,
@@ -14,9 +15,11 @@ import {
 } from 'vue'
 
 import {
+	advanceFrameStripTextures,
 	applyCapeTexture,
 	applyTexture,
 	createTransparentTexture,
+	loadCapeTexture,
 	loadTexture as loadSkinTexture,
 } from '#ui/utils/webgl/skin-rendering.ts'
 
@@ -112,6 +115,7 @@ export function useSkinPreviewScene({
 	textureSrc,
 	earsTextureSrc,
 	capeSrc,
+	capeFrameDurationMs,
 	earsEnabled,
 	initializeAnimations,
 	cleanupAnimationState,
@@ -120,6 +124,7 @@ export function useSkinPreviewScene({
 	textureSrc: MaybeReadonlyRef<string>
 	earsTextureSrc: MaybeReadonlyRef<string | undefined>
 	capeSrc: MaybeReadonlyRef<string | undefined>
+	capeFrameDurationMs?: MaybeReadonlyRef<number | undefined>
 	earsEnabled: MaybeReadonlyRef<boolean>
 	initializeAnimations: (loadedScene: THREE.Object3D, clips: THREE.AnimationClip[]) => void
 	cleanupAnimationState: (root: THREE.Object3D | null) => void
@@ -177,6 +182,7 @@ export function useSkinPreviewScene({
 			scene.value,
 			loadedCapeSrc.value === capeSrc.value ? capeTexture.value : null,
 			transparentTexture,
+			capeFrameDurationMs?.value,
 		)
 	}
 
@@ -245,7 +251,12 @@ export function useSkinPreviewScene({
 
 		let loadedCapeTexture: THREE.Texture | null = null
 		if (src) {
-			loadedCapeTexture = await loadAndApplyTexture(src)
+			try {
+				loadedCapeTexture = await loadCapeTexture(src, {}, capeFrameDurationMs?.value)
+			} catch (error) {
+				console.error('Failed to load cape texture:', error)
+				loadedCapeTexture = await loadAndApplyTexture(src)
+			}
 		}
 		if (isUnmounted || loadVersion !== capeLoadVersion) return
 
@@ -326,6 +337,17 @@ export function useSkinPreviewScene({
 		},
 	)
 
+	if (capeFrameDurationMs) {
+		watch(
+			() => capeFrameDurationMs.value,
+			(newDuration) => {
+				if (capeTexture.value) {
+					capeTexture.value.userData.frameDurationMs = newDuration
+				}
+			},
+		)
+	}
+
 	onBeforeMount(async () => {
 		try {
 			isTextureLoaded.value = false
@@ -356,6 +378,70 @@ export function useSkinPreviewScene({
 		disposeSceneMaterials(scene.value)
 		scene.value = null
 		transparentTexture.dispose()
+	})
+
+	// Анимация HD-скинов/плащей, если текстура оказалась "плёнкой" кадров
+	// (см. configureFrameStrip в skin-rendering.ts) — листаем кадры по таймеру
+	let animFrameId: number | null = null
+	let lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+
+	function tickAnimation() {
+		const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+		const delta = Math.min((now - lastTime) / 1000, 0.25)
+		lastTime = now
+
+		const texturesToAdvance: (THREE.Texture | null | undefined)[] = [
+			texture.value,
+			earsTexture.value,
+			capeTexture.value,
+		]
+		if (scene.value) {
+			scene.value.traverse((child) => {
+				if ((child as THREE.Mesh).isMesh) {
+					const mesh = child as THREE.Mesh
+					const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+					materials.forEach((mat) => {
+						if (mat instanceof THREE.MeshStandardMaterial && mat.map) {
+							texturesToAdvance.push(mat.map)
+						}
+					})
+				}
+			})
+		}
+		advanceFrameStripTextures(texturesToAdvance, delta)
+
+		if (!isUnmounted) {
+			animFrameId = requestAnimationFrame(tickAnimation)
+		}
+	}
+
+	onMounted(() => {
+		lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+		animFrameId = requestAnimationFrame(tickAnimation)
+	})
+
+	const { onLoop } = useRenderLoop()
+	onLoop((state) => {
+		const delta = state?.delta || 0.016
+		const texturesToAdvance: (THREE.Texture | null | undefined)[] = [
+			texture.value,
+			earsTexture.value,
+			capeTexture.value,
+		]
+		if (scene.value) {
+			scene.value.traverse((child) => {
+				if ((child as THREE.Mesh).isMesh) {
+					const mesh = child as THREE.Mesh
+					const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+					materials.forEach((mat) => {
+						if (mat instanceof THREE.MeshStandardMaterial && mat.map) {
+							texturesToAdvance.push(mat.map)
+						}
+					})
+				}
+			})
+		}
+		advanceFrameStripTextures(texturesToAdvance, delta)
 	})
 
 	return {

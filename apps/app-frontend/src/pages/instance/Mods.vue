@@ -124,7 +124,6 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import BedrockContent from './BedrockContent.vue'
 import ExportModal from '@/components/ui/ExportModal.vue'
 import ShareModalWrapper from '@/components/ui/modal/ShareModalWrapper.vue'
 import { useManagedContentPolicy } from '@/composables/instances/use-managed-content-policy'
@@ -154,6 +153,8 @@ import { injectContentInstall } from '@/providers/content-install'
 import { provideInstanceBackup } from '@/providers/instance-backup'
 import { useTheming } from '@/store/state'
 import type { FeatureFlag } from '@/store/theme'
+
+import BedrockContent from './BedrockContent.vue'
 
 const messages = defineMessages({
 	shareTitle: {

@@ -13,6 +13,7 @@
 					:texture-src="previewSkin || ''"
 					:ears-texture-src="uploadedTextureUrl?.original ?? currentSkin?.texture"
 					:cape-src="selectedCapeTexture"
+					:cape-frame-duration-ms="selectedCapeFrameDuration"
 					framing="modal"
 					:initial-rotation="Math.PI / 8"
 					class="h-full w-full"
@@ -86,6 +87,8 @@
 								:id="cape.id"
 								:key="cape.id"
 								:texture="cape.texture"
+								:animated-url="cape.animated_url"
+								:frame-duration-ms="getCapeFrameDuration(cape)"
 								:name="cape.name || formatMessage(messages.capeFallbackName)"
 								:selected="selectedCape?.id === cape.id"
 								@select="selectCape(cape)"
@@ -111,27 +114,41 @@
 		</div>
 
 		<template #actions>
-			<div class="flex gap-2 justify-end">
-				<ButtonStyled type="outlined">
-					<button :disabled="isSaving" @click="hide">
-						<XIcon />{{ formatMessage(commonMessages.cancelButton) }}
-					</button>
-				</ButtonStyled>
-				<ButtonStyled color="brand">
-					<button v-tooltip="saveTooltip" :disabled="disableSave || isSaving" @click="save">
-						<SpinnerIcon v-if="isSaving" class="animate-spin" />
-						<CheckIcon v-else-if="mode === 'new'" />
-						<SaveIcon v-else />
-						{{ formatMessage(mode === 'new' ? messages.addSkinButton : messages.saveSkinButton) }}
-					</button>
-				</ButtonStyled>
+			<div class="flex items-center justify-between w-full">
+				<div>
+					<ButtonStyled
+						v-if="mode === 'edit' && currentSkin && currentSkin.source !== 'default'"
+						color="danger"
+						type="outlined"
+					>
+						<button :disabled="isSaving" @click="handleDeleteSkin">
+							<TrashIcon />
+							{{ formatMessage(messages.deleteSkinButton) }}
+						</button>
+					</ButtonStyled>
+				</div>
+				<div class="flex gap-2 justify-end ml-auto">
+					<ButtonStyled type="outlined">
+						<button :disabled="isSaving" @click="hide">
+							<XIcon />{{ formatMessage(commonMessages.cancelButton) }}
+						</button>
+					</ButtonStyled>
+					<ButtonStyled color="brand">
+						<button v-tooltip="saveTooltip" :disabled="disableSave || isSaving" @click="save">
+							<SpinnerIcon v-if="isSaving" class="animate-spin" />
+							<CheckIcon v-else-if="mode === 'new'" />
+							<SaveIcon v-else />
+							{{ formatMessage(mode === 'new' ? messages.addSkinButton : messages.saveSkinButton) }}
+						</button>
+					</ButtonStyled>
+				</div>
 			</div>
 		</template>
 	</NewModal>
 </template>
 
 <script setup lang="ts">
-import { CheckIcon, SaveIcon, SpinnerIcon, UploadIcon, XIcon } from '@modrinth/assets'
+import { CheckIcon, SaveIcon, SpinnerIcon, TrashIcon, UploadIcon, XIcon } from '@modrinth/assets';
 import {
 	ButtonStyled,
 	CapeButton,
@@ -144,23 +161,27 @@ import {
 	SkinPreviewRenderer,
 	useScrollIndicator,
 	useVIntl,
-} from '@modrinth/ui'
-import { arrayBufferToBase64 } from '@modrinth/utils'
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+} from '@modrinth/ui';
+import { arrayBufferToBase64 } from '@modrinth/utils';
+import { computed, nextTick, onUnmounted, ref, useTemplateRef, watch } from 'vue';
 
+import { fetchExternalImageObjectUrl } from '@/helpers/external-image.ts';
 import {
 	type Cape,
 	determineModelType,
 	equip_skin,
 	get_normalized_skin_texture,
+	getCapeFrameDuration,
+	isHdSkinTexture,
 	normalize_skin_texture,
+	remove_custom_skin,
 	save_custom_skin,
 	type Skin,
 	type SkinModel,
 	type SkinTextureUrl,
-} from '@/helpers/skins.ts'
+} from '@/helpers/skins.ts';
 
-const CAPE_LIST_MAX_HEIGHT = 334
+const CAPE_LIST_MAX_HEIGHT = 334;
 const messages = defineMessages({
 	editSkinTitle: {
 		id: 'app.skins.modal.edit-title',
@@ -226,218 +247,278 @@ const messages = defineMessages({
 		id: 'app.skins.modal.save-skin-button',
 		defaultMessage: 'Save skin',
 	},
-})
+	deleteSkinButton: {
+		id: 'app.skins.modal.delete-skin-button',
+		defaultMessage: 'Удалить скин',
+	},
+});
 
-const { formatMessage } = useVIntl()
-const { handleError } = injectNotificationManager()
+const { formatMessage } = useVIntl();
+const { handleError } = injectNotificationManager();
 
-const modal = useTemplateRef('modal')
-const textureFileInput = useTemplateRef<HTMLInputElement>('textureFileInput')
-const capeListRef = ref<HTMLElement | null>(null)
-const capeListMaxHeight = ref(`${CAPE_LIST_MAX_HEIGHT}px`)
-const mode = ref<'new' | 'edit'>('new')
-const currentSkin = ref<Skin | null>(null)
-const isSaving = ref(false)
+const modal = useTemplateRef('modal');
+const textureFileInput = useTemplateRef<HTMLInputElement>('textureFileInput');
+const capeListRef = ref<HTMLElement | null>(null);
+const capeListMaxHeight = ref(`${CAPE_LIST_MAX_HEIGHT}px`);
+const mode = ref<'new' | 'edit'>('new');
+const currentSkin = ref<Skin | null>(null);
+const isSaving = ref(false);
 
-const uploadedTextureUrl = ref<SkinTextureUrl | null>(null)
-const previewSkin = ref<string>('')
+const uploadedTextureUrl = ref<SkinTextureUrl | null>(null);
+const previewSkin = ref<string>('');
 
-const variant = ref<SkinModel>('CLASSIC')
-const selectedCape = ref<Cape | undefined>(undefined)
-const props = defineProps<{ capes?: Cape[] }>()
+const variant = ref<SkinModel>('CLASSIC');
+const selectedCape = ref<Cape | undefined>(undefined);
+const props = defineProps<{ capes?: Cape[] }>();
 
-const selectedCapeTexture = computed(() => selectedCape.value?.texture)
-const canEditTextureAndModel = computed(() => currentSkin.value?.source !== 'default')
+const selectedCapeTexture = ref<string | undefined>(undefined);
+const selectedCapeFrameDuration = computed(() => getCapeFrameDuration(selectedCape.value));
+let selectedCapeObjectUrl: string | null = null;
+let selectedCapeResolveVersion = 0;
+
+function revokeSelectedCapeObjectUrl() {
+	if (selectedCapeObjectUrl) {
+		URL.revokeObjectURL(selectedCapeObjectUrl);
+		selectedCapeObjectUrl = null;
+	}
+}
+
+watch(
+	() => [selectedCape.value?.animated_url, selectedCape.value?.texture] as const,
+	async ([animatedUrl, staticUrl]) => {
+		const resolveVersion = ++selectedCapeResolveVersion;
+		const rawUrl = animatedUrl ?? staticUrl;
+
+		revokeSelectedCapeObjectUrl();
+		selectedCapeTexture.value = undefined;
+		if (!rawUrl) return;
+
+		try {
+			const resolvedUrl = await fetchExternalImageObjectUrl(rawUrl);
+			if (resolveVersion !== selectedCapeResolveVersion) {
+				if (resolvedUrl !== rawUrl) URL.revokeObjectURL(resolvedUrl);
+				return;
+			}
+			selectedCapeObjectUrl = resolvedUrl === rawUrl ? null : resolvedUrl;
+			selectedCapeTexture.value = resolvedUrl;
+		} catch (error) {
+			console.warn('Failed to resolve cape texture, using direct URL:', error);
+			if (resolveVersion === selectedCapeResolveVersion) selectedCapeTexture.value = rawUrl;
+		}
+	},
+	{ immediate: true },
+);
+
+onUnmounted(revokeSelectedCapeObjectUrl);
+const canEditTextureAndModel = computed(() => currentSkin.value?.source !== 'default');
 const {
 	showTopFade: showCapeTopFade,
 	showBottomFade: showCapeBottomFade,
 	checkScrollState: checkCapeScrollState,
 	forceCheck: forceCapeScrollCheck,
-} = useScrollIndicator(capeListRef)
+} = useScrollIndicator(capeListRef);
 
-let capeListLayoutFrame: number | null = null
+let capeListLayoutFrame: number | null = null;
 function updateCapeListLayout() {
-	const capeList = capeListRef.value
-	const modalContent = capeList?.closest('[data-modal-content]') as HTMLElement | null
+	const capeList = capeListRef.value;
+	const modalContent = capeList?.closest('[data-modal-content]') as HTMLElement | null;
 
 	if (!capeList || !modalContent) {
-		capeListMaxHeight.value = `${CAPE_LIST_MAX_HEIGHT}px`
-		forceCapeScrollCheck()
-		return
+		capeListMaxHeight.value = `${CAPE_LIST_MAX_HEIGHT}px`;
+		forceCapeScrollCheck();
+		return;
 	}
 
 	const availableHeight =
-		modalContent.getBoundingClientRect().bottom - capeList.getBoundingClientRect().top
+		modalContent.getBoundingClientRect().bottom - capeList.getBoundingClientRect().top;
 
 	capeListMaxHeight.value = `${Math.min(
 		CAPE_LIST_MAX_HEIGHT,
 		Math.max(0, Math.floor(availableHeight)),
-	)}px`
+	)}px`;
 
-	nextTick(() => forceCapeScrollCheck())
+	nextTick(() => forceCapeScrollCheck());
 }
 
 function refreshCapeListLayout() {
 	if (capeListLayoutFrame !== null) {
-		cancelAnimationFrame(capeListLayoutFrame)
+		cancelAnimationFrame(capeListLayoutFrame);
 	}
 
 	capeListLayoutFrame = requestAnimationFrame(() => {
-		capeListLayoutFrame = null
-		updateCapeListLayout()
-	})
+		capeListLayoutFrame = null;
+		updateCapeListLayout();
+	});
 }
 
 const sortedCapes = computed(() => {
 	return [...(props.capes || [])].sort((a, b) => {
-		const nameA = (a.name || '').toLowerCase()
-		const nameB = (b.name || '').toLowerCase()
-		return nameA.localeCompare(nameB)
-	})
-})
+		const nameA = (a.name || '').toLowerCase();
+		const nameB = (b.name || '').toLowerCase();
+		return nameA.localeCompare(nameB);
+	});
+});
 
 async function loadPreviewSkin() {
 	if (uploadedTextureUrl.value) {
-		previewSkin.value = uploadedTextureUrl.value.normalized
+		previewSkin.value = uploadedTextureUrl.value.normalized;
 	} else if (currentSkin.value) {
 		try {
-			previewSkin.value = await get_normalized_skin_texture(currentSkin.value)
+			previewSkin.value = await get_normalized_skin_texture(currentSkin.value);
 		} catch (error) {
-			console.error('Failed to load skin texture:', error)
-			previewSkin.value = '/src/assets/skins/steve.png'
+			console.error('Failed to load skin texture:', error);
+			previewSkin.value = '/src/assets/skins/steve.png';
 		}
 	} else {
-		previewSkin.value = '/src/assets/skins/steve.png'
+		previewSkin.value = '/src/assets/skins/steve.png';
 	}
 }
 
 const hasEdits = computed(() => {
-	if (mode.value !== 'edit') return true
-	if (uploadedTextureUrl.value) return true
-	if (!currentSkin.value) return false
-	if (variant.value !== currentSkin.value.variant) return true
-	if ((selectedCape.value?.id || null) !== (currentSkin.value.cape_id || null)) return true
-	return false
-})
+	if (mode.value !== 'edit') return true;
+	if (uploadedTextureUrl.value) return true;
+	if (!currentSkin.value) return false;
+	if (variant.value !== currentSkin.value.variant) return true;
+	if ((selectedCape.value?.id || null) !== (currentSkin.value.cape_id || null)) return true;
+	return false;
+});
 
 const disableSave = computed(
 	() =>
 		(mode.value === 'new' && !uploadedTextureUrl.value) ||
 		(mode.value === 'edit' && !hasEdits.value),
-)
+);
 
 const saveTooltip = computed(() => {
-	if (isSaving.value) return formatMessage(messages.savingTooltip)
+	if (isSaving.value) return formatMessage(messages.savingTooltip);
 	if (mode.value === 'new' && !uploadedTextureUrl.value) {
-		return formatMessage(messages.uploadSkinFirstTooltip)
+		return formatMessage(messages.uploadSkinFirstTooltip);
 	}
 	if (mode.value === 'edit' && !hasEdits.value) {
-		return formatMessage(messages.makeEditFirstTooltip)
+		return formatMessage(messages.makeEditFirstTooltip);
 	}
-	return undefined
-})
+	return undefined;
+});
 
 function resetState() {
-	mode.value = 'new'
-	currentSkin.value = null
-	uploadedTextureUrl.value = null
-	previewSkin.value = ''
-	variant.value = 'CLASSIC'
-	selectedCape.value = undefined
-	isSaving.value = false
+	mode.value = 'new';
+	currentSkin.value = null;
+	uploadedTextureUrl.value = null;
+	previewSkin.value = '';
+	variant.value = 'CLASSIC';
+	selectedCape.value = undefined;
+	isSaving.value = false;
 }
 
 function handleModalHide() {
-	setTimeout(() => resetState(), 250)
+	setTimeout(() => resetState(), 250);
 }
 
 async function show(e: MouseEvent, skin?: Skin) {
-	mode.value = skin ? 'edit' : 'new'
-	currentSkin.value = skin ?? null
+	mode.value = skin ? 'edit' : 'new';
+	currentSkin.value = skin ?? null;
 	if (skin) {
-		variant.value = skin.variant
-		selectedCape.value = props.capes?.find((c) => c.id === skin.cape_id)
+		variant.value = skin.variant;
+		selectedCape.value = props.capes?.find((c) => c.id === skin.cape_id);
 	} else {
-		variant.value = 'CLASSIC'
-		selectedCape.value = undefined
+		variant.value = 'CLASSIC';
+		selectedCape.value = undefined;
 	}
 
-	await loadPreviewSkin()
+	await loadPreviewSkin();
 
-	modal.value?.show(e)
-	nextTick(() => refreshCapeListLayout())
+	modal.value?.show(e);
+	nextTick(() => refreshCapeListLayout());
 }
 
 async function showNew(e: MouseEvent, skinTextureUrl: SkinTextureUrl) {
-	mode.value = 'new'
-	currentSkin.value = null
-	uploadedTextureUrl.value = skinTextureUrl
-	variant.value = await determineModelType(skinTextureUrl.original)
-	selectedCape.value = undefined
+	mode.value = 'new';
+	currentSkin.value = null;
+	uploadedTextureUrl.value = skinTextureUrl;
+	variant.value = await determineModelType(skinTextureUrl.original);
+	selectedCape.value = undefined;
 
-	await loadPreviewSkin()
+	await loadPreviewSkin();
 
-	modal.value?.show(e)
-	nextTick(() => refreshCapeListLayout())
+	modal.value?.show(e);
+	nextTick(() => refreshCapeListLayout());
 }
 
 async function setUploadedTexture(skinTextureUrl: SkinTextureUrl) {
-	uploadedTextureUrl.value = skinTextureUrl
-	await loadPreviewSkin()
-	nextTick(() => refreshCapeListLayout())
+	uploadedTextureUrl.value = skinTextureUrl;
+	await loadPreviewSkin();
+	nextTick(() => refreshCapeListLayout());
 }
 
 function hide() {
-	modal.value?.hide()
+	modal.value?.hide();
 }
 
 function selectCape(cape: Cape | undefined) {
-	selectedCape.value = cape
+	selectedCape.value = cape;
 }
 
 function openTextureFileBrowser() {
-	textureFileInput.value?.click()
+	textureFileInput.value?.click();
+}
+
+function getImageDimensions(texture: string): Promise<{ width: number; height: number } | null> {
+	return new Promise((resolve) => {
+		const image = new Image();
+		image.onload = () => resolve({ width: image.width, height: image.height });
+		image.onerror = () => resolve(null);
+		image.src = texture;
+	});
 }
 
 async function onTextureFileInputChange(e: Event) {
-	const files = (e.target as HTMLInputElement).files
-	const file = files?.[0]
+	const files = (e.target as HTMLInputElement).files;
+	const file = files?.[0];
 
 	if (!file) {
-		return
+		return;
 	}
 
 	try {
 		const originalSkinTexUrl = `data:image/png;base64,${arrayBufferToBase64(
 			await file.arrayBuffer(),
-		)}`
-		const skinTextureNormalized = await normalize_skin_texture(originalSkinTexUrl)
+		)}`;
+		const dimensions = await getImageDimensions(originalSkinTexUrl);
+		if (dimensions && isHdSkinTexture(dimensions.width, dimensions.height)) {
+			await setUploadedTexture({
+				original: originalSkinTexUrl,
+				normalized: originalSkinTexUrl,
+			});
+			return;
+		}
+
+		const skinTextureNormalized = await normalize_skin_texture(originalSkinTexUrl);
 		await setUploadedTexture({
 			original: originalSkinTexUrl,
 			normalized: `data:image/png;base64,${arrayBufferToBase64(skinTextureNormalized)}`,
-		})
+		});
 	} catch (error) {
-		handleError(error)
+		handleError(error);
 	} finally {
 		if (textureFileInput.value) {
-			textureFileInput.value.value = ''
+			textureFileInput.value.value = '';
 		}
 	}
 }
 
 async function save() {
-	isSaving.value = true
+	isSaving.value = true;
 
 	try {
-		let textureUrl: string
+		let textureUrl: string;
 
 		if (uploadedTextureUrl.value) {
-			textureUrl = uploadedTextureUrl.value.original
+			textureUrl = uploadedTextureUrl.value.original;
 		} else {
-			textureUrl = currentSkin.value!.texture
+			textureUrl = currentSkin.value!.texture;
 		}
 
-		const bytes: Uint8Array = new Uint8Array(await (await fetch(textureUrl)).arrayBuffer())
+		const bytes: Uint8Array = new Uint8Array(await (await fetch(textureUrl)).arrayBuffer());
 
 		if (mode.value === 'new') {
 			const addedSkin = await save_custom_skin(
@@ -453,11 +534,11 @@ async function save() {
 				variant.value,
 				selectedCape.value,
 				true,
-			)
+			);
 			emit('saved', {
 				applied: false,
 				skin: addedSkin,
-			})
+			});
 		} else {
 			const updatedSkin = await save_custom_skin(
 				currentSkin.value!,
@@ -465,76 +546,90 @@ async function save() {
 				variant.value,
 				selectedCape.value,
 				!!uploadedTextureUrl.value && textureUrl !== currentSkin.value?.texture,
-			)
+			);
 
 			if (currentSkin.value?.is_equipped) {
-				await equip_skin(updatedSkin)
+				await equip_skin(updatedSkin);
 			}
 
 			emit('saved', {
 				applied: !!currentSkin.value?.is_equipped,
 				skin: updatedSkin,
 				previousSkin: currentSkin.value!,
-			})
+			});
 		}
 
-		hide()
+		hide();
 	} catch (err) {
-		handleError(err)
+		handleError(err);
 	} finally {
-		isSaving.value = false
+		isSaving.value = false;
+	}
+}
+
+async function handleDeleteSkin() {
+	if (!currentSkin.value) return;
+	try {
+		isSaving.value = true;
+		await remove_custom_skin(currentSkin.value);
+		emit('deleted', currentSkin.value);
+		hide();
+	} catch (err) {
+		handleError(err);
+	} finally {
+		isSaving.value = false;
 	}
 }
 
 watch([uploadedTextureUrl, currentSkin], async () => {
-	await loadPreviewSkin()
-	refreshCapeListLayout()
-})
+	await loadPreviewSkin();
+	refreshCapeListLayout();
+});
 
 watch(
 	() => props.capes,
 	() => {
-		nextTick(() => refreshCapeListLayout())
+		nextTick(() => refreshCapeListLayout());
 	},
 	{ immediate: true },
-)
+);
 
 watch(
 	capeListRef,
 	(capeList, _, onCleanup) => {
-		if (!capeList) return
+		if (!capeList) return;
 
-		const modalContent = capeList.closest('[data-modal-content]')
-		const resizeObserver = new ResizeObserver(() => refreshCapeListLayout())
+		const modalContent = capeList.closest('[data-modal-content]');
+		const resizeObserver = new ResizeObserver(() => refreshCapeListLayout());
 
 		if (modalContent instanceof HTMLElement) {
-			resizeObserver.observe(modalContent)
+			resizeObserver.observe(modalContent);
 		}
 
-		window.addEventListener('resize', refreshCapeListLayout, { passive: true })
-		refreshCapeListLayout()
+		window.addEventListener('resize', refreshCapeListLayout, { passive: true });
+		refreshCapeListLayout();
 
 		onCleanup(() => {
-			resizeObserver.disconnect()
-			window.removeEventListener('resize', refreshCapeListLayout)
+			resizeObserver.disconnect();
+			window.removeEventListener('resize', refreshCapeListLayout);
 
 			if (capeListLayoutFrame !== null) {
-				cancelAnimationFrame(capeListLayoutFrame)
-				capeListLayoutFrame = null
+				cancelAnimationFrame(capeListLayoutFrame);
+				capeListLayoutFrame = null;
 			}
-		})
+		});
 	},
 	{ flush: 'post' },
-)
+);
 
 const emit = defineEmits<{
-	(event: 'saved', options: { applied: boolean; skin?: Skin; previousSkin?: Skin }): void
-	(event: 'deleted', skin: Skin): void
-}>()
+	(event: 'saved', options: { applied: boolean; skin?: Skin; previousSkin?: Skin }): void;
+	(event: 'deleted', skin: Skin): void;
+}>();
 
 defineExpose({
 	show,
 	showNew,
 	hide,
-})
+});
 </script>

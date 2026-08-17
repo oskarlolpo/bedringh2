@@ -381,12 +381,13 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { SwapIcon } from '@/assets/icons/index.js'
 import ContextMenu from '@/components/ui/ContextMenu.vue'
-import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
 import InstanceIndicator from '@/components/ui/InstanceIndicator.vue'
 import {
 	fetchCachedServerStatus,
 	getFreshCachedServerStatus,
 } from '@/composables/instances/use-server-status-query.ts'
+import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
+import { useProjectTranslation } from '@/composables/use-project-translation'
 import {
 	get_organization,
 	get_project,
@@ -410,7 +411,6 @@ import { provideBreadcrumbParent, useBreadcrumb } from '@/providers/breadcrumbs.
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
-import { useProjectTranslation } from '@/composables/use-project-translation'
 import { useTheming } from '@/store/state.js'
 
 dayjs.extend(relativeTime)
@@ -864,7 +864,7 @@ async function fetchProjectData() {
 				if (cfMod) {
 					let authorName = 'CurseForge Creator'
 					let authorUrl = `https://www.curseforge.com/minecraft/mc-addons/${cfMod.slug}`
-					let authorAvatar =
+					const authorAvatar =
 						cfMod.authors?.[0]?.avatarUrl ||
 						cfMod.authors?.[0]?.avatar_url ||
 						cfMod.logo?.thumbnailUrl ||

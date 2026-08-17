@@ -1130,20 +1130,18 @@ pub async fn launch_minecraft(
                     &java_version.architecture,
                     minecraft_updated,
                 )?;
-                if klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token) {
-                    let settings = crate::state::Settings::get(&state.pool).await.ok();
-                    let use_klmaster = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherKLMaster).copied()).unwrap_or(true);
-                    let use_skins = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherSkinSystem).copied()).unwrap_or(true);
+                let is_kl = klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token);
+                let settings = crate::state::Settings::get(&state.pool).await.ok();
+                let use_klmaster = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherKLMaster).copied()).unwrap_or(true);
+                let use_klmaster_always = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherKLMasterAlways).copied()).unwrap_or(false);
+                let use_skins = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherSkinSystem).copied()).unwrap_or(true);
 
-                    if use_klmaster {
-                        klauncher::inject_klmaster_mod(&instance_path, content_set.loader, &content_set.game_version);
-                    }
+                if (is_kl && use_klmaster) || use_klmaster_always {
+                    klauncher::inject_klmaster_mod(&instance_path, content_set.loader, &content_set.game_version);
+                }
 
-                    if use_skins {
-                        klauncher::prepare_klauncher_authlib(&state.directories.libraries_dir(), &raw_cp)
-                    } else {
-                        raw_cp
-                    }
+                if is_kl && use_skins {
+                    klauncher::prepare_klauncher_authlib(&state.directories.libraries_dir(), &raw_cp)
                 } else {
                     raw_cp
                 }

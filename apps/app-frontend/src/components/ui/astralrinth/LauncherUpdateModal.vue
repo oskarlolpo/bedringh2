@@ -7,9 +7,9 @@ import {
 	downloadLatestRelease,
 	getAvailableInstallers,
 	isUpdateInstalling,
+	latestLauncherReleases,
 	LAUNCHER_RELEASES_URL,
 	LAUNCHER_REPOSITORY_URL,
-	latestLauncherReleases,
 } from '@/helpers/astralrinth/update'
 
 type ModalHandle = {

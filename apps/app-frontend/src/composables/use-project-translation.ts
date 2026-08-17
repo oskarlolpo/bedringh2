@@ -1,4 +1,5 @@
 import { isRef, ref, triggerRef } from 'vue'
+
 import i18n from '@/i18n.config'
 
 function targetLanguage(): string {

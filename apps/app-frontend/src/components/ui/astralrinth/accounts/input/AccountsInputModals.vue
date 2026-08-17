@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { Button, defineMessages, useVIntl } from '@modrinth/ui'
-import { ref } from 'vue'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { onUnmounted, ref } from 'vue'
 
 import ModalWrapper from '@/components/ui/modal/ModalWrapper.vue'
+import { fetchExternalJson } from '@/helpers/external-image.ts'
+import { generatePlayerHeadBlob } from '@/helpers/rendering/batch-skin-renderer.ts'
 
 type ModalHandle = {
 	hide: () => void
@@ -41,48 +44,75 @@ const addKLauncherModal = ref<ModalHandle | null>(null)
 const requestElyByTwoFactorCodeModal = ref<ModalHandle | null>(null)
 
 const kLauncherStep = ref(1)
-const headCanvas = ref<HTMLCanvasElement | null>(null)
-const headFallbackUrl = ref('')
+const kLauncherHeadUrl = ref<string | null>(null)
 
-async function updateKLauncherHead(nick: string) {
+onUnmounted(() => {
+	if (kLauncherHeadUrl.value) {
+		URL.revokeObjectURL(kLauncherHeadUrl.value)
+	}
+})
+
+const KLAUNCHER_REGISTER_URL = 'https://klauncher.gg/register'
+const KLAUNCHER_RECOVERY_URL = 'https://klauncher.gg/restore'
+const KLAUNCHER_SKIN_API = 'https://api.klaun.ch/v2/user/skin?nick='
+
+let fetchHeadTimeout: ReturnType<typeof setTimeout> | null = null
+
+async function fetchKLauncherHead(nick: string) {
+	if (fetchHeadTimeout) {
+		clearTimeout(fetchHeadTimeout)
+		fetchHeadTimeout = null
+	}
+
 	if (!nick || nick.trim().length < 3) {
-		headFallbackUrl.value = ''
+		kLauncherHeadUrl.value = null
 		return
 	}
-	const trimmed = nick.trim()
-	try {
-		const res = await fetch(`https://api.klaun.ch/v2/user/skin?nick=${encodeURIComponent(trimmed)}`)
-		if (res.ok) {
-			const data = await res.json()
-			const skinUrl = data?.textures?.SKIN?.url
+
+	fetchHeadTimeout = setTimeout(async () => {
+		try {
+			const json = await fetchExternalJson<{
+				textures?: { SKIN?: { url?: string } }
+			}>(`${KLAUNCHER_SKIN_API}${encodeURIComponent(nick.trim())}`)
+			const skinUrl = json?.textures?.SKIN?.url
 			if (skinUrl) {
-				const img = new Image()
-				img.crossOrigin = 'Anonymous'
-				img.src = skinUrl
-				img.onload = () => {
-					if (headCanvas.value) {
-						const ctx = headCanvas.value.getContext('2d')
-						if (ctx) {
-							ctx.imageSmoothingEnabled = false
-							ctx.clearRect(0, 0, 64, 64)
-							ctx.drawImage(img, 8, 8, 8, 8, 0, 0, 64, 64)
-							ctx.drawImage(img, 40, 8, 8, 8, 0, 0, 64, 64)
-						}
+				const httpsUrl = skinUrl.replace('http://', 'https://')
+				try {
+					const headBlob = await generatePlayerHeadBlob(httpsUrl, 64)
+					if (kLauncherHeadUrl.value) {
+						URL.revokeObjectURL(kLauncherHeadUrl.value)
 					}
+					kLauncherHeadUrl.value = URL.createObjectURL(headBlob)
+				} catch (renderError) {
+					console.warn('Failed to render KLauncher head:', renderError)
+					kLauncherHeadUrl.value = null
 				}
-				headFallbackUrl.value = ''
-				return
+			} else {
+				kLauncherHeadUrl.value = null
 			}
+		} catch (fetchError) {
+			console.warn('Failed to fetch KLauncher skin:', fetchError)
+			kLauncherHeadUrl.value = null
 		}
-	} catch (e) {
-		// Fallback
-	}
-	headFallbackUrl.value = `https://mc-heads.net/avatar/${encodeURIComponent(trimmed)}/64`
+	}, 300)
+}
+
+function openKLauncherRegister() {
+	void openUrl(KLAUNCHER_REGISTER_URL)
+}
+
+function openKLauncherRecovery() {
+	void openUrl(KLAUNCHER_RECOVERY_URL)
 }
 
 function handleKLauncherNickInput(value: string) {
 	emit('update:kLauncherLoginValue', value)
-	updateKLauncherHead(value)
+	void fetchKLauncherHead(value)
+}
+
+function submitKLauncherWithoutPassword() {
+	emit('update:kLauncherPassword', '')
+	emit('submit-klauncher')
 }
 
 const messages = defineMessages({
@@ -124,7 +154,7 @@ const messages = defineMessages({
 	},
 	continueAction: {
 		id: 'astralrinth.app.minecraft-account.input.elyby.two-factor.continue-action',
-		defaultMessage: 'Continue',
+		defaultMessage: 'Продолжить',
 	},
 	elyByLoginLabel: {
 		id: 'astralrinth.app.minecraft-account.input.elyby.login.label',
@@ -168,7 +198,11 @@ defineExpose({
 	showElyBy: () => addElyByModal.value?.show(),
 	showElyByTwoFactor: () => requestElyByTwoFactorCodeModal.value?.show(),
 	showOffline: () => addOfflineModal.value?.show(),
-	showKLauncher: () => addKLauncherModal.value?.show(),
+	showKLauncher: () => {
+		kLauncherStep.value = 1
+		kLauncherHeadUrl.value = null
+		addKLauncherModal.value?.show()
+	},
 })
 </script>
 
@@ -248,11 +282,19 @@ defineExpose({
 		:header="formatMessage(messages.addKLauncherHeader)"
 	>
 		<div class="flex flex-col gap-4 px-6 py-5 w-[360px]">
-			<!-- Avatar Preview Header -->
+			<!-- Header -->
 			<div class="flex items-center gap-3 p-3 bg-surface-2 border border-solid border-surface-5 rounded-xl">
-				<div class="w-12 h-12 rounded-lg bg-surface-4 overflow-hidden flex items-center justify-center shrink-0">
-					<img v-if="headFallbackUrl" :src="headFallbackUrl" class="w-12 h-12 image-pixelated" />
-					<canvas v-else ref="headCanvas" width="64" height="64" class="w-12 h-12 image-pixelated"></canvas>
+				<img
+					v-if="kLauncherHeadUrl"
+					:src="kLauncherHeadUrl"
+					alt=""
+					class="w-10 h-10 rounded-lg object-cover image-pixelated"
+				/>
+				<div
+					v-else
+					class="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center text-secondary text-lg font-bold"
+				>
+					?
 				</div>
 				<div class="flex flex-col min-w-0">
 					<span class="font-bold text-contrast truncate text-sm">
@@ -272,16 +314,21 @@ defineExpose({
 					class="input soft-input"
 					@input="handleKLauncherNickInput(($event.target as HTMLInputElement).value)"
 				/>
-				<div class="mt-4">
-					<Button
-						color="primary"
-						class="w-full"
-						:disabled="!props.kLauncherLoginValue || props.kLauncherLoginValue.trim().length < 3"
-						@click="kLauncherStep = 2"
-					>
-						{{ formatMessage(messages.continueAction) }}
-					</Button>
-				</div>
+			<div class="mt-4 flex justify-end">
+				<Button
+					color="primary"
+					:disabled="!props.kLauncherLoginValue || props.kLauncherLoginValue.trim().length < 3"
+					@click="kLauncherStep = 2"
+				>
+					{{ formatMessage(messages.continueAction) }}
+				</Button>
+			</div>
+				<button
+					class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer self-center"
+					@click="openKLauncherRegister"
+				>
+					Нет аккаунта? Зарегистрироваться
+				</button>
 			</div>
 
 			<!-- Step 2: Password input -->
@@ -294,10 +341,10 @@ defineExpose({
 					class="input soft-input"
 					@input="emit('update:kLauncherPassword', ($event.target as HTMLInputElement).value)"
 				/>
-				<div class="flex flex-col gap-2 mt-4">
+				<div class="flex gap-2 mt-4">
 					<Button
 						color="primary"
-						class="w-full"
+						class="flex-1"
 						:disabled="props.kLauncherLoginDisabled"
 						@click="emit('submit-klauncher')"
 					>
@@ -306,17 +353,25 @@ defineExpose({
 					<Button
 						color="brand"
 						type="outlined"
-						class="w-full"
+						class="flex-1"
 						:disabled="props.kLauncherLoginDisabled"
-						@click="emit('submit-klauncher')"
+						@click="submitKLauncherWithoutPassword"
 					>
 						Войти без пароля
 					</Button>
+				</div>
+				<div class="flex items-center justify-between mt-1">
 					<button
-						class="text-xs text-secondary underline mt-1 bg-transparent border-0 cursor-pointer self-center"
+						class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer"
 						@click="kLauncherStep = 1"
 					>
 						← Назад к вводу ника
+					</button>
+					<button
+						class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer"
+						@click="openKLauncherRecovery"
+					>
+						Забыли пароль?
 					</button>
 				</div>
 			</div>

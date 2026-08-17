@@ -56,6 +56,24 @@
 				},
 				{
 					"url": "https://translate.googleapis.com/*"
+				},
+				{
+					"url": "https://api.klaun.ch/*"
+				},
+				{
+					"url": "http://api.klaun.ch/*"
+				},
+				{
+					"url": "https://*.klaun.ch/*"
+				},
+				{
+					"url": "http://*.klaun.ch/*"
+				},
+				{
+					"url": "https://mc-heads.net/*"
+				},
+				{
+					"url": "https://launcher-files.modrinth.com/*"
 				}
 			]
 		},

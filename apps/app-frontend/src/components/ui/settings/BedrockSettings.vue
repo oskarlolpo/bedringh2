@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { DownloadIcon, ExternalIcon } from '@modrinth/assets'
-import { ButtonStyled, Toggle, defineMessages, useVIntl } from '@modrinth/ui'
+import { ButtonStyled, defineMessages, Toggle, useVIntl } from '@modrinth/ui'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ref, watch } from 'vue'
+
 import { get, set } from '@/helpers/settings.ts'
 
 const { formatMessage } = useVIntl()

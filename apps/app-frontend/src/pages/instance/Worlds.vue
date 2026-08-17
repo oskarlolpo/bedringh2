@@ -167,7 +167,6 @@ import { platform } from '@tauri-apps/plugin-os'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import BedrockWorlds from './BedrockWorlds.vue'
 import type ContextMenu from '@/components/ui/ContextMenu.vue'
 import AddServerModal from '@/components/ui/world/modal/AddServerModal.vue'
 import ConfirmRemoveWorldModal from '@/components/ui/world/modal/ConfirmRemoveWorldModal.vue'
@@ -208,6 +207,8 @@ import {
 } from '@/helpers/worlds.ts'
 import { injectServerInstall } from '@/providers/server-install'
 import { handleSevereError } from '@/store/error.js'
+
+import BedrockWorlds from './BedrockWorlds.vue'
 
 const messages = defineMessages({
 	searchWorldsPlaceholder: {

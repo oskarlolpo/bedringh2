@@ -212,6 +212,16 @@ pub struct Cape {
     pub name: Arc<str>,
     /// The URL of the cape PNG texture.
     pub texture: Arc<Url>,
+    /// The URL of the animated cape texture (GIF/APNG), if the cape has one.
+    /// Only KLauncher capes provide this.
+    #[serde(default)]
+    pub animated_url: Option<Arc<Url>>,
+    /// Delay between animated cape positions in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay: Option<u32>,
+    /// KLauncher-compatible alternate spelling for frame delay in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub animation_delay: Option<u32>,
     /// Whether the cape is currently equipped in the Minecraft profile of its corresponding
     /// player.
     pub is_equipped: bool,
@@ -270,6 +280,12 @@ pub async fn get_available_capes() -> crate::Result<Vec<Cape>> {
         .await?
         .ok_or(ErrorKind::NoCredentialsError)?;
 
+    // KLauncher accounts cannot query the Mojang profile endpoint; their
+    // capes live on the KLauncher server instead.
+    if let Some(kl_token) = klauncher_token(&selected_credentials) {
+        return get_klauncher_capes(&selected_credentials, kl_token).await;
+    }
+
     let Some(profile) = selected_credentials.online_profile_fresh().await
     else {
         return Ok(Vec::new());
@@ -287,6 +303,9 @@ pub async fn get_available_capes() -> crate::Result<Vec<Cape>> {
             id: cape.id,
             name: Arc::clone(&cape.name),
             texture: Arc::clone(&cape.url),
+            animated_url: None,
+            delay: None,
+            animation_delay: None,
             is_equipped: pending_cape_id.map_or_else(
                 || cape.state == MinecraftCharacterExpressionState::Active,
                 |cape_id| cape_id == Some(cape.id),
@@ -414,6 +433,18 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
                 }
             }
         }
+    }
+
+    // Mirror the original KLauncher skins tab: pull the whole owned-skin
+    // history, not just the currently equipped texture.
+    if let Some(kl_token) = klauncher_token(&selected_credentials) {
+        sync_klauncher_owned_skins(
+            profile_id,
+            kl_token,
+            &mut saved_custom_skins,
+            &state.pool,
+        )
+        .await?;
     }
 
     for mut custom_skin in saved_custom_skins {
@@ -558,6 +589,234 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
     Ok(available_skins)
 }
 
+/// Returns whether the given texture dimensions describe a valid Minecraft
+/// skin.
+///
+/// Classic skins are 64x64 (or the legacy 64x32). HD skins reuse the same
+/// 64x64 UV layout scaled up by an integer factor (128x128 = 2x,
+/// 256x256 = 4x, ...), so any square texture whose edge is a multiple of 64
+/// is accepted as well.
+fn is_valid_skin_dimensions(width: u32, height: u32) -> bool {
+    if width == 64 && (height == 32 || height == 64) {
+        return true;
+    }
+
+    // HD skin: square, edge length is a multiple of 64.
+    width > 64 && width % 64 == 0 && height == width
+}
+
+/// Extracts the real KLauncher API token from stored credentials.
+///
+/// KLauncher access tokens are stored with a `kl_` prefix. The bare `"kl"`
+/// literal (used for passwordless/offline KLauncher accounts) carries no
+/// token and therefore cannot call authenticated endpoints.
+fn klauncher_token(credentials: &Credentials) -> Option<&str> {
+    credentials
+        .access_token
+        .strip_prefix("kl_")
+        .filter(|token| !token.is_empty())
+}
+
+/// Deterministically maps a numeric KLauncher skin/cape id to a UUID so it can
+/// be stored in `Skin::cape_id` and matched back when equipping.
+fn klauncher_scoped_uuid(kind: &str, id: u64) -> Uuid {
+    let hash =
+        sha2::Sha256::digest(format!("klauncher:{}:{}", kind, id).as_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&hash[..16]);
+    Uuid::from_bytes(bytes)
+}
+
+/// Extracts the numeric KLauncher id from a UUID produced by
+/// [`klauncher_scoped_uuid`], returning `None` for foreign UUIDs.
+fn klauncher_scoped_id(kind: &str, uuid: Uuid) -> Option<u64> {
+    let hash = sha2::Sha256::digest(format!("klauncher:{}:", kind).as_bytes());
+    let uuid_bytes = uuid.as_bytes();
+    if uuid_bytes[..8] != hash[..8] {
+        return None;
+    }
+    u64::from_be_bytes(uuid_bytes[8..16].try_into().ok()?).into()
+}
+
+/// Fetches the full KLauncher cape library (`GET /v2/user/skin/ownedCapes`)
+/// and marks the cape reported by `GET /v2/user/skin?nick=` as equipped.
+async fn get_klauncher_capes(
+    selected_credentials: &Credentials,
+    kl_token: &str,
+) -> crate::Result<Vec<Cape>> {
+    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
+
+    let current_cape_url = async {
+        let res = client
+            .get(format!(
+                "https://api.klaun.ch/v2/user/skin?nick={}",
+                selected_credentials.offline_profile.name
+            ))
+            .send()
+            .await
+            .ok()?;
+        let json = res.json::<serde_json::Value>().await.ok()?;
+        json.get("textures")
+            .and_then(|t| t.get("CAPE"))
+            .and_then(|c| c.get("original").or_else(|| c.get("url")))
+            .and_then(|u| u.as_str())
+            .map(|u| u.replace("http://", "https://"))
+    }
+    .await;
+
+    let response = client
+        .get("https://api.klaun.ch/v2/user/skin/ownedCapes")
+        .header("Authorization", format!("Bearer {}", kl_token))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .and_then(|res| res.error_for_status());
+
+    let Ok(response) = response else {
+        tracing::warn!("Failed to fetch KLauncher owned capes list");
+        return Ok(Vec::new());
+    };
+
+    let Ok(entries) = response.json::<serde_json::Value>().await else {
+        tracing::warn!("Failed to parse KLauncher owned capes response");
+        return Ok(Vec::new());
+    };
+
+    let mut capes = Vec::new();
+    if let Some(items) = entries.as_array() {
+        for item in items {
+            let Some(id) = item.get("id").and_then(|id| {
+                id.as_u64()
+                    .or_else(|| id.as_str().and_then(|s| s.parse().ok()))
+            }) else {
+                continue;
+            };
+            let Some(url) = item
+                .get("url")
+                .and_then(|u| u.as_str())
+                .map(|u| u.replace("http://", "https://"))
+            else {
+                continue;
+            };
+            let Ok(url) = Url::parse(&url) else {
+                continue;
+            };
+            let name =
+                item.get("name").and_then(|n| n.as_str()).unwrap_or("Cape");
+            let is_equipped = current_cape_url
+                .as_ref()
+                .is_some_and(|current| current == url.as_str());
+
+            let delay = item
+                .get("delay")
+                .or_else(|| item.get("animation_delay"))
+                .or_else(|| item.get("frameDelay"))
+                .and_then(|d| d.as_u64().or_else(|| d.as_str().and_then(|s| s.parse().ok())))
+                .map(|d| d as u32);
+
+            let animated_url = item
+                .get("animated_url")
+                .and_then(|u| u.as_str())
+                .filter(|u| !u.is_empty())
+                .map(|u| u.replace("http://", "https://"))
+                .and_then(|u| Url::parse(&u).ok())
+                .map(Arc::new);
+
+            capes.push(Cape {
+                id: klauncher_scoped_uuid("cape", id),
+                name: Arc::from(name),
+                texture: Arc::new(url),
+                animated_url,
+                delay,
+                animation_delay: delay,
+                is_equipped,
+            });
+        }
+    }
+
+    Ok(capes)
+}
+
+/// Fetches the full KLauncher skin library (`GET /v2/user/skin/owned`) and
+/// stores every texture in the local saved-skin database so the skins tab
+/// shows the whole history like the original launcher does.
+async fn sync_klauncher_owned_skins(
+    profile_id: Uuid,
+    kl_token: &str,
+    saved_custom_skins: &mut Vec<CustomMinecraftSkin>,
+    pool: &sqlx::SqlitePool,
+) -> crate::Result<()> {
+    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
+
+    let response = client
+        .get("https://api.klaun.ch/v2/user/skin/owned")
+        .header("Authorization", format!("Bearer {}", kl_token))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .and_then(|res| res.error_for_status());
+
+    let Ok(response) = response else {
+        tracing::warn!("Failed to fetch KLauncher owned skins list");
+        return Ok(());
+    };
+
+    let Ok(entries) = response.json::<serde_json::Value>().await else {
+        tracing::warn!("Failed to parse KLauncher owned skins response");
+        return Ok(());
+    };
+
+    let Some(items) = entries.as_array() else {
+        return Ok(());
+    };
+
+    for item in items {
+        let Some(url) = item
+            .get("url")
+            .and_then(|u| u.as_str())
+            .map(|u| u.replace("http://", "https://"))
+        else {
+            continue;
+        };
+
+        let Ok(bytes_resp) = client.get(&url).send().await else {
+            continue;
+        };
+        let Ok(bytes) = bytes_resp.bytes().await else {
+            continue;
+        };
+
+        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+        if saved_custom_skins
+            .iter()
+            .any(|s| s.texture_key == texture_key)
+        {
+            continue;
+        }
+
+        if CustomMinecraftSkin::add(
+            profile_id,
+            &texture_key,
+            &bytes,
+            MinecraftSkinVariant::Classic,
+            None,
+            CustomMinecraftSkinInsertPosition::Bottom,
+            pool,
+        )
+        .await
+        .is_ok()
+        {
+            *saved_custom_skins =
+                CustomMinecraftSkin::get_all(profile_id, pool)
+                    .await?
+                    .collect::<Vec<_>>()
+                    .await;
+        }
+    }
+
+    Ok(())
+}
+
 /// Adds or updates a skin in the app database and equips it for the current profile.
 /// Bundled default skins are only persisted when they have an associated cape.
 #[tracing::instrument(skip(texture_blob))]
@@ -567,7 +826,7 @@ pub async fn add_and_equip_custom_skin(
     cape: Option<Cape>,
 ) -> crate::Result<Skin> {
     let (skin_width, skin_height) = png_util::dimensions(&texture_blob)?;
-    if skin_width != 64 || ![32, 64].contains(&skin_height) {
+    if !is_valid_skin_dimensions(skin_width, skin_height) {
         return Err(ErrorKind::InvalidSkinTexture)?;
     }
 
@@ -758,11 +1017,22 @@ async fn equip_skin_now(
 ) -> crate::Result<()> {
     let state = State::get().await?;
 
-    let profile = if selected_credentials.access_token.starts_with("kl_") {
+    let is_klauncher = klauncher_token(selected_credentials).is_some();
+
+    let profile = if is_klauncher {
+        // KLauncher has no Mojang profile; build a synthetic one describing
+        // the skin being equipped so local persistence keeps working.
         Arc::new(MinecraftProfile {
             id: selected_credentials.offline_profile.id,
             name: selected_credentials.offline_profile.name.clone(),
-            skins: vec![],
+            skins: vec![crate::state::MinecraftSkin {
+                id: Uuid::nil(),
+                state: MinecraftCharacterExpressionState::Active,
+                url: Arc::clone(&skin.texture),
+                texture_key: Some(skin.texture_key.as_ref().into()),
+                variant: skin.variant,
+                name: skin.name.as_deref().map(str::to_owned),
+            }],
             capes: vec![],
             fetch_time: None,
         })
@@ -775,7 +1045,9 @@ async fn equip_skin_now(
             })?
     };
 
-    preserve_current_profile_skin(&state, &profile).await?;
+    if !is_klauncher {
+        preserve_current_profile_skin(&state, &profile).await?;
+    }
 
     let texture_blob = png_util::url_to_data_stream(&skin.texture)
         .await?
@@ -792,8 +1064,24 @@ async fn equip_skin_now(
     )
     .await?;
 
+    // KLauncher servers do not return a Mojang-style profile; keep the
+    // synthetic one instead of querying the Mojang profile endpoint.
     let profile = match profile {
         Some(profile) => profile,
+        None if is_klauncher => Arc::new(MinecraftProfile {
+            id: selected_credentials.offline_profile.id,
+            name: selected_credentials.offline_profile.name.clone(),
+            skins: vec![crate::state::MinecraftSkin {
+                id: Uuid::nil(),
+                state: MinecraftCharacterExpressionState::Active,
+                url: Arc::clone(&skin.texture),
+                texture_key: Some(skin.texture_key.as_ref().into()),
+                variant: skin.variant,
+                name: skin.name.as_deref().map(str::to_owned),
+            }],
+            capes: vec![],
+            fetch_time: None,
+        }),
         None => selected_credentials
             .refresh_online_profile()
             .await
@@ -805,14 +1093,18 @@ async fn equip_skin_now(
     if let Err(error) =
         persist_equipped_skin(&state, &profile, skin, &texture_blob).await
     {
-        refresh_profile_cache(selected_credentials).await;
+        if !is_klauncher {
+            refresh_profile_cache(selected_credentials).await;
+        }
         return Err(error);
     }
 
     if let Err(error) =
         sync_cape(selected_credentials, &profile, skin.cape_id).await
     {
-        refresh_profile_cache(selected_credentials).await;
+        if !is_klauncher {
+            refresh_profile_cache(selected_credentials).await;
+        }
         return Err(error);
     }
 
@@ -950,7 +1242,7 @@ pub async fn save_custom_skin(
     replace_texture: bool,
 ) -> crate::Result<Skin> {
     let (skin_width, skin_height) = png_util::dimensions(&texture_blob)?;
-    if skin_width != 64 || ![32, 64].contains(&skin_height) {
+    if !is_valid_skin_dimensions(skin_width, skin_height) {
         return Err(ErrorKind::InvalidSkinTexture)?;
     }
 
@@ -1473,6 +1765,17 @@ async fn sync_cape(
 ) -> crate::Result<()> {
     let current_cape_id = profile.current_cape().map(|cape| cape.id);
 
+    // KLauncher capes are selected through its own API; the Mojang cape
+    // endpoints reject KLauncher tokens.
+    if let Some(kl_token) = klauncher_token(selected_credentials) {
+        let kl_cape_id =
+            target_cape_id.and_then(|id| klauncher_scoped_id("cape", id));
+        if current_cape_id != target_cape_id {
+            klauncher_set_cape(kl_token, kl_cape_id).await?;
+        }
+        return Ok(());
+    }
+
     if current_cape_id != target_cape_id {
         match target_cape_id {
             Some(cape_id) => {
@@ -1490,6 +1793,32 @@ async fn sync_cape(
             }
         }
     }
+
+    Ok(())
+}
+
+/// Selects a KLauncher cape server-side (`POST /v2/user/skin/setCape`).
+/// `None` removes the current cape, mirroring the original launcher.
+async fn klauncher_set_cape(
+    kl_token: &str,
+    cape_id: Option<u64>,
+) -> crate::Result<()> {
+    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
+
+    client
+        .post("https://api.klaun.ch/v2/user/skin/setCape")
+        .header("Authorization", format!("Bearer {}", kl_token))
+        .header("Accept", "application/json")
+        .json(&serde_json::json!({ "id": cape_id }))
+        .send()
+        .await
+        .and_then(|res| res.error_for_status())
+        .map_err(|error| {
+            ErrorKind::OtherError(format!(
+                "Failed to set KLauncher cape: {error}"
+            ))
+            .as_error()
+        })?;
 
     Ok(())
 }

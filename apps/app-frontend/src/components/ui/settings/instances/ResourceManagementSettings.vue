@@ -33,15 +33,15 @@ const messages = defineMessages({
 	appDirectoryDescription: {
 		id: 'app.settings.resource-management.app-directory.description',
 		defaultMessage:
-			'Where Modrinth App stores instances and other files. Changes take effect after restarting the app.',
+			'Where Bedringh stores instances and other files. Changes take effect after restarting the app.',
 	},
 	selectAppDirectory: {
 		id: 'app.settings.resource-management.app-directory.select',
-		defaultMessage: 'Select a new app directory',
+		defaultMessage: 'Select a new Bedringh directory',
 	},
 	browseAppDirectory: {
 		id: 'app.settings.resource-management.app-directory.browse',
-		defaultMessage: 'Browse for an app directory',
+		defaultMessage: 'Browse for Bedringh directory',
 	},
 	appCacheTitle: {
 		id: 'app.settings.resource-management.app-cache.title',

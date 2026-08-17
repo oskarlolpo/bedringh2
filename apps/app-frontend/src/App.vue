@@ -10,6 +10,7 @@ import {
 } from '@modrinth/api-client'
 import {
 	ArrowBigUpDashIcon,
+	ChangeSkinIcon,
 	ChevronLeftIcon,
 	ChevronRightIcon,
 	CompassIcon,
@@ -23,7 +24,6 @@ import {
 	RightArrowIcon,
 	ServerStackIcon,
 	SettingsIcon,
-	ChangeSkinIcon,
 	UserIcon,
 } from '@modrinth/assets'
 import {
@@ -65,9 +65,11 @@ import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state'
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
+import SteveSkin from '@/assets/skins/steve.png'
 import AccountsCard from '@/components/ui/AccountsCard.vue'
 import AppActionBar from '@/components/ui/AppActionBar.vue'
 import Breadcrumbs from '@/components/ui/Breadcrumbs.vue'
+import ChibiAvatar from '@/components/ui/chibi/ChibiAvatar.vue'
 import ErrorModal from '@/components/ui/ErrorModal.vue'
 import FriendsList from '@/components/ui/friends/FriendsList.vue'
 import AddServerToInstanceModal from '@/components/ui/install_flow/AddServerToInstanceModal.vue'
@@ -79,8 +81,6 @@ import InstallToPlayModal from '@/components/ui/modal/InstallToPlayModal.vue'
 import ModpackAlreadyInstalledModal from '@/components/ui/modal/ModpackAlreadyInstalledModal.vue'
 import ModrinthAccountRequiredModal from '@/components/ui/modal/ModrinthAccountRequiredModal.vue'
 import UpdateToPlayModal from '@/components/ui/modal/UpdateToPlayModal.vue'
-import ChibiAvatar from '@/components/ui/chibi/ChibiAvatar.vue'
-import SteveSkin from '@/assets/skins/steve.png'
 import NavButton from '@/components/ui/NavButton.vue'
 import QuickInstanceSwitcher from '@/components/ui/QuickInstanceSwitcher.vue'
 import SharedInstanceInviteHandler from '@/components/ui/shared-instances/shared-instance-invite-handler/index.vue'
@@ -509,6 +509,7 @@ function handleAdsConsentRequired(required) {
 }
 
 const currentChibiSkinUrl = ref(SteveSkin)
+const accountChanged = ref(Date.now())
 
 async function refreshChibiSkin() {
 	try {
@@ -538,7 +539,13 @@ async function refreshChibiSkin() {
 	currentChibiSkinUrl.value = SteveSkin
 }
 
+async function onAccountChanged() {
+	await refreshChibiSkin()
+	accountChanged.value = Date.now()
+}
+
 provide('refreshChibiSkin', refreshChibiSkin)
+provide('accountChanged', accountChanged)
 
 watch(
 	() => router.currentRoute.value.path,
@@ -1797,7 +1804,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 							{{ formatMessage(messages.playingAs) }}
 						</h3>
 						<suspense>
-							<AccountsCard ref="accounts" @change="refreshChibiSkin" />
+							<AccountsCard ref="accounts" @change="onAccountChanged" />
 						</suspense>
 					</div>
 					<div class="p-4 border-0 border-b-[1px] border-[--brand-gradient-border] border-solid">

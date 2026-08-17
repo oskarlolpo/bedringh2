@@ -45,6 +45,7 @@ export interface BrowseManagerContext {
 	setPage: (page: number) => Promise<void>
 	clearSearch: () => void
 	onFilterChange: () => void
+	fetchRandomItem?: () => Promise<Labrinth.Search.v3.ResultSearchProject | undefined>
 
 	getProjectLink: (result: Labrinth.Search.v3.ResultSearchProject) => string | RouteLocationRaw
 	getServerProjectLink: (

@@ -326,7 +326,6 @@
 </template>
 
 <script setup>
-import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
 import {
 	BookmarkIcon,
 	CheckIcon,
@@ -373,6 +372,8 @@ import { useRoute, useRouter } from 'vue-router'
 
 import ContextMenu from '@/components/ui/ContextMenu.vue'
 import InstanceIndicator from '@/components/ui/InstanceIndicator.vue'
+import { loadBedrockMetadataMap } from '@/composables/use-bedrock-metadata'
+import { useProjectTranslation } from '@/composables/use-project-translation'
 import {
 	get_organization,
 	get_project,
@@ -382,22 +383,20 @@ import {
 	get_version_many,
 } from '@/helpers/cache.js'
 import { process_listener } from '@/helpers/events'
-import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
-import { get_by_instance_id } from '@/helpers/process'
 import {
 	get as getInstance,
 	get_projects as getInstanceProjects,
 	kill,
 	list as listInstances,
 } from '@/helpers/instance.ts'
+import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata'
+import { get_by_instance_id } from '@/helpers/process'
 import { get_categories, get_game_versions, get_loaders } from '@/helpers/tags'
-import { getServerLatency } from '@/helpers/worlds'
+import { getServerAddress,getServerLatency  } from '@/helpers/worlds'
 import { injectContentInstall } from '@/providers/content-install'
 import { injectServerInstall } from '@/providers/server-install'
 import { createServerInstallContent } from '@/providers/setup/server-install-content'
-import { useProjectTranslation } from '@/composables/use-project-translation'
 import { useBreadcrumbs } from '@/store/breadcrumbs.ts'
-import { getServerAddress } from '@/helpers/worlds'
 import { useTheming } from '@/store/state.js'
 
 const { isTranslated, isTranslating, toggleTranslation } = useProjectTranslation()
