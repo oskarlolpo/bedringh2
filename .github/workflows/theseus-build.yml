@@ -157,3 +157,4 @@ jobs:
           path: |
             target/release/bundle/nsis/*-setup.exe*
             target/release/bundle/nsis/*-setup.nsis.zip*
+          if-no-files-found: error

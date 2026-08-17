@@ -8,6 +8,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/prod' }}
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   release:
     name: Release Modrinth App
@@ -44,16 +48,11 @@ jobs:
           fi
           echo "Verified ${VERSION_TAG} is a tag pointing at ${HEAD_SHA}"
 
-      - name: Download Modrinth App artifacts
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
-        with:
-          workflow: theseus-build.yml
-          workflow_conclusion: success
-          event: push
-          branch: ${{ env.VERSION_TAG }}
-          name: ${{ env.WINDOWS_X64_BUNDLE_ARTIFACT_NAME }}
-          path: extracted_artifact
-          use_unzip: true
+      - name: Download App artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download ${{ github.event.workflow_run.id }} --name "${{ env.WINDOWS_X64_BUNDLE_ARTIFACT_NAME }}" --dir extracted_artifact
 
       - name: Extract app changelog
         env:
@@ -61,7 +60,10 @@ jobs:
           VERSION: ${{ env.VERSION_TAG }}
         run: |
           LAST_GITHUB_RELEASE_PUBLISHED_AT=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.published_at // ""' 2>/dev/null || true)
-          LAST_GITHUB_RELEASE_PUBLISHED_AT="$LAST_GITHUB_RELEASE_PUBLISHED_AT" npx --yes tsx scripts/build-theseus-release-notes.ts
+          LAST_GITHUB_RELEASE_PUBLISHED_AT="$LAST_GITHUB_RELEASE_PUBLISHED_AT" npx --yes tsx scripts/build-theseus-release-notes.ts || true
+          if [ ! -s release-notes.md ]; then
+            echo "Bedringh ${VERSION_TAG}" > release-notes.md
+          fi
 
       - name: Generate version manifest
         run: |
@@ -83,8 +85,8 @@ jobs:
             "platforms": {
               "windows-x86_64": {
                 "signature": $windowsX64UpdateArtifactSignature,
-                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Modrinth App_" + $versionTag + "_x64-setup.nsis.zip")",
-                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Modrinth App_" + $versionTag + "_x64-setup.exe")"]
+                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.nsis.zip")",
+                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.exe")"]
               }
             }
           }' > updates.json
