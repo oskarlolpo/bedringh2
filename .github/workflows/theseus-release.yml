@@ -108,6 +108,6 @@ jobs:
           gh release delete "$VERSION_TAG" --cleanup-tag=false -y || true
 
           gh release create "$VERSION_TAG" \
-            --title "Modrinth App ${VERSION}" \
+            --title "Bedringh ${VERSION}" \
             --notes-file release-notes.md \
             "$EXE_FILE"
