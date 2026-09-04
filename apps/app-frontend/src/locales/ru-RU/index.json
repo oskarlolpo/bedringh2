@@ -610,7 +610,7 @@
     "message": "Войти"
   },
   "app.skins.sign-in.description": {
-    "message": "Пожалуйста, войдите в свой аккаунт Minecraft, чтобы воспользоваться функциями управления скинами в приложении Modrinth."
+    "message": "Пожалуйста, войдите в свой аккаунт Minecraft, чтобы использовать функции управления скинами в Bedringh."
   },
   "app.skins.sign-in.rinthbot-alt": {
     "message": "Восторженный Modrinth Bot"
@@ -1024,7 +1024,9 @@
   "minecraft-account.add-account": {
     "message": "Добавить"
   },
-  "minecraft-account.create-offline-account": "Создать оффлайн аккаунт",
+  "minecraft-account.create-offline-account": {
+    "message": "Создать офлайн-аккаунт"
+  },
   "minecraft-account.label": {
     "message": "Учётная запись Minecraft"
   },
@@ -1088,7 +1090,10 @@
   "app.settings.resource-management.app-cache.confirm.description": {
     "message": "Bedringh может загружаться медленнее, пока кэш не будет восстановлен."
   },
-  "app.skins.sign-in.description": {
-    "message": "Пожалуйста, войдите в свой аккаунт Minecraft, чтобы использовать функции управления скинами в Bedringh."
+  "minecraft-account.sign-in-microsoft": {
+    "message": "Войти через Microsoft"
+  },
+  "minecraft-account.sign-in-klauncher": {
+    "message": "Войти через KLauncher"
   }
 }

@@ -151,10 +151,10 @@ async fn auto_install_java_inner(
 
     // Hardcoded JRE downloads from the bedrock-repacker releases (Windows x64)
     let download_url = match java_version {
-        8 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu8.94.0.17-ca-jre8.0.492-win_x64.zip".to_string(),
-        17 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu17.66.19-ca-jre17.0.19-win_x64.zip".to_string(),
-        21 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu21.50.19-ca-jre21.0.11-win_x64.zip".to_string(),
-        25 => "https://github.com/oskarlolpo/bedrock-repacker/releases/download/java-jre/zulu25.34.17-ca-jre25.0.3-win_x64.zip".to_string(),
+        8 => "https://github.com/oskarlolpo000/bedrock-repacker/releases/download/java-jre/zulu8.94.0.17-ca-jre8.0.492-win_x64.zip".to_string(),
+        17 => "https://github.com/oskarlolpo000/bedrock-repacker/releases/download/java-jre/zulu17.66.19-ca-jre17.0.19-win_x64.zip".to_string(),
+        21 => "https://github.com/oskarlolpo000/bedrock-repacker/releases/download/java-jre/zulu21.50.19-ca-jre21.0.11-win_x64.zip".to_string(),
+        25 => "https://github.com/oskarlolpo000/bedrock-repacker/releases/download/java-jre/zulu25.34.17-ca-jre25.0.3-win_x64.zip".to_string(),
         _ => return Err(crate::ErrorKind::LauncherError(format!("Unsupported Java version: {}", java_version)).into()),
     };
 

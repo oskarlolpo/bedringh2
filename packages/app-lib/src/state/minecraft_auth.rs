@@ -226,16 +226,28 @@ pub async fn klauncher_auth(
         match resp {
             Ok(res) if res.status().is_success() => {
                 if let Ok(json) = res.json::<serde_json::Value>().await {
-                    // kLauncher reads `res.data.access_token` from the login
-                    // response; keep `token` as a fallback for older responses.
-                    json.get("access_token")
+                    let token_opt = json.get("data")
+                        .and_then(|d| d.get("access_token").or_else(|| d.get("token")))
+                        .or_else(|| json.get("access_token"))
                         .or_else(|| json.get("token"))
-                        .and_then(|t| t.as_str())
-                        .map(|t| format!("kl_{}", t))
-                        .unwrap_or("kl".to_string())
+                        .and_then(|t| t.as_str());
+
+                    if let Some(token) = token_opt {
+                        format!("kl_{}", token)
+                    } else {
+                        "kl".to_string()
+                    }
                 } else {
                     "kl".to_string()
                 }
+            }
+            Ok(res) if res.status().as_u16() == 401 => {
+                let err_msg = if let Ok(json) = res.json::<serde_json::Value>().await {
+                    json.get("message").and_then(|m| m.as_str()).unwrap_or("Неверный логин или пароль KLauncher").to_string()
+                } else {
+                    "Неверный логин или пароль KLauncher".to_string()
+                };
+                return Err(crate::ErrorKind::OtherError(err_msg).as_error());
             }
             _ => "kl".to_string(),
         }
@@ -243,7 +255,23 @@ pub async fn klauncher_auth(
         "kl".to_string()
     };
 
-    let uuid = Uuid::new_v4();
+    let existing_uuid = Credentials::get_all(exec)
+        .await
+        .ok()
+        .and_then(|users| {
+            users
+                .iter()
+                .find(|entry| {
+                    let cred = entry.value();
+                    cred.offline_profile.name.eq_ignore_ascii_case(name_trimmed)
+                        && (cred.access_token == "kl"
+                            || cred.access_token.starts_with("kl_")
+                            || cred.refresh_token == "kl_refresh")
+                })
+                .map(|entry| *entry.key())
+        });
+
+    let uuid = existing_uuid.unwrap_or_else(Uuid::new_v4);
     let refresh_token = "kl_refresh".to_string();
 
     let mut credentials = Credentials {
@@ -262,6 +290,23 @@ pub async fn klauncher_auth(
 
     credentials.upsert(exec).await?;
 
+    // Если есть токен авторизации KLauncher — сразу синхронизируем все скины с аккаунта
+    if let Some(kl_token) = credentials.access_token.strip_prefix("kl_").filter(|t| !t.is_empty()) {
+        if let Ok(state) = crate::State::get().await {
+            if let Ok(stream) = crate::state::minecraft_skins::CustomMinecraftSkin::get_all(uuid, &state.pool).await {
+                use futures_lite::StreamExt;
+                let mut saved_custom_skins = stream.collect::<Vec<_>>().await;
+                let _ = crate::api::minecraft_skins::sync_klauncher_owned_skins(
+                    uuid,
+                    kl_token,
+                    &mut saved_custom_skins,
+                    &state.pool,
+                )
+                .await;
+            }
+        }
+    }
+
     // Загружаем скин — если есть токен, используем авторизованный запрос
     let client = &*INSECURE_REQWEST_CLIENT;
     let skin_request = if access_token.starts_with("kl_") {
@@ -278,42 +323,63 @@ pub async fn klauncher_auth(
             .await
     };
 
-    if let Ok(resp) = skin_request {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            if let Some(skin_url) = json
-                .get("textures")
-                .and_then(|t| t.get("SKIN"))
-                .and_then(|s| s.get("url"))
-                .and_then(|u| u.as_str())
-            {
-                let https_url = skin_url.replace("http://", "https://");
-                if let Ok(bytes_resp) = client.get(&https_url).send().await {
-                    if let Ok(bytes) = bytes_resp.bytes().await {
-                        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
-                        if let Ok(state) = crate::State::get().await {
-                            let mut has_skins = false;
-                            if let Ok(stream) = crate::state::minecraft_skins::CustomMinecraftSkin::get_all(uuid, &state.pool).await {
-                                use futures_lite::StreamExt;
-                                if stream.collect::<Vec<_>>().await.len() > 0 {
-                                    has_skins = true;
-                                }
-                            }
+    let mut downloaded_bytes: Option<bytes::Bytes> = None;
 
-                            if !has_skins {
-                                let _ = crate::state::minecraft_skins::CustomMinecraftSkin::add(
-                                    uuid,
-                                    &texture_key,
-                                    &bytes,
-                                    MinecraftSkinVariant::Classic,
-                                    None,
-                                    crate::state::minecraft_skins::CustomMinecraftSkinInsertPosition::Top,
-                                    &state.pool,
-                                )
-                                .await;
-                            }
+    if let Ok(resp) = skin_request {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(skin_url) = json
+                    .get("textures")
+                    .and_then(|t| t.get("SKIN"))
+                    .and_then(|s| s.get("url"))
+                    .and_then(|u| u.as_str())
+                {
+                    let https_url = skin_url.replace("http://", "https://");
+                    if let Ok(bytes_resp) = client.get(&https_url).send().await {
+                        if let Ok(bytes) = bytes_resp.bytes().await {
+                            downloaded_bytes = Some(bytes);
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Если сервер KLauncher недоступен (500/502/504) или скин не найден, пробуем fallback
+    if downloaded_bytes.is_none() {
+        if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name_trimmed)).send().await {
+            if bytes_resp.status().is_success() {
+                if let Ok(bytes) = bytes_resp.bytes().await {
+                    if !bytes.is_empty() {
+                        downloaded_bytes = Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(bytes) = downloaded_bytes {
+        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+        if let Ok(state) = crate::State::get().await {
+            let mut has_skins = false;
+            if let Ok(stream) = crate::state::minecraft_skins::CustomMinecraftSkin::get_all(uuid, &state.pool).await {
+                use futures_lite::StreamExt;
+                if stream.collect::<Vec<_>>().await.len() > 0 {
+                    has_skins = true;
+                }
+            }
+
+            if !has_skins {
+                let _ = crate::state::minecraft_skins::CustomMinecraftSkin::add(
+                    uuid,
+                    &texture_key,
+                    &bytes,
+                    MinecraftSkinVariant::Classic,
+                    None,
+                    crate::state::minecraft_skins::CustomMinecraftSkinInsertPosition::Top,
+                    &state.pool,
+                )
+                .await;
             }
         }
     }
@@ -475,6 +541,15 @@ impl Credentials {
         &self,
         cache_intent: OnlineProfileCacheIntent,
     ) -> Option<Arc<MinecraftProfile>> {
+        // Offline and KLauncher accounts do not have Mojang profiles.
+        if self.access_token == "null"
+            || self.access_token == "kl"
+            || self.access_token.starts_with("kl")
+            || self.refresh_token == "kl_refresh"
+        {
+            return None;
+        }
+
         let max_age = cache_intent.max_age();
         let stale_profile = {
             let mut profile_cache = PROFILE_CACHE.lock().await;

@@ -561,7 +561,9 @@ if (typeof window !== 'undefined') {
 }
 
 onMounted(() => {
-	void refreshChibiSkin()
+	if (stateInitialized.value) {
+		void refreshChibiSkin()
+	}
 })
 
 async function setupApp() {
@@ -597,8 +599,8 @@ async function setupApp() {
 	const version = await getVersion()
 	showOnboarding.value = !onboarded
 
-	nativeDecorations.value = native_decorations
-	if (os.value !== 'MacOS') await getCurrentWindow().setDecorations(native_decorations)
+	nativeDecorations.value = true
+	if (os.value !== 'MacOS') await getCurrentWindow().setDecorations(true)
 
 	themeStore.setThemeState(theme)
 	themeStore.collapsedNavigation = collapsed_navigation
@@ -609,6 +611,7 @@ async function setupApp() {
 	themeStore.devMode = developer_mode
 	themeStore.featureFlags = feature_flags
 	stateInitialized.value = true
+	invoke('show_window').catch(() => {})
 
 	refreshChibiSkin()
 
@@ -668,16 +671,27 @@ async function setupApp() {
 
 const stateFailed = ref(false)
 initialize_state()
-	.then(() => {
-		setupApp().catch((err) => {
+	.then(async () => {
+		try {
+			await setupApp()
+		} catch (err) {
 			stateFailed.value = true
 			console.error(err)
 			error.showError(err, null, false, 'state_init')
-		})
+		} finally {
+			await getCurrentWindow().unminimize().catch(() => {})
+			await getCurrentWindow().show().catch(() => {})
+			await getCurrentWindow().setFocus().catch(() => {})
+			await invoke('show_window').catch(() => {})
+		}
 	})
-	.catch((err) => {
+	.catch(async (err) => {
 		stateFailed.value = true
 		console.error('Failed to initialize app', err)
+		await getCurrentWindow().unminimize().catch(() => {})
+		await getCurrentWindow().show().catch(() => {})
+		await getCurrentWindow().setFocus().catch(() => {})
+		await invoke('show_window').catch(() => {})
 		error.showError(err, null, false, 'state_init')
 	})
 
@@ -1992,7 +2006,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 	*,
 	:deep(*) {
 		box-shadow: none !important;
-		--tw-drop-shadow:;
+		--tw-drop-shadow: 0 0 #0000;
 	}
 }
 

@@ -1,8 +1,8 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
 	"build": {
-		"beforeDevCommand": "pnpm turbo run dev --filter=@modrinth/app-frontend",
-		"beforeBuildCommand": "pnpm turbo run build --filter=@modrinth/app-frontend",
+		"beforeDevCommand": "pnpm --filter @modrinth/app-frontend dev",
+		"beforeBuildCommand": "pnpm --filter @modrinth/app-frontend build",
 		"frontendDist": "../app-frontend/dist",
 		"devUrl": "http://localhost:1420"
 	},
@@ -64,7 +64,7 @@
 	},
 	"productName": "Bedringh",
 	"version": "../app-frontend/package.json",
-	"mainBinaryName": "Modrinth App",
+	"mainBinaryName": "theseus_gui",
 	"identifier": "com.bedringh.app",
 	"plugins": {
 		"deep-link": {
@@ -81,8 +81,6 @@
 		"macOSPrivateApi": true,
 		"windows": [
 			{
-				"titleBarStyle": "Overlay",
-				"hiddenTitle": true,
 				"fullscreen": false,
 				"height": 800,
 				"resizable": true,
@@ -91,9 +89,11 @@
 				"width": 1280,
 				"minHeight": 700,
 				"minWidth": 1100,
-				"visible": false,
+				"visible": true,
 				"zoomHotkeysEnabled": false,
-				"decorations": false
+				"decorations": true,
+				"center": true,
+				"focus": true
 			}
 		],
 		"security": {

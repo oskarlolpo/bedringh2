@@ -403,8 +403,11 @@ function renderAnimatedFrame(state: AnimatedCanvasState, frameIndex: number): vo
 	}
 
 	// Smart Face Sync for this frame:
-	// Если рисунок плаща помещен на Region 1 (x: 1..11), а Region 2 (x: 12..22) сплошной,
-	// дублируем рисунок на внешнюю сторону спины (Region 2).
+	// В стандартном формате Minecraft плащей (в т.ч. лицензионных Mojang)
+	// лицевая сторона (рисунок) находится в Region 1 (x: 1..11),
+	// а внутренняя подкладка — в Region 2 (x: 12..22).
+	// Если это нестандартный/пиратский плащ, где рисунок ошибочно помещен
+	// на Region 2, а на Region 1 пусто или сплошной фон, копируем рисунок на Region 1.
 	const scale = targetFrameW / 64
 	const r1X = Math.round(1 * scale)
 	const r2X = Math.round(12 * scale)
@@ -432,9 +435,7 @@ function renderAnimatedFrame(state: AnimatedCanvasState, frameIndex: number): vo
 			}
 		}
 
-		if (colors1.size > 5 && colors2.size <= 3) {
-			targetCtx.putImageData(imgData1, r2X, rY)
-		} else if (colors2.size > 5 && colors1.size <= 3) {
+		if (colors2.size > colors1.size + 2 && colors2.size > 5) {
 			targetCtx.putImageData(imgData2, r1X, rY)
 		}
 	} catch {

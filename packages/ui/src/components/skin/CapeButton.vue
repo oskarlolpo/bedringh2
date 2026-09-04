@@ -101,14 +101,14 @@ function detectCapeLayout(
 	return { layout: 'standard-2-1', frameCount: 1 }
 }
 
-const preferredRegion = ref<'left' | 'right'>('right')
+const preferredRegion = ref<'left' | 'right'>('left')
 
 function analyzeArtworkRegion(img: HTMLImageElement): 'left' | 'right' {
 	try {
 		const canvas = document.createElement('canvas')
 		const w = img.naturalWidth || img.width
 		const h = img.naturalHeight || img.height
-		if (!w || !h) return 'right'
+		if (!w || !h) return 'left'
 
 		const scale = w / 64
 		const r1X = Math.round(1 * scale)
@@ -120,7 +120,7 @@ function analyzeArtworkRegion(img: HTMLImageElement): 'left' | 'right' {
 		canvas.width = Math.max(r2X + rW, w)
 		canvas.height = Math.max(rY + rH, Math.round(w / 2))
 		const ctx = canvas.getContext('2d', { willReadFrequently: true })
-		if (!ctx) return 'right'
+		if (!ctx) return 'left'
 
 		ctx.drawImage(img, 0, 0)
 		const p1 = ctx.getImageData(r1X, rY, rW, rH).data
@@ -139,10 +139,14 @@ function analyzeArtworkRegion(img: HTMLImageElement): 'left' | 'right' {
 			}
 		}
 
-		if (c1.size > 5 && c2.size <= 3) return 'left'
-		return 'right'
+		// В стандартном формате Minecraft плащей (в т.ч. лицензионных Mojang)
+		// лицевая сторона (рисунок) находится в Region 1 (left).
+		// Переключаемся на Region 2 (right) только если в Region 2 явно больше деталей,
+		// что бывает на некоторых кастомных пиратских скинах.
+		if (c2.size > c1.size + 2 && c2.size > 5) return 'right'
+		return 'left'
 	} catch {
-		return 'right'
+		return 'left'
 	}
 }
 
@@ -150,7 +154,7 @@ function updateImageDimensions(url: string | undefined) {
 	if (!url) {
 		layoutType.value = 'standard-2-1'
 		frameCount.value = 1
-		preferredRegion.value = 'right'
+		preferredRegion.value = 'left'
 		stopAnimation()
 		return
 	}
@@ -196,7 +200,7 @@ watch(
 		currentFrame.value = 0
 		frameCount.value = 1
 		layoutType.value = 'standard-2-1'
-		preferredRegion.value = 'right'
+		preferredRegion.value = 'left'
 		stopAnimation()
 		if (newUrl) {
 			updateImageDimensions(newUrl)

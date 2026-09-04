@@ -6,6 +6,7 @@ import { onUnmounted, ref } from 'vue'
 import ModalWrapper from '@/components/ui/modal/ModalWrapper.vue'
 import { fetchExternalJson } from '@/helpers/external-image.ts'
 import { generatePlayerHeadBlob } from '@/helpers/rendering/batch-skin-renderer.ts'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 type ModalHandle = {
 	hide: () => void
@@ -70,30 +71,45 @@ async function fetchKLauncherHead(nick: string) {
 	}
 
 	fetchHeadTimeout = setTimeout(async () => {
+		const trimmedNick = nick.trim()
+		let headUrlFound: string | null = null
+
+		// 1. Пытаемся получить скин из официального API KLauncher
 		try {
 			const json = await fetchExternalJson<{
 				textures?: { SKIN?: { url?: string } }
-			}>(`${KLAUNCHER_SKIN_API}${encodeURIComponent(nick.trim())}`)
+			}>(`${KLAUNCHER_SKIN_API}${encodeURIComponent(trimmedNick)}`)
 			const skinUrl = json?.textures?.SKIN?.url
 			if (skinUrl) {
 				const httpsUrl = skinUrl.replace('http://', 'https://')
 				try {
 					const headBlob = await generatePlayerHeadBlob(httpsUrl, 64)
-					if (kLauncherHeadUrl.value) {
-						URL.revokeObjectURL(kLauncherHeadUrl.value)
-					}
-					kLauncherHeadUrl.value = URL.createObjectURL(headBlob)
+					headUrlFound = URL.createObjectURL(headBlob)
 				} catch (renderError) {
-					console.warn('Failed to render KLauncher head:', renderError)
-					kLauncherHeadUrl.value = null
+					console.warn('Failed to render KLauncher head from skinUrl:', renderError)
 				}
-			} else {
-				kLauncherHeadUrl.value = null
 			}
 		} catch (fetchError) {
-			console.warn('Failed to fetch KLauncher skin:', fetchError)
-			kLauncherHeadUrl.value = null
+			console.warn('KLauncher skin API unreachable or errored, trying fallback:', fetchError)
 		}
+
+		// 2. Если KLauncher сервер недоступен (500/502/504) или скина нет — fallback на mc-heads.net
+		if (!headUrlFound) {
+			try {
+				const res = await tauriFetch(`https://mc-heads.net/avatar/${encodeURIComponent(trimmedNick)}/64`)
+				if (res.ok) {
+					const blob = await res.blob()
+					headUrlFound = URL.createObjectURL(blob)
+				}
+			} catch (fallbackError) {
+				console.warn('Failed to fetch fallback head from mc-heads:', fallbackError)
+			}
+		}
+
+		if (kLauncherHeadUrl.value) {
+			URL.revokeObjectURL(kLauncherHeadUrl.value)
+		}
+		kLauncherHeadUrl.value = headUrlFound
 	}, 300)
 }
 
@@ -113,6 +129,13 @@ function handleKLauncherNickInput(value: string) {
 function submitKLauncherWithoutPassword() {
 	emit('update:kLauncherPassword', '')
 	emit('submit-klauncher')
+}
+
+function goToKLauncherStep2() {
+	kLauncherStep.value = 2
+	if (!kLauncherHeadUrl.value && props.kLauncherLoginValue && props.kLauncherLoginValue.trim().length >= 3) {
+		void fetchKLauncherHead(props.kLauncherLoginValue)
+	}
 }
 
 const messages = defineMessages({
@@ -200,8 +223,15 @@ defineExpose({
 	showOffline: () => addOfflineModal.value?.show(),
 	showKLauncher: () => {
 		kLauncherStep.value = 1
-		kLauncherHeadUrl.value = null
 		addKLauncherModal.value?.show()
+		if (props.kLauncherLoginValue && props.kLauncherLoginValue.trim().length >= 3) {
+			void fetchKLauncherHead(props.kLauncherLoginValue)
+		} else {
+			if (kLauncherHeadUrl.value) {
+				URL.revokeObjectURL(kLauncherHeadUrl.value)
+			}
+			kLauncherHeadUrl.value = null
+		}
 	},
 })
 </script>
@@ -318,7 +348,7 @@ defineExpose({
 				<Button
 					color="primary"
 					:disabled="!props.kLauncherLoginValue || props.kLauncherLoginValue.trim().length < 3"
-					@click="kLauncherStep = 2"
+					@click="goToKLauncherStep2"
 				>
 					{{ formatMessage(messages.continueAction) }}
 				</Button>

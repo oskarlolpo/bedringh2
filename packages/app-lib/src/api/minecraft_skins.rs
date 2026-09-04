@@ -83,6 +83,15 @@ mod assets {
 
 pub mod png_util;
 
+static KL_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(4))
+        .read_timeout(Duration::from_secs(3))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
+
 const SKIN_CHANGE_DEBOUNCE: Duration = Duration::from_secs(10);
 
 static PENDING_SKIN_CHANGE: LazyLock<Mutex<PendingSkinChangeState>> =
@@ -397,40 +406,68 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
         .collect::<Vec<_>>()
         .await;
 
-    let name = &selected_credentials.offline_profile.name;
-    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
-    if let Ok(res) = client.get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name)).send().await {
-        if let Ok(json) = res.json::<serde_json::Value>().await {
-            if let Some(skin_url) = json.get("textures").and_then(|t| t.get("SKIN")).and_then(|s| s.get("url")).and_then(|u| u.as_str()) {
-                let https_url = skin_url.replace("http://", "https://");
-                if let Ok(bytes_resp) = client.get(&https_url).send().await {
-                    if let Ok(bytes) = bytes_resp.bytes().await {
-                        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
-                        let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
-                        if !already_saved {
-                            let insert_pos = if saved_custom_skins.is_empty() {
-                                CustomMinecraftSkinInsertPosition::Top
-                            } else {
-                                CustomMinecraftSkinInsertPosition::Bottom
-                            };
-                            let _ = CustomMinecraftSkin::add(
-                                profile_id,
-                                &texture_key,
-                                &bytes,
-                                MinecraftSkinVariant::Classic,
-                                None,
-                                insert_pos,
-                                &state.pool,
-                            )
-                            .await;
+    let is_kl = crate::launcher::klauncher::is_klauncher_user(
+        &selected_credentials.access_token,
+        &selected_credentials.refresh_token,
+    );
 
-                            saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
-                                .await?
-                                .collect::<Vec<_>>()
-                                .await;
+    if is_kl {
+        let name = &selected_credentials.offline_profile.name;
+        let client = &*KL_CLIENT;
+        let mut downloaded_bytes: Option<bytes::Bytes> = None;
+
+        if let Ok(res) = client.get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name)).send().await {
+            if res.status().is_success() {
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    if let Some(skin_url) = json.get("textures").and_then(|t| t.get("SKIN")).and_then(|s| s.get("url")).and_then(|u| u.as_str()) {
+                        let https_url = skin_url.replace("http://", "https://");
+                        if let Ok(bytes_resp) = client.get(&https_url).send().await {
+                            if let Ok(bytes) = bytes_resp.bytes().await {
+                                downloaded_bytes = Some(bytes);
+                            }
                         }
                     }
                 }
+            }
+        }
+
+        // Если KLauncher API недоступен или вернул ошибку, пробуем fallback на mc-heads (только если локальных скинов ещё нет)
+        if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
+            if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
+                if bytes_resp.status().is_success() {
+                    if let Ok(bytes) = bytes_resp.bytes().await {
+                        if !bytes.is_empty() {
+                            downloaded_bytes = Some(bytes);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(bytes) = downloaded_bytes {
+            let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+            let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
+            if !already_saved {
+                let insert_pos = if saved_custom_skins.is_empty() {
+                    CustomMinecraftSkinInsertPosition::Top
+                } else {
+                    CustomMinecraftSkinInsertPosition::Bottom
+                };
+                let _ = CustomMinecraftSkin::add(
+                    profile_id,
+                    &texture_key,
+                    &bytes,
+                    MinecraftSkinVariant::Classic,
+                    None,
+                    insert_pos,
+                    &state.pool,
+                )
+                .await;
+
+                saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
+                    .await?
+                    .collect::<Vec<_>>()
+                    .await;
             }
         }
     }
@@ -644,7 +681,7 @@ async fn get_klauncher_capes(
     selected_credentials: &Credentials,
     kl_token: &str,
 ) -> crate::Result<Vec<Cape>> {
-    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
+    let client = &*KL_CLIENT;
 
     let current_cape_url = async {
         let res = client
@@ -682,8 +719,13 @@ async fn get_klauncher_capes(
         return Ok(Vec::new());
     };
 
+    let items_opt = entries.as_array()
+        .or_else(|| entries.get("data").and_then(|d| d.as_array()))
+        .or_else(|| entries.get("capes").and_then(|c| c.as_array()))
+        .or_else(|| entries.get("items").and_then(|i| i.as_array()));
+
     let mut capes = Vec::new();
-    if let Some(items) = entries.as_array() {
+    if let Some(items) = items_opt {
         for item in items {
             let Some(id) = item.get("id").and_then(|id| {
                 id.as_u64()
@@ -693,6 +735,8 @@ async fn get_klauncher_capes(
             };
             let Some(url) = item
                 .get("url")
+                .or_else(|| item.get("cape"))
+                .or_else(|| item.get("texture"))
                 .and_then(|u| u.as_str())
                 .map(|u| u.replace("http://", "https://"))
             else {
@@ -740,13 +784,13 @@ async fn get_klauncher_capes(
 /// Fetches the full KLauncher skin library (`GET /v2/user/skin/owned`) and
 /// stores every texture in the local saved-skin database so the skins tab
 /// shows the whole history like the original launcher does.
-async fn sync_klauncher_owned_skins(
+pub async fn sync_klauncher_owned_skins(
     profile_id: Uuid,
     kl_token: &str,
     saved_custom_skins: &mut Vec<CustomMinecraftSkin>,
     pool: &sqlx::SqlitePool,
 ) -> crate::Result<()> {
-    let client = &*crate::util::fetch::INSECURE_REQWEST_CLIENT;
+    let client = &*KL_CLIENT;
 
     let response = client
         .get("https://api.klaun.ch/v2/user/skin/owned")
@@ -766,18 +810,41 @@ async fn sync_klauncher_owned_skins(
         return Ok(());
     };
 
-    let Some(items) = entries.as_array() else {
+    let items_opt = entries.as_array()
+        .or_else(|| entries.get("data").and_then(|d| d.as_array()))
+        .or_else(|| entries.get("skins").and_then(|s| s.as_array()))
+        .or_else(|| entries.get("items").and_then(|i| i.as_array()));
+
+    let Some(items) = items_opt else {
+        tracing::warn!("Failed to find array in KLauncher owned skins response: {:?}", entries);
         return Ok(());
     };
 
     for item in items {
         let Some(url) = item
             .get("url")
+            .or_else(|| item.get("skin"))
+            .or_else(|| item.get("texture"))
+            .or_else(|| item.get("original"))
             .and_then(|u| u.as_str())
             .map(|u| u.replace("http://", "https://"))
         else {
             continue;
         };
+
+        // Если в метаданных или в имени файла URL содержится sha256 хэш, и он уже есть в БД — пропускаем
+        let possible_hash = item.get("hash")
+            .or_else(|| item.get("sha256"))
+            .and_then(|h| h.as_str())
+            .or_else(|| {
+                url.rsplit('/').next().and_then(|s| s.strip_suffix(".png")).filter(|s| s.len() == 64)
+            });
+
+        if let Some(h) = possible_hash {
+            if saved_custom_skins.iter().any(|s| s.texture_key == h) {
+                continue;
+            }
+        }
 
         let Ok(bytes_resp) = client.get(&url).send().await else {
             continue;
@@ -794,11 +861,17 @@ async fn sync_klauncher_owned_skins(
             continue;
         }
 
+        let variant = item.get("model")
+            .or_else(|| item.get("variant"))
+            .and_then(|v| v.as_str())
+            .map(|v| if v.eq_ignore_ascii_case("slim") { MinecraftSkinVariant::Slim } else { MinecraftSkinVariant::Classic })
+            .unwrap_or(MinecraftSkinVariant::Classic);
+
         if CustomMinecraftSkin::add(
             profile_id,
             &texture_key,
             &bytes,
-            MinecraftSkinVariant::Classic,
+            variant,
             None,
             CustomMinecraftSkinInsertPosition::Bottom,
             pool,

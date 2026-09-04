@@ -1059,7 +1059,7 @@ watch(isSkinManagementReadOnly, (readOnly) => {
 onMounted(() => {
 	window.addEventListener('offline', onOffline);
 	window.addEventListener('online', onOnline);
-	userCheckInterval = window.setInterval(checkUserChanges, 250);
+	userCheckInterval = window.setInterval(checkUserChanges, 2000);
 	void setupAddSkinDragDropListener();
 });
 
@@ -1094,23 +1094,26 @@ function onOnline() {
 	void authServerQuery.refetch();
 }
 
+let isCheckingUser = false;
 async function checkUserChanges() {
+	if (isCheckingUser) return;
+	isCheckingUser = true;
 	try {
 		const defaultId = await get_default_user();
-		if (defaultId !== currentUserId.value) {
+		if (defaultId && currentUserId.value && defaultId !== currentUserId.value) {
 			await loadCurrentUser();
-			await loadCapes();
-			await loadSkins();
+			await Promise.all([loadCapes(), loadSkins()]);
 		}
 	} catch (error) {
 		if (currentUser.value && error instanceof Error) {
 			handleError(error);
 		}
+	} finally {
+		isCheckingUser = false;
 	}
 }
 
-await Promise.all([loadCapes(), loadCurrentUser()]);
-await loadSkins();
+await Promise.all([loadCapes(), loadCurrentUser(), loadSkins()]);
 </script>
 
 <template>

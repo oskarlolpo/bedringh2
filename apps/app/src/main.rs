@@ -44,23 +44,14 @@ async fn initialize_state(app: tauri::AppHandle) -> api::Result<()> {
     Ok(())
 }
 
-// Should be call once Vue has mounted the app
 #[tracing::instrument(skip_all)]
 #[tauri::command]
 fn show_window(app: tauri::AppHandle) {
-    let win = app.get_window("main").unwrap();
-    if let Err(e) = win.show() {
-        DialogBuilder::message()
-            .set_level(MessageLevel::Error)
-            .set_title("Initialization error")
-            .set_text(format!(
-                "Cannot display application window due to an error:\n{e}"
-            ))
-            .alert()
-            .show()
-            .unwrap();
-        panic!("cannot display application window")
-    } else {
+    tracing::info!("show_window called");
+    for (label, win) in app.webview_windows() {
+        tracing::info!("Showing window: {}", label);
+        let _ = win.unminimize();
+        let _ = win.show();
         let _ = win.set_focus();
     }
 }
@@ -275,6 +266,15 @@ fn main() {
     match app {
         Ok(app) => {
             app.run(|app, event| {
+                if let tauri::RunEvent::Ready = &event {
+                    for (label, win) in app.webview_windows() {
+                        tracing::info!("RunEvent::Ready showing window: {}", label);
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                }
+
                 #[cfg(not(any(feature = "updater", target_os = "macos")))]
                 let _ = app;
 

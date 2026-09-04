@@ -3,17 +3,24 @@
 		v-if="accounts.length === 0"
 		class="flex flex-col gap-3 bg-button-bg border border-solid border-surface-5 rounded-xl p-3 mt-2"
 	>
-		<span>{{ formatMessage(messages.notSignedIn) }}</span>
+		<span class="text-sm font-medium text-secondary">{{ formatMessage(messages.notSignedIn) }}</span>
 		<ButtonStyled color="brand">
 			<button color="primary" :disabled="loginDisabled" @click="login()">
 				<LogInIcon v-if="!loginDisabled" />
 				<SpinnerIcon v-else class="animate-spin" />
-				{{ formatMessage(messages.signInToMinecraft) }}
+				{{ formatMessage(messages.signInWithMicrosoft) }}
 			</button>
 		</ButtonStyled>
 		<ButtonStyled color="brand" type="outlined">
-			<button color="primary" :disabled="loginDisabled" @click="addOfflineAccount()">
-				<PlusIcon v-if="!loginDisabled" />
+			<button color="primary" :disabled="loginDisabled || kLauncherLoginDisabled" @click="addKLauncherAccount()">
+				<LogInIcon v-if="!kLauncherLoginDisabled" />
+				<SpinnerIcon v-else class="animate-spin" />
+				{{ formatMessage(messages.signInWithKLauncher) }}
+			</button>
+		</ButtonStyled>
+		<ButtonStyled color="brand" type="outlined">
+			<button color="primary" :disabled="loginDisabled || offlineLoginDisabled" @click="addOfflineAccount()">
+				<PlusIcon v-if="!offlineLoginDisabled" />
 				<SpinnerIcon v-else class="animate-spin" />
 				{{ formatMessage(messages.createOfflineAccount) }}
 			</button>
@@ -100,22 +107,22 @@
 				</div>
 			</template>
 			<div class="flex flex-col gap-2 px-2 pt-2">
-				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="brand" type="outlined">
+				<ButtonStyled class="w-full" color="brand" type="outlined">
 					<button :disabled="loginDisabled" @click="login()">
 						<PlusIcon />
-						{{ formatMessage(messages.addAccount) }} (MS)
+						{{ formatMessage(messages.signInWithMicrosoft) }}
 					</button>
 				</ButtonStyled>
-				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="brand" type="outlined">
-					<button :disabled="loginDisabled" @click="addOfflineAccount()">
+				<ButtonStyled class="w-full" color="brand" type="outlined">
+					<button :disabled="loginDisabled || kLauncherLoginDisabled" @click="addKLauncherAccount()">
+						<PlusIcon />
+						{{ formatMessage(messages.signInWithKLauncher) }}
+					</button>
+				</ButtonStyled>
+				<ButtonStyled class="w-full" color="brand" type="outlined">
+					<button :disabled="loginDisabled || offlineLoginDisabled" @click="addOfflineAccount()">
 						<PlusIcon />
 						{{ formatMessage(messages.createOfflineAccount) }}
-					</button>
-				</ButtonStyled>
-				<ButtonStyled v-if="accounts.length > 0" class="w-full" color="brand" type="outlined">
-					<button :disabled="loginDisabled" @click="addKLauncherAccount()">
-						<PlusIcon />
-						Вход KLauncher
 					</button>
 				</ButtonStyled>
 			</div>
@@ -229,10 +236,18 @@ async function fetchAccountHead(account: MinecraftCredential) {
 		if (accountType === 'KLauncher') {
 			// KLauncher accounts: fetch skin from KLauncher API (routed through the
 			// Tauri HTTP plugin to bypass the webview CSP connect-src list).
-			const json = await fetchExternalJson<{
-				textures?: { SKIN?: { url?: string } }
-			}>(`https://api.klaun.ch/v2/user/skin?nick=${encodeURIComponent(name)}`)
-			skinUrl = json?.textures?.SKIN?.url ?? null
+			try {
+				const json = await fetchExternalJson<{
+					textures?: { SKIN?: { url?: string } }
+				}>(`https://api.klaun.ch/v2/user/skin?nick=${encodeURIComponent(name)}`)
+				skinUrl = json?.textures?.SKIN?.url ?? null
+			} catch {
+				skinUrl = null
+			}
+			// Fallback to mc-heads if KLauncher API is down or errored
+			if (!skinUrl) {
+				skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
+			}
 		} else if (accountType === 'Microsoft') {
 			// Microsoft accounts: use mc-heads.net which resolves by UUID or username
 			skinUrl = `https://mc-heads.net/skin/${profileId}`
@@ -242,10 +257,22 @@ async function fetchAccountHead(account: MinecraftCredential) {
 		}
 
 		if (skinUrl) {
-			const httpsUrl = skinUrl.replace('http://', 'https://')
-			const headBlob = await generatePlayerHeadBlob(httpsUrl, 64)
-			const headUrl = URL.createObjectURL(headBlob)
-			accountHeadCache.value = new Map(accountHeadCache.value).set(profileId, headUrl)
+			let headUrl: string | null = null
+			try {
+				const httpsUrl = skinUrl.replace('http://', 'https://')
+				const headBlob = await generatePlayerHeadBlob(httpsUrl, 64)
+				headUrl = URL.createObjectURL(headBlob)
+			} catch {
+				try {
+					const res = await fetch(`https://mc-heads.net/avatar/${encodeURIComponent(name)}/64`)
+					if (res.ok) {
+						headUrl = URL.createObjectURL(await res.blob())
+					}
+				} catch {}
+			}
+			if (headUrl) {
+				accountHeadCache.value = new Map(accountHeadCache.value).set(profileId, headUrl)
+			}
 		}
 	} catch {
 		// ignore
@@ -323,6 +350,10 @@ defineExpose({
 	setEquippedSkin,
 	setLoginDisabled,
 	loginDisabled,
+	login,
+	addOfflineAccount,
+	addKLauncherAccount,
+	accounts,
 })
 
 await refreshValues()
@@ -432,6 +463,14 @@ const messages = defineMessages({
 	signInToMinecraft: {
 		id: 'minecraft-account.sign-in',
 		defaultMessage: 'Sign in to Minecraft',
+	},
+	signInWithMicrosoft: {
+		id: 'minecraft-account.sign-in-microsoft',
+		defaultMessage: 'Sign in with Microsoft',
+	},
+	signInWithKLauncher: {
+		id: 'minecraft-account.sign-in-klauncher',
+		defaultMessage: 'Sign in with KLauncher',
 	},
 })
 

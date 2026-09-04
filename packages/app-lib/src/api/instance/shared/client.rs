@@ -1047,7 +1047,9 @@ pub(super) fn service_url(base_url: &str, path: &str) -> String {
 }
 
 pub(super) fn service_base_url() -> &'static str {
-    env!("SHARED_INSTANCES_API_BASE_URL").trim_end_matches('/')
+    option_env!("SHARED_INSTANCES_API_BASE_URL")
+        .unwrap_or("https://shared-instances.modrinth.com")
+        .trim_end_matches('/')
 }
 
 pub(super) fn shared_instances_client(

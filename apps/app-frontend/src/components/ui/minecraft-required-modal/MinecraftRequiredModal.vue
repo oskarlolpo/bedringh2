@@ -20,12 +20,22 @@
 		</div>
 
 		<div class="flex flex-col gap-6 px-6 pb-6">
-			<div class="flex justify-end gap-2">
+			<div class="flex flex-wrap justify-end gap-2">
 				<ButtonStyled>
 					<a class="w-full !shadow-none" href="https://support.modrinth.com" @click="modal?.hide()">
 						<MessagesSquareIcon />
 						{{ formatMessage(messages.getSupport) }}
 					</a>
+				</ButtonStyled>
+				<ButtonStyled color="brand" type="outlined">
+					<button class="w-full !shadow-none" @click="signInOffline">
+						Офлайн-режим
+					</button>
+				</ButtonStyled>
+				<ButtonStyled color="brand" type="outlined">
+					<button class="w-full !shadow-none" @click="signInKLauncher">
+						KLauncher
+					</button>
 				</ButtonStyled>
 				<ButtonStyled color="brand">
 					<button class="w-full !shadow-none" :disabled="loadingSignIn" @click="signIn">
@@ -136,6 +146,16 @@ async function signIn() {
 	} finally {
 		loadingSignIn.value = false
 	}
+}
+
+function signInKLauncher() {
+	modal.value?.hide()
+	accountsCard.value?.addKLauncherAccount()
+}
+
+function signInOffline() {
+	modal.value?.hide()
+	accountsCard.value?.addOfflineAccount()
 }
 
 defineExpose({

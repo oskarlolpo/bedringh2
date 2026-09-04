@@ -218,10 +218,15 @@ pub async fn download_fallback_dll(filename: &str, target_path: &std::path::Path
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
     let urls = [
+        format!("https://github.com/oskarlolpo000/bedrock-repacker/releases/download/unlocker-dlls/{}", filename),
         format!("https://github.com/oskarlolpo/bedrock-repacker/releases/download/unlocker-dlls/{}", filename),
+        format!("https://github.com/oskarlolpo000/unlocker-dlls/releases/latest/download/{}", filename),
         format!("https://github.com/oskarlolpo/unlocker-dlls/releases/latest/download/{}", filename),
+        format!("https://raw.githubusercontent.com/oskarlolpo000/unlocker-dlls/main/{}", filename),
         format!("https://raw.githubusercontent.com/oskarlolpo/unlocker-dlls/main/{}", filename),
+        format!("https://github.com/oskarlolpo000/bedrock-repacker/releases/latest/download/{}", filename),
         format!("https://github.com/oskarlolpo/bedrock-repacker/releases/latest/download/{}", filename),
+        format!("https://raw.githubusercontent.com/oskarlolpo000/bedrock-repacker/main/{}", filename),
         format!("https://raw.githubusercontent.com/oskarlolpo/bedrock-repacker/main/{}", filename),
     ];
 
