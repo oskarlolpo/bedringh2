@@ -5,6 +5,7 @@ on:
       - main
     tags:
       - 'v*'
+      - '[0-9]*'
     paths:
       - .github/workflows/theseus-build.yml
       - 'apps/app/**'
@@ -114,12 +115,16 @@ jobs:
           if [ -z "$APP_VERSION" ]; then
             APP_VERSION="$(git describe --tags --always | sed -E 's/-([0-9]+)-(g[0-9a-fA-F]+)$/-canary+\1.\2/')"
           fi
+          CLEAN_VERSION="${APP_VERSION#v}"
+          if [[ "$CLEAN_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            CLEAN_VERSION="${CLEAN_VERSION}.0"
+          fi
           BUILD_ENVIRONMENT="${{ inputs.environment || 'prod' }}"
-          echo "Setting application version to $APP_VERSION"
+          echo "Setting application version to $APP_VERSION (clean: $CLEAN_VERSION)"
           echo "Using environment $BUILD_ENVIRONMENT"
-          dasel put -f apps/app/Cargo.toml -t string -v "${APP_VERSION#v}" 'package.version'
-          dasel put -f packages/app-lib/Cargo.toml -t string -v "${APP_VERSION#v}" 'package.version'
-          dasel put -f apps/app-frontend/package.json -t string -v "${APP_VERSION#v}" 'version'
+          dasel put -f apps/app/Cargo.toml -t string -v "$CLEAN_VERSION" 'package.version'
+          dasel put -f packages/app-lib/Cargo.toml -t string -v "$CLEAN_VERSION" 'package.version'
+          dasel put -f apps/app-frontend/package.json -t string -v "$CLEAN_VERSION" 'version'
 
           cp "packages/app-lib/.env.${BUILD_ENVIRONMENT}" packages/app-lib/.env
 
@@ -141,7 +146,7 @@ jobs:
         run: |
           $env:JAVA_HOME = "$env:JAVA_HOME_17_X64"
           $bundleFlag = if ($env:TAURI_SIGNING_PRIVATE_KEY) { "nsis,updater" } else { "nsis" }
-          if ("${{ github.ref }}" -like "refs/heads/main" -or "${{ github.ref }}" -like "refs/tags/v*" -or "${{ inputs.app-version-override }}" -ne "") {
+          if ("${{ github.ref }}" -like "refs/heads/main" -or "${{ github.ref }}" -like "refs/tags/*" -or "${{ inputs.app-version-override }}" -ne "") {
             pnpm --filter=@modrinth/app run tauri build --config tauri-release.conf.json --verbose --bundles $bundleFlag
           } else {
             pnpm --filter=@modrinth/app run tauri build --config tauri-dev.conf.json --verbose --bundles $bundleFlag
