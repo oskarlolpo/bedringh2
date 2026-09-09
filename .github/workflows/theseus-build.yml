@@ -1,20 +1,9 @@
 name: Modrinth App build
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
       - '[0-9]*'
-    paths:
-      - .github/workflows/theseus-build.yml
-      - 'apps/app/**'
-      - 'apps/app-frontend/**'
-      - 'packages/app-lib/**'
-      - 'packages/app-macros/**'
-      - 'packages/assets/**'
-      - 'packages/ui/**'
-      - 'packages/utils/**'
   workflow_dispatch:
     inputs:
       sign-windows-binaries:
@@ -111,8 +100,8 @@ jobs:
       - name: Set application version and environment
         shell: bash
         run: |
-          APP_VERSION="${{ inputs.app-version-override }}"
-          if [ -z "$APP_VERSION" ]; then
+          APP_VERSION="${{ inputs.app-version-override || github.ref_name }}"
+          if [ -z "$APP_VERSION" ] || [ "$APP_VERSION" = "main" ]; then
             APP_VERSION="$(git describe --tags --always | sed -E 's/-([0-9]+)-(g[0-9a-fA-F]+)$/-canary+\1.\2/')"
           fi
           CLEAN_VERSION="${APP_VERSION#v}"
@@ -129,7 +118,7 @@ jobs:
           cp "packages/app-lib/.env.${BUILD_ENVIRONMENT}" packages/app-lib/.env
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Set up Windows code signing
         shell: bash

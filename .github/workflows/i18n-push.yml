@@ -1,8 +1,7 @@
 name: Crowdin (push)
 
 on:
-  push:
-    branches: ['main']
+  workflow_dispatch:
     paths:
       - '.github/workflows/i18n-push.yml'
       - 'apps/*/src/locales/en-US/**'
