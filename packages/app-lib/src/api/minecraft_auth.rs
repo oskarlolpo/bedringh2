@@ -33,7 +33,18 @@ pub async fn finish_login(
 ) -> crate::Result<Credentials> {
     let state = State::get().await?;
 
-    crate::state::login_finish(code, flow, &state.pool).await
+    let credentials =
+        crate::state::login_finish(code, flow, &state.pool).await?;
+
+    if let Err(error) =
+        crate::onboarding_checklist::mark_logged_into_minecraft().await
+    {
+        tracing::warn!(
+            "Failed to mark Minecraft login in onboarding checklist: {error}"
+        );
+    }
+
+    Ok(credentials)
 }
 
 #[tracing::instrument]
@@ -49,6 +60,15 @@ pub async fn klauncher_auth(
 ) -> crate::Result<Credentials> {
     let state = State::get().await?;
     crate::state::klauncher_auth(name, password, &state.pool).await
+}
+
+#[tracing::instrument]
+pub async fn tlauncher_auth(
+    name: &str,
+    password: Option<&str>,
+) -> crate::Result<Credentials> {
+    let state = State::get().await?;
+    crate::state::tlauncher_auth(name, password, &state.pool).await
 }
 
 #[tracing::instrument]

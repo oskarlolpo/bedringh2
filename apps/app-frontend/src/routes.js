@@ -1,10 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { get as getInstance } from '@/helpers/instance'
-import * as Pages from '@/pages'
 import * as Hosting from '@/pages/hosting/manage'
+import * as Pages from '@/pages'
 import * as Instance from '@/pages/instance'
-import * as Library from '@/pages/library'
 import * as Project from '@/pages/project'
 
 /**
@@ -71,41 +70,14 @@ export default new createRouter({
 			component: Pages.Skins,
 		},
 		{
+			path: '/screenshots',
+			name: 'Screenshots',
+			component: Pages.Screenshots,
+		},
+		{
 			path: '/user/:user/:projectType?',
 			name: 'User',
 			component: Pages.User,
-		},
-		{
-			path: '/library',
-			name: 'Library',
-			component: Library.Index,
-			children: [
-				{
-					path: '',
-					name: 'Overview',
-					component: Library.Overview,
-				},
-				{
-					path: 'downloaded',
-					name: 'Downloaded',
-					component: Library.Downloaded,
-				},
-				{
-					path: 'modpacks',
-					name: 'Modpacks',
-					component: Library.Modpacks,
-				},
-				{
-					path: 'servers',
-					name: 'LibraryServers',
-					component: Library.Servers,
-				},
-				{
-					path: 'custom',
-					name: 'Custom',
-					component: Library.Custom,
-				},
-			],
 		},
 		{
 			path: '/:projectType(mod|plugin|datapack|resourcepack|shader|modpack)/:id/:rest(.*)*',
@@ -147,7 +119,6 @@ export default new createRouter({
 			path: '/instance/:id',
 			name: 'Instance',
 			component: Instance.Index,
-			props: true,
 			children: [
 				{
 					path: 'worlds',
@@ -166,8 +137,8 @@ export default new createRouter({
 				},
 				{
 					path: '',
-					name: 'Mods',
-					component: Instance.Mods,
+					name: 'InstanceContent',
+					component: Instance.Content,
 					async beforeEnter(to) {
 						try {
 							const instance = await getInstance(to.params.id)
@@ -178,25 +149,29 @@ export default new createRouter({
 								}
 							}
 						} catch {
-							// If we can't determine the loader, fall through to the
-							// default (Java) content page rather than blocking navigation.
+							// If we can't determine the loader, fall through to default
 						}
 						return true
 					},
 				},
 				{
 					path: 'projects/:type',
-					name: 'ModsFilter',
-					component: Instance.Mods,
+					name: 'InstanceContentFilter',
+					component: Instance.Content,
 				},
 				{
 					path: 'files',
-					name: 'Files',
+					name: 'InstanceFiles',
 					component: Instance.Files,
 				},
 				{
+					path: 'screenshots',
+					name: 'InstanceScreenshots',
+					component: Instance.Screenshots,
+				},
+				{
 					path: 'logs',
-					name: 'Logs',
+					name: 'InstanceLogs',
 					component: Instance.Logs,
 					meta: {
 						renderMode: 'fixed',
@@ -214,7 +189,6 @@ export default new createRouter({
 	linkExactActiveClass: 'router-link-exact-active',
 	scrollBehavior(to, from) {
 		if (to.path === from.path) return
-		// Sometimes Vue's scroll behavior is not working as expected, so we need to manually scroll to top (especially on Linux)
 		document.querySelector('.app-viewport')?.scrollTo(0, 0)
 		return {
 			el: '.app-viewport',

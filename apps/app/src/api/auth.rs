@@ -9,6 +9,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             offline_login,
             klauncher_login,
+            tlauncher_login,
             check_reachable,
             login,
             remove_user,
@@ -30,6 +31,13 @@ pub async fn offline_login(name: &str) -> Result<Credentials> {
 #[tauri::command]
 pub async fn klauncher_login(name: &str, password: Option<&str>) -> Result<Credentials> {
     let credentials = minecraft_auth::klauncher_auth(name, password).await?;
+    Ok(credentials)
+}
+
+/// Authenticate with TLauncher account or TLauncher offline mode
+#[tauri::command]
+pub async fn tlauncher_login(name: &str, password: Option<&str>) -> Result<Credentials> {
+    let credentials = minecraft_auth::tlauncher_auth(name, password).await?;
     Ok(credentials)
 }
 
@@ -68,6 +76,9 @@ pub async fn login<R: Runtime>(
     )
     .title("Sign into Modrinth")
     .always_on_top(true)
+    .min_inner_size(500.0, 500.0)
+    .inner_size(1000.0, 700.0)
+    .focused(true)
     .center()
     .build()?;
 

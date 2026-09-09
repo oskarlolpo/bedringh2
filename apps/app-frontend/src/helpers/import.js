@@ -51,3 +51,14 @@ export async function is_valid_importable_instance(instanceFolder, launcherType)
 export async function get_default_launcher_path(launcherType) {
 	return await invoke('plugin:import|get_default_launcher_path', { launcherType })
 }
+
+/// Detects instances across all installed external launchers
+export async function detect_external_instances() {
+	return await invoke('plugin:import|detect_external_instances')
+}
+
+/// Imports an external launcher instance directly
+export async function import_external_launcher_instance(instance) {
+	return await invoke('plugin:import|import_external_launcher_instance', { instance })
+}
+

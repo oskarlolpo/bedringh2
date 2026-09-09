@@ -206,9 +206,22 @@ pub async fn import_mmc(
     };
 
     // Create description from instance.cfg
+    let mmc_title = instance_cfg.name.map(|n| {
+        if n.starts_with('[') {
+            n
+        } else {
+            let prefix = if mmc_base_path.to_string_lossy().to_lowercase().contains("prism") {
+                "Prism"
+            } else {
+                "MultiMC"
+            };
+            format!("[{prefix}] {n}")
+        }
+    });
+
     let mut description = CreatePackDescription {
         icon,
-        override_title: instance_cfg.name,
+        override_title: mmc_title,
         project_id: None,
         version_id: None,
         instance_id: instance_id.to_string(),

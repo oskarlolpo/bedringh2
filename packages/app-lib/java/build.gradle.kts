@@ -45,6 +45,7 @@ tasks.shadowJar {
         attributes["Premain-Class"] = "com.modrinth.theseus.agent.TheseusAgent"
     }
 
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     addMultiReleaseAttribute = false
     enableAutoRelocation = true
     relocationPrefix = "com.modrinth.theseus.shadow"

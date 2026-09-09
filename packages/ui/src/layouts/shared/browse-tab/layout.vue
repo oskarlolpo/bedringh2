@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import type { Labrinth } from '@modrinth/api-client'
-import { SearchIcon, SpinnerIcon } from '@modrinth/assets'
+import { RotateCounterClockwiseIcon, SearchIcon, SpinnerIcon } from '@modrinth/assets'
+import { useRouter } from 'vue-router'
+import ButtonStyled from '#ui/components/base/ButtonStyled.vue'
+import { useSearchTranslation } from './composables/use-search-translation'
 import { computed, ref, toValue, watch } from 'vue'
 
-import ButtonStyled from '#ui/components/base/ButtonStyled.vue'
+import Admonition from '#ui/components/base/Admonition.vue'
+import { Button, IconButton } from '#ui/components/base/buttons'
 import Combobox, { type ComboboxOption } from '#ui/components/base/Combobox.vue'
+import Input from '#ui/components/base/inputs/Input.vue'
 import LoadingIndicator from '#ui/components/base/LoadingIndicator.vue'
 import NavTabs from '#ui/components/base/NavTabs.vue'
 import Pagination from '#ui/components/base/Pagination.vue'
-import StyledInput from '#ui/components/base/StyledInput.vue'
 import ProjectCard from '#ui/components/project/card/ProjectCard.vue'
 import ProjectCardList from '#ui/components/project/ProjectCardList.vue'
 import SearchFilterControl from '#ui/components/search/SearchFilterControl.vue'
@@ -17,23 +20,14 @@ import { useStickyObserver } from '#ui/composables/sticky-observer'
 import { commonMessages, formatProjectTypeSentence } from '#ui/utils/common-messages'
 import type { SortType } from '#ui/utils/search'
 
-import { useRouter } from 'vue-router'
-
 import SelectedProjectsFloatingBar from './components/SelectedProjectsFloatingBar.vue'
-import { useSearchTranslation } from './composables/use-search-translation'
 import BrowseInstallHeader from './header.vue'
 import { injectBrowseManager } from './providers/browse-manager'
+import type { CardAction } from './types'
 
 const ctx = injectBrowseManager()
-const router = useRouter()
 const { formatMessage } = useVIntl()
-const lockedMessages = computed(() => toValue(ctx.lockedFilterMessages))
-const stickyInstallHeaderRef = ref<HTMLElement | null>(null)
-const { isStuck: isInstallHeaderStuck } = useStickyObserver(
-	stickyInstallHeaderRef,
-	'BrowseInstallHeader',
-)
-
+const router = useRouter()
 const isPickingRandom = ref(false)
 
 async function handleRandomProject() {
@@ -98,15 +92,23 @@ async function handleToggleSearchTranslation() {
 }
 
 watch(
-	() => (ctx ? (ctx.isServerType.value ? ctx.serverHits.value : ctx.projectHits.value) : null),
-	async (newHits, oldHits) => {
-		if (!ctx || !newHits || newHits === oldHits) return
-		if (applyingTranslation.value) return
-		if (!isSearchTranslated.value || isSearchTranslating.value) return
+	() => (ctx ? (ctx.isServerType.value ? ctx.serverHits.value : ctx.projectHits.value) : []),
+	async (newHits) => {
+		if (!ctx || applyingTranslation.value) return
+		if (!isSearchTranslated.value) return
 		const updated = await translateNewHits(newHits as any[])
-		if (updated === newHits) return
-		setHits(updated)
+		if (updated) {
+			setHits(updated)
+		}
 	},
+	{ deep: false },
+)
+
+const lockedMessages = computed(() => toValue(ctx.lockedFilterMessages))
+const stickyInstallHeaderRef = ref<HTMLElement | null>(null)
+const { isStuck: isInstallHeaderStuck } = useStickyObserver(
+	stickyInstallHeaderRef,
+	'BrowseInstallHeader',
 )
 
 const sortOptions = computed<ComboboxOption<SortType>[]>(() =>
@@ -124,6 +126,19 @@ const maxResultsOptions = computed<ComboboxOption<number>[]>(() =>
 )
 
 const messages = defineMessages({
+	translatePage: {
+		id: 'browse.translate-page',
+		defaultMessage: 'Translate this page',
+	},
+	showOriginal: {
+		id: 'browse.show-original',
+		defaultMessage: 'Show original',
+	},
+	randomProject: {
+		id: 'browse.random-project',
+		defaultMessage: 'Случайный проект (Мне повезёт!)',
+	},
+
 	searchPlaceholder: {
 		id: 'browse.search.placeholder',
 		defaultMessage: 'Search {projectType}...',
@@ -138,32 +153,76 @@ const messages = defineMessages({
 	},
 	offline: {
 		id: 'browse.offline',
-		defaultMessage: 'You are currently offline. Connect to the internet to browse!',
+		defaultMessage: 'You are currently offline. Connect to the internet to browse Modrinth!',
 	},
 	noResults: {
 		id: 'browse.no-results',
 		defaultMessage: 'No results found for your query!',
 	},
-	translatePage: {
-		id: 'browse.translate-page',
-		defaultMessage: 'Translate this page',
+	linkOverridingPreferences: {
+		id: 'browse.advanced-filters.link-overriding-preferences',
+		defaultMessage: "This link's filters differ from your saved advanced exclusions",
 	},
-	showOriginal: {
-		id: 'browse.show-original',
-		defaultMessage: 'Show original',
-	},
-	randomProject: {
-		id: 'browse.random-project',
-		defaultMessage: 'Случайный проект (Мне повезёт!)',
+	applySavedPreferences: {
+		id: 'browse.advanced-filters.apply-saved-preferences',
+		defaultMessage: 'Apply saved preferences',
 	},
 })
+
+function cardActionType(action: CardAction) {
+	if (action.type === 'transparent') return 'quiet'
+	if (action.type === 'outlined') return 'outlined'
+	return action.color && action.color !== 'standard' ? 'colored' : 'base'
+}
+
+function cardActionColor(action: CardAction) {
+	const type = cardActionType(action)
+	return type === 'colored' || type === 'quiet' ? action.color : undefined
+}
+
+function cardActionClass(action: CardAction) {
+	if (action.type !== 'outlined' || !action.color || action.color === 'standard') return undefined
+
+	return {
+		brand: '!text-brand [&>svg]:!text-brand !shadow-[inset_0_0_0_1px_var(--color-brand)]',
+		red: '!text-red [&>svg]:!text-red !shadow-[inset_0_0_0_1px_var(--color-red)]',
+		green: '!text-green [&>svg]:!text-green !shadow-[inset_0_0_0_1px_var(--color-green)]',
+	}[action.color]
+}
+
+function getLoaderFieldValues(
+	result: Labrinth.Search.v3.ResultSearchProject,
+	field: string,
+): string[] {
+	return (result.project_loader_fields?.[field] ?? []).filter(
+		(value): value is string => typeof value === 'string',
+	)
+}
+
+function getProjectCardTags(result: Labrinth.Search.v3.ResultSearchProject, displayOnly: boolean) {
+	const tags = new Set(displayOnly ? result.display_categories : result.categories)
+
+	for (const loader of result.loaders) {
+		if (loader !== 'mrpack') {
+			tags.add(loader)
+		}
+	}
+
+	if (result.loaders.includes('mrpack')) {
+		for (const loader of getLoaderFieldValues(result, 'mrpack_loaders')) {
+			tags.add(loader)
+		}
+	}
+
+	return Array.from(tags)
+}
 </script>
 
 <template>
 	<template v-if="ctx.installContext?.value && ctx.variant !== 'web'">
 		<div
 			ref="stickyInstallHeaderRef"
-			class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 p-3 border-surface-5"
+			class="sticky top-0 z-20 -mx-6 -mt-6 rounded-tl-[--radius-xl] border-0 border-b border-solid bg-surface-1 px-6 py-4 border-surface-5"
 			:class="[isInstallHeaderStuck ? 'border-t' : '']"
 		>
 			<BrowseInstallHeader />
@@ -171,9 +230,13 @@ const messages = defineMessages({
 	</template>
 	<SelectedProjectsFloatingBar v-if="ctx.installContext?.value && ctx.variant !== 'web'" />
 
-	<div v-if="ctx.showProjectTypeTabs.value || !ctx.installContext?.value" class="flex items-center justify-between gap-4">
-		<NavTabs v-if="ctx.showProjectTypeTabs.value" :links="ctx.selectableProjectTypes.value" />
-		<div v-if="!ctx.installContext?.value" class="flex items-center gap-2 ml-auto">
+	<div class="flex items-center justify-between gap-4">
+		<NavTabs
+			v-if="ctx.showProjectTypeTabs.value"
+			:links="ctx.selectableProjectTypes.value"
+			:replace="ctx.variant === 'app'"
+		/>
+		<div class="flex items-center gap-2 ml-auto">
 			<ButtonStyled
 				v-if="ctx"
 				circular
@@ -184,21 +247,22 @@ const messages = defineMessages({
 					v-tooltip="formatMessage(messages.randomProject)"
 					:aria-label="formatMessage(messages.randomProject)"
 					:disabled="isPickingRandom || ctx.loading.value || (ctx.totalHits.value === 0 && (ctx.isServerType.value ? ctx.serverHits.value.length === 0 : ctx.projectHits.value.length === 0))"
+					class="!p-0 flex items-center justify-center"
 					@click="handleRandomProject"
 				>
-					<SpinnerIcon v-if="isPickingRandom" class="animate-spin size-5" />
+					<SpinnerIcon v-if="isPickingRandom" class="animate-spin size-6" />
 					<svg
 						v-else
 						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
+						width="24"
+						height="24"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
-						class="size-5"
+						class="size-6"
 					>
 						<path stroke="none" d="M0 0h24v24H0z" fill="none" />
 						<rect x="3" y="3" width="18" height="18" rx="3" />
@@ -228,9 +292,10 @@ const messages = defineMessages({
 							: formatMessage(messages.translatePage)
 					"
 					:disabled="isSearchTranslating"
+					class="!p-0 flex items-center justify-center"
 					@click="handleToggleSearchTranslation"
 				>
-					<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-5" />
+					<SpinnerIcon v-if="isSearchTranslating" class="animate-spin size-6" />
 					<svg
 						v-else
 						xmlns="http://www.w3.org/2000/svg"
@@ -256,7 +321,7 @@ const messages = defineMessages({
 		</div>
 	</div>
 
-	<StyledInput
+	<Input
 		v-model="ctx.query.value"
 		:icon="SearchIcon"
 		type="text"
@@ -268,14 +333,30 @@ const messages = defineMessages({
 		"
 		clearable
 		wrapper-class="w-full"
-		:input-class="ctx.variant === 'web' ? '!h-12' : 'h-12'"
+		size="large"
 		@clear="ctx.clearSearch()"
 	/>
+
+	<Admonition
+		v-if="ctx.linkOverridesAdvancedPrefs.value"
+		type="info"
+		:header="formatMessage(messages.linkOverridingPreferences)"
+		inline-actions
+		center-content
+	>
+		<template #actions>
+			<Button type="colored" color="blue" @click="ctx.applySavedAdvancedPrefs()">
+				<RotateCounterClockwiseIcon />
+				{{ formatMessage(messages.applySavedPreferences) }}
+			</Button>
+		</template>
+	</Admonition>
 
 	<div class="flex flex-wrap items-center gap-2">
 		<Combobox
 			:model-value="ctx.effectiveCurrentSortType.value"
 			:options="sortOptions"
+			trigger-type="base"
 			:class="
 				ctx.variant === 'web'
 					? '!w-[16rem] min-w-max max-w-full flex-grow md:flex-grow-0'
@@ -293,6 +374,7 @@ const messages = defineMessages({
 		<Combobox
 			:model-value="ctx.maxResults.value"
 			:options="maxResultsOptions"
+			trigger-type="base"
 			:class="
 				ctx.variant === 'web'
 					? '!w-[9rem] min-w-max max-w-full flex-grow md:flex-grow-0'
@@ -307,50 +389,18 @@ const messages = defineMessages({
 		</Combobox>
 
 		<div v-if="ctx.filtersMenuOpen && !ctx.filtersMenuOpen.value" class="lg:hidden">
-			<ButtonStyled>
-				<button @click="ctx.filtersMenuOpen.value = true">
-					{{ formatMessage(messages.filterResults) }}
-				</button>
-			</ButtonStyled>
+			<Button @click="ctx.filtersMenuOpen.value = true">
+				{{ formatMessage(messages.filterResults) }}
+			</Button>
 		</div>
 
-		<ButtonStyled circular>
-			<button
-				v-tooltip="formatMessage(messages.randomProject)"
-				:aria-label="formatMessage(messages.randomProject)"
-				:disabled="isPickingRandom || ctx.loading.value || (ctx.totalHits.value === 0 && (ctx.isServerType.value ? ctx.serverHits.value.length === 0 : ctx.projectHits.value.length === 0))"
-				@click="handleRandomProject"
-			>
-				<SpinnerIcon v-if="isPickingRandom" class="animate-spin size-4" />
-				<svg
-					v-else
-					xmlns="http://www.w3.org/2000/svg"
-					width="18"
-					height="18"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					class="size-4"
-				>
-					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
-					<rect x="3" y="3" width="18" height="18" rx="3" />
-					<circle cx="8.5" cy="8.5" r="1" fill="currentColor" />
-					<circle cx="15.5" cy="8.5" r="1" fill="currentColor" />
-					<circle cx="8.5" cy="15.5" r="1" fill="currentColor" />
-					<circle cx="15.5" cy="15.5" r="1" fill="currentColor" />
-					<circle cx="12" cy="12" r="1" fill="currentColor" />
-				</svg>
-			</button>
-		</ButtonStyled>
-
-		<ButtonStyled v-if="ctx.cycleDisplayMode" circular>
-			<button @click="ctx.cycleDisplayMode!()">
-				<slot name="display-mode-icon" />
-			</button>
-		</ButtonStyled>
+		<IconButton
+			v-if="ctx.cycleDisplayMode"
+			label="Change display mode"
+			@click="ctx.cycleDisplayMode!()"
+		>
+			<slot name="display-mode-icon" />
+		</IconButton>
 
 		<Pagination
 			:page="ctx.currentPage.value"
@@ -364,19 +414,25 @@ const messages = defineMessages({
 		v-if="ctx.isServerType.value"
 		v-model:selected-filters="ctx.serverCurrentFilters.value"
 		:filters="ctx.serverFilterTypes.value"
+		:project-type="ctx.projectType.value"
 		:provided-filters="[]"
 		:overridden-provided-filter-types="[]"
 	/>
 	<SearchFilterControl
 		v-else
 		v-model:selected-filters="ctx.currentFilters.value"
-		:filters="ctx.filters.value.filter((f) => f.display !== 'none')"
+		:filters="
+			ctx.filters.value.filter(
+				(f) => f.display !== 'none' && !(ctx.hiddenFilterTypes?.value ?? []).includes(f.id),
+			)
+		"
+		:project-type="ctx.projectType.value"
 		:provided-filters="ctx.providedFilters?.value ?? []"
 		:overridden-provided-filter-types="ctx.overriddenProvidedFilterTypes.value"
 		:provided-message="lockedMessages?.providedBy"
 	/>
 
-	<div class="search">
+	<div class="search mt-1 [overflow-anchor:none]">
 		<section v-if="ctx.loading.value" class="offline">
 			<component :is="ctx.loadingComponent ?? LoadingIndicator" />
 		</section>
@@ -424,22 +480,35 @@ const messages = defineMessages({
 				>
 					<template v-if="ctx.getCardActions?.(result, ctx.projectType.value)?.length" #actions>
 						<div class="flex gap-2">
-							<ButtonStyled
+							<template
 								v-for="action in ctx.getCardActions(result, ctx.projectType.value)"
 								:key="action.key"
-								:color="action.color"
-								:type="action.type"
-								:circular="action.circular"
 							>
-								<button
+								<IconButton
+									v-if="action.circular"
 									v-tooltip="action.tooltip"
+									:type="cardActionType(action)"
+									:color="cardActionColor(action)"
+									:class="cardActionClass(action)"
+									:label="action.label || action.tooltip || action.key"
 									:disabled="action.disabled"
 									@click.stop="action.onClick"
 								>
 									<component :is="action.icon" :class="action.iconClass" />
-									<template v-if="!action.circular">{{ action.label }}</template>
-								</button>
-							</ButtonStyled>
+								</IconButton>
+								<Button
+									v-else
+									v-tooltip="action.tooltip"
+									:type="cardActionType(action)"
+									:color="cardActionColor(action)"
+									:class="cardActionClass(action)"
+									:disabled="action.disabled"
+									@click.stop="action.onClick"
+								>
+									<component :is="action.icon" :class="action.iconClass" />
+									{{ action.label }}
+								</Button>
+							</template>
 						</div>
 					</template>
 				</ProjectCard>
@@ -449,19 +518,16 @@ const messages = defineMessages({
 					v-for="result in ctx.projectHits.value"
 					:key="result.project_id"
 					:link="ctx.getProjectLink(result)"
-					:title="result.title || (result as any).name || ''"
-					:icon-url="result.icon_url"
+					:title="result.name"
+					:icon-url="result.icon_url ?? undefined"
 					:author="{
-						name: (result as any).author_details?.name || (result.organization == null ? result.author : result.organization),
+						name: result.organization == null ? result.author : result.organization,
 						link:
-							(result as any).author_details?.link ||
-							(result.organization_id == null
-								? ctx.variant === 'web'
-									? `/user/${result.author_id ?? result.author}`
-									: `https://modrinth.com/user/${result.author_id ?? result.author}`
+							result.organization_id == null
+								? `/user/${encodeURIComponent(result.author_id ?? result.author)}`
 								: ctx.variant === 'web'
 									? `/organization/${result.organization_id}`
-									: `https://modrinth.com/organization/${result.organization_id}`),
+									: `https://modrinth.com/organization/${result.organization_id}`,
 					}"
 					:date-updated="result.date_modified"
 					:date-published="result.date_created"
@@ -469,9 +535,9 @@ const messages = defineMessages({
 						ctx.effectiveCurrentSortType.value.name === 'newest' ? 'published' : 'updated'
 					"
 					:downloads="result.downloads"
-					:summary="result.description || (result as any).summary"
-					:tags="result.display_categories"
-					:all-tags="result.categories"
+					:summary="result.summary"
+					:tags="getProjectCardTags(result, true)"
+					:all-tags="getProjectCardTags(result, false)"
 					:deprioritized-tags="ctx.deprioritizedTags.value"
 					:exclude-loaders="ctx.excludeLoaders.value"
 					:followers="result.follows"
@@ -479,10 +545,7 @@ const messages = defineMessages({
 					:color="result.color ?? undefined"
 					:environment="
 						['mod', 'modpack'].includes(ctx.projectType.value)
-							? {
-									clientSide: result.client_side as Labrinth.Projects.v2.Environment,
-									serverSide: result.server_side as Labrinth.Projects.v2.Environment,
-								}
+							? result.project_loader_fields?.environment?.[0]
 							: undefined
 					"
 					:layout="ctx.effectiveLayout.value"
@@ -492,22 +555,35 @@ const messages = defineMessages({
 				>
 					<template v-if="ctx.getCardActions?.(result, ctx.projectType.value)?.length" #actions>
 						<div class="flex gap-2">
-							<ButtonStyled
+							<template
 								v-for="action in ctx.getCardActions(result, ctx.projectType.value)"
 								:key="action.key"
-								:color="action.color"
-								:type="action.type"
-								:circular="action.circular"
 							>
-								<button
+								<IconButton
+									v-if="action.circular"
 									v-tooltip="action.tooltip"
+									:type="cardActionType(action)"
+									:color="cardActionColor(action)"
+									:class="cardActionClass(action)"
+									:label="action.label || action.tooltip || action.key"
 									:disabled="action.disabled"
 									@click.stop="action.onClick"
 								>
 									<component :is="action.icon" :class="action.iconClass" />
-									<template v-if="!action.circular">{{ action.label }}</template>
-								</button>
-							</ButtonStyled>
+								</IconButton>
+								<Button
+									v-else
+									v-tooltip="action.tooltip"
+									:type="cardActionType(action)"
+									:color="cardActionColor(action)"
+									:class="cardActionClass(action)"
+									:disabled="action.disabled"
+									@click.stop="action.onClick"
+								>
+									<component :is="action.icon" :class="action.iconClass" />
+									{{ action.label }}
+								</Button>
+							</template>
 						</div>
 					</template>
 				</ProjectCard>

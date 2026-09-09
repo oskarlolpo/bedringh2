@@ -861,21 +861,58 @@ async function fetchProjectData() {
 		}
 	}
 
-	if (instance.value && data.value) {
+	const profileRef = instance.value?.path || (route.query.i ? String(route.query.i) : '')
+	if (profileRef && data.value) {
 		try {
-			const bedrockAddons = await invoke('plugin:bedrock-addons|list_bedrock_addons', {
-				profilePath: instance.value.path,
-			}).catch(() => [])
-			if (bedrockAddons && bedrockAddons.length > 0) {
-				const projectTitleNorm = data.value.title.toLowerCase().trim()
-				const projectSlugNorm = (data.value.slug || '').toLowerCase().trim()
-				const projectIdNorm = String(data.value.id).toLowerCase().trim()
+			const [bedrockAddons, installedRecords, installedIds] = await Promise.all([
+				invoke('plugin:bedrock-addons|list_bedrock_addons', {
+					profilePath: profileRef,
+				}).catch(() => []),
+				invoke('plugin:bedrock-addons|get_bedrock_installed_content', {
+					profilePath: profileRef,
+				}).catch(() => []),
+				invoke('plugin:bedrock-addons|get_bedrock_installed_ids', {
+					profilePath: profileRef,
+				}).catch(() => []),
+			])
+
+			const projectTitleNorm = (data.value.title || data.value.name || '').replace(/§[0-9a-fk-or]/gi, '').toLowerCase().trim()
+			const projectSlugNorm = (data.value.slug || '').toLowerCase().trim()
+			const projectIdNorm = String(data.value.id || '').toLowerCase().trim()
+			const rawId = String(route.params.id || '').toLowerCase().trim()
+
+			// 1. Check in persistent content registry
+			const matchingRecord = installedRecords?.find((r) => {
+				if (r.curseforge_mod_id != null && String(r.curseforge_mod_id) === projectIdNorm) return true
+				if (r.project_id && (r.project_id === projectIdNorm || r.project_id === rawId)) return true
+				if (r.slug && (r.slug.toLowerCase() === projectSlugNorm || r.slug.toLowerCase() === rawId)) return true
+				const recTitleNorm = (r.title || '').replace(/§[0-9a-fk-or]/gi, '').toLowerCase().trim()
+				if (recTitleNorm && projectTitleNorm && (recTitleNorm === projectTitleNorm || recTitleNorm.includes(projectTitleNorm) || projectTitleNorm.includes(recTitleNorm))) return true
+				return false
+			})
+
+			if (matchingRecord) {
+				installed.value = true
+				if (matchingRecord.version_number) {
+					installedVersion.value = matchingRecord.version_number
+				}
+			} else if (
+				installedIds?.includes(projectIdNorm) ||
+				installedIds?.includes(projectSlugNorm) ||
+				installedIds?.includes(rawId) ||
+				installedIds?.includes(projectTitleNorm)
+			) {
+				installed.value = true
+			} else if (bedrockAddons && bedrockAddons.length > 0) {
 				const isInstalledInBedrock = bedrockAddons.some((addon) => {
-					const nameNorm = (addon.name || '').toLowerCase().trim()
-					const subPathNorm = (addon.sub_path || '').toLowerCase().trim()
+					if (addon.curseforge_mod_id != null && String(addon.curseforge_mod_id) === projectIdNorm) {
+						return true
+					}
+					const nameNorm = (addon.name || '').replace(/§[0-9a-fk-or]/gi, '').toLowerCase().trim()
+					const folderNorm = (addon.folder_name || '').toLowerCase().trim()
 					return (
-						(nameNorm && (nameNorm.includes(projectTitleNorm) || projectTitleNorm.includes(nameNorm))) ||
-						(subPathNorm && (subPathNorm.includes(projectSlugNorm) || subPathNorm.includes(projectIdNorm)))
+						(nameNorm && projectTitleNorm && (nameNorm.includes(projectTitleNorm) || projectTitleNorm.includes(nameNorm))) ||
+						(folderNorm && (folderNorm.includes(projectSlugNorm) || folderNorm.includes(projectIdNorm)))
 					)
 				})
 				if (isInstalledInBedrock) {

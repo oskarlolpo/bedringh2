@@ -4,7 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { onUnmounted, ref } from 'vue'
 
 import ModalWrapper from '@/components/ui/modal/ModalWrapper.vue'
-import { fetchExternalJson } from '@/helpers/external-image.ts'
+import { fetchExternalImageObjectUrl, fetchExternalJson } from '@/helpers/external-image.ts'
 import { generatePlayerHeadBlob } from '@/helpers/rendering/batch-skin-renderer.ts'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
@@ -23,18 +23,24 @@ const props = defineProps<{
 	kLauncherLoginDisabled?: boolean
 	kLauncherLoginValue?: string
 	kLauncherPassword?: string
+	tLauncherLoginDisabled?: boolean
+	tLauncherLoginValue?: string
+	tLauncherPassword?: string
 }>()
 
 const emit = defineEmits<{
 	(event: 'submit-elyby'): void
 	(event: 'submit-offline'): void
 	(event: 'submit-klauncher'): void
+	(event: 'submit-tlauncher'): void
 	(event: 'update:elyByLoginValue', value: string): void
 	(event: 'update:elyByPassword', value: string): void
 	(event: 'update:elyByTwoFactorCode', value: string): void
 	(event: 'update:offlinePlayerName', value: string): void
 	(event: 'update:kLauncherLoginValue', value: string): void
 	(event: 'update:kLauncherPassword', value: string): void
+	(event: 'update:tLauncherLoginValue', value: string): void
+	(event: 'update:tLauncherPassword', value: string): void
 }>()
 
 const { formatMessage } = useVIntl()
@@ -42,17 +48,25 @@ const { formatMessage } = useVIntl()
 const addOfflineModal = ref<ModalHandle | null>(null)
 const addElyByModal = ref<ModalHandle | null>(null)
 const addKLauncherModal = ref<ModalHandle | null>(null)
+const addTLauncherModal = ref<ModalHandle | null>(null)
 const requestElyByTwoFactorCodeModal = ref<ModalHandle | null>(null)
 
 const kLauncherStep = ref(1)
 const kLauncherHeadUrl = ref<string | null>(null)
+const tLauncherStep = ref(1)
+const tLauncherHeadUrl = ref<string | null>(null)
 
 onUnmounted(() => {
 	if (kLauncherHeadUrl.value) {
 		URL.revokeObjectURL(kLauncherHeadUrl.value)
 	}
+	if (tLauncherHeadUrl.value) {
+		URL.revokeObjectURL(tLauncherHeadUrl.value)
+	}
 })
 
+const TLAUNCHER_REGISTER_URL = 'https://tlauncher.org/ru/reg/'
+const TLAUNCHER_RECOVERY_URL = 'https://tlauncher.org/ru/catalog/user/'
 const KLAUNCHER_REGISTER_URL = 'https://klauncher.gg/register'
 const KLAUNCHER_RECOVERY_URL = 'https://klauncher.gg/restore'
 const KLAUNCHER_SKIN_API = 'https://api.klaun.ch/v2/user/skin?nick='
@@ -126,15 +140,108 @@ function handleKLauncherNickInput(value: string) {
 	void fetchKLauncherHead(value)
 }
 
-function submitKLauncherWithoutPassword() {
-	emit('update:kLauncherPassword', '')
-	emit('submit-klauncher')
-}
-
 function goToKLauncherStep2() {
 	kLauncherStep.value = 2
 	if (!kLauncherHeadUrl.value && props.kLauncherLoginValue && props.kLauncherLoginValue.trim().length >= 3) {
 		void fetchKLauncherHead(props.kLauncherLoginValue)
+	}
+}
+
+let fetchTLauncherHeadTimeout: ReturnType<typeof setTimeout> | null = null
+
+async function fetchTLauncherHead(nick: string) {
+	if (fetchTLauncherHeadTimeout) {
+		clearTimeout(fetchTLauncherHeadTimeout)
+		fetchTLauncherHeadTimeout = null
+	}
+
+	if (!nick || nick.trim().length < 3) {
+		tLauncherHeadUrl.value = null
+		return
+	}
+
+	fetchTLauncherHeadTimeout = setTimeout(async () => {
+		const trimmedNick = nick.trim()
+		let headUrlFound: string | null = null
+
+		// 1. Получаем URL текстуры скина через TLauncher API на skins.tl.vg
+		let skinUrlToLoad: string | null = null
+		try {
+			const json = await fetchExternalJson<{
+				SKIN?: { url?: string }
+				textures?: { SKIN?: { url?: string } }
+			}>(`http://skins.tl.vg/skin/profile/texture/login/${encodeURIComponent(trimmedNick)}`)
+			const rawSkin = json?.SKIN?.url || json?.textures?.SKIN?.url
+			if (rawSkin) {
+				skinUrlToLoad = rawSkin
+					.replace('https://auth.tlauncher.org', 'http://skins.tl.vg')
+					.replace('http://auth.tlauncher.org', 'http://skins.tl.vg')
+					.replace('https://auth.tlauncher.ru', 'http://skins.tl.vg')
+					.replace('http://auth.tlauncher.ru', 'http://skins.tl.vg')
+			}
+		} catch (fetchError) {
+			console.warn('TLauncher skin profile API unreachable, trying direct file:', fetchError)
+		}
+
+		// Fallback: прямое имя файла скина TLauncher
+		if (!skinUrlToLoad) {
+			skinUrlToLoad = `http://skins.tl.vg/skin/fileservice/skins/skin_${encodeURIComponent(trimmedNick)}.png`
+		}
+
+		// Скачиваем скин через Tauri HTTP плагин и рендерим голову локально (без CORS ограничений)
+		if (skinUrlToLoad) {
+			let tempBlobUrl: string | null = null
+			try {
+				tempBlobUrl = await fetchExternalImageObjectUrl(skinUrlToLoad)
+				const headBlob = await generatePlayerHeadBlob(tempBlobUrl, 64)
+				headUrlFound = URL.createObjectURL(headBlob)
+			} catch (renderError) {
+				console.warn('Failed to render TLauncher head:', renderError)
+			} finally {
+				if (tempBlobUrl) {
+					URL.revokeObjectURL(tempBlobUrl)
+				}
+			}
+		}
+
+		// 2. Fallback на mc-heads.net, только если скин на TLauncher не найден
+		if (!headUrlFound) {
+			try {
+				const res = await tauriFetch(`https://mc-heads.net/avatar/${encodeURIComponent(trimmedNick)}/64`)
+				if (res.ok) {
+					const blob = await res.blob()
+					headUrlFound = URL.createObjectURL(blob)
+				}
+			} catch (fallbackError) {
+				console.warn('Failed to fetch fallback head from mc-heads:', fallbackError)
+			}
+		}
+
+		if (tLauncherHeadUrl.value) {
+			URL.revokeObjectURL(tLauncherHeadUrl.value)
+		}
+		tLauncherHeadUrl.value = headUrlFound
+	}, 300)
+}
+
+
+function openTLauncherRegister() {
+	void openUrl(TLAUNCHER_REGISTER_URL)
+}
+
+function openTLauncherRecovery() {
+	void openUrl(TLAUNCHER_RECOVERY_URL)
+}
+
+function handleTLauncherNickInput(value: string) {
+	emit('update:tLauncherLoginValue', value)
+	void fetchTLauncherHead(value)
+}
+
+function goToTLauncherStep2() {
+	tLauncherStep.value = 2
+	if (!tLauncherHeadUrl.value && props.tLauncherLoginValue && props.tLauncherLoginValue.trim().length >= 3) {
+		void fetchTLauncherHead(props.tLauncherLoginValue)
 	}
 }
 
@@ -146,6 +253,26 @@ const messages = defineMessages({
 	addKLauncherHeader: {
 		id: 'astralrinth.app.minecraft-account.input.klauncher.header',
 		defaultMessage: 'Авторизация KLauncher',
+	},
+	addTLauncherHeader: {
+		id: 'astralrinth.app.minecraft-account.input.tlauncher.header',
+		defaultMessage: 'Авторизация TLauncher',
+	},
+	tLauncherLoginLabel: {
+		id: 'astralrinth.app.minecraft-account.input.tlauncher.login.label',
+		defaultMessage: 'Никнейм или Логин',
+	},
+	tLauncherLoginPlaceholder: {
+		id: 'astralrinth.app.minecraft-account.input.tlauncher.login.placeholder',
+		defaultMessage: 'Ваш никнейм в TLauncher...',
+	},
+	tLauncherPasswordLabel: {
+		id: 'astralrinth.app.minecraft-account.input.tlauncher.password.label',
+		defaultMessage: 'Пароль (необязательно для офлайн-режима)',
+	},
+	tLauncherPasswordPlaceholder: {
+		id: 'astralrinth.app.minecraft-account.input.tlauncher.password.placeholder',
+		defaultMessage: 'Пароль от аккаунта TLauncher...',
 	},
 	kLauncherLoginLabel: {
 		id: 'astralrinth.app.minecraft-account.input.klauncher.login.label',
@@ -218,6 +345,7 @@ defineExpose({
 	hideElyByTwoFactor: () => requestElyByTwoFactorCodeModal.value?.hide(),
 	hideOffline: () => addOfflineModal.value?.hide(),
 	hideKLauncher: () => addKLauncherModal.value?.hide(),
+	hideTLauncher: () => addTLauncherModal.value?.hide(),
 	showElyBy: () => addElyByModal.value?.show(),
 	showElyByTwoFactor: () => requestElyByTwoFactorCodeModal.value?.show(),
 	showOffline: () => addOfflineModal.value?.show(),
@@ -231,6 +359,18 @@ defineExpose({
 				URL.revokeObjectURL(kLauncherHeadUrl.value)
 			}
 			kLauncherHeadUrl.value = null
+		}
+	},
+	showTLauncher: () => {
+		tLauncherStep.value = 1
+		addTLauncherModal.value?.show()
+		if (props.tLauncherLoginValue && props.tLauncherLoginValue.trim().length >= 3) {
+			void fetchTLauncherHead(props.tLauncherLoginValue)
+		} else {
+			if (tLauncherHeadUrl.value) {
+				URL.revokeObjectURL(tLauncherHeadUrl.value)
+			}
+			tLauncherHeadUrl.value = null
 		}
 	},
 })
@@ -290,17 +430,43 @@ defineExpose({
 		class="modal"
 		:header="formatMessage(messages.addOfflineHeader)"
 	>
-		<div class="flex flex-col gap-4 px-6 py-5">
-			<label class="label form-label">{{ formatMessage(messages.offlineNameLabel) }}</label>
-			<input
-				:value="props.offlinePlayerName"
-				type="text"
-				:placeholder="formatMessage(messages.offlineNamePlaceholder)"
-				class="input soft-input"
-				@input="emit('update:offlinePlayerName', ($event.target as HTMLInputElement).value)"
-			/>
-			<div class="mt-6 ml-auto">
-				<Button color="primary" :disabled="props.offlineLoginDisabled" @click="emit('submit-offline')">
+		<div class="flex flex-col gap-4 px-6 py-5 w-[360px]">
+			<!-- Header -->
+			<div class="flex items-center gap-3 p-3 bg-surface-2 border border-solid border-surface-5 rounded-xl">
+				<div
+					class="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center text-secondary text-base font-bold select-none"
+				>
+					👤
+				</div>
+				<div class="flex flex-col min-w-0">
+					<span class="font-bold text-contrast truncate text-sm">
+						{{ props.offlinePlayerName?.trim() || 'Игрок' }}
+					</span>
+					<span class="text-xs text-secondary">Офлайн-аккаунт</span>
+				</div>
+			</div>
+
+			<!-- Nickname input -->
+			<div class="flex flex-col gap-2">
+				<label class="label form-label">{{ formatMessage(messages.offlineNameLabel) }}</label>
+				<input
+					:value="props.offlinePlayerName"
+					type="text"
+					:placeholder="formatMessage(messages.offlineNamePlaceholder)"
+					class="input soft-input"
+					@input="emit('update:offlinePlayerName', ($event.target as HTMLInputElement).value)"
+					@keydown.enter="props.offlinePlayerName && props.offlinePlayerName.trim().length >= 3 && emit('submit-offline')"
+				/>
+			</div>
+
+			<!-- Action button -->
+			<div class="mt-2">
+				<Button
+					color="primary"
+					class="w-full"
+					:disabled="props.offlineLoginDisabled || !props.offlinePlayerName || props.offlinePlayerName.trim().length < 3"
+					@click="emit('submit-offline')"
+				>
 					{{ formatMessage(messages.loginAction) }}
 				</Button>
 			</div>
@@ -343,22 +509,24 @@ defineExpose({
 					:placeholder="formatMessage(messages.kLauncherLoginPlaceholder)"
 					class="input soft-input"
 					@input="handleKLauncherNickInput(($event.target as HTMLInputElement).value)"
+					@keydown.enter="props.kLauncherLoginValue && props.kLauncherLoginValue.trim().length >= 3 && goToKLauncherStep2()"
 				/>
-			<div class="mt-4 flex justify-end">
-				<Button
-					color="primary"
-					:disabled="!props.kLauncherLoginValue || props.kLauncherLoginValue.trim().length < 3"
-					@click="goToKLauncherStep2"
-				>
-					{{ formatMessage(messages.continueAction) }}
-				</Button>
-			</div>
-				<button
-					class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer self-center"
-					@click="openKLauncherRegister"
-				>
-					Нет аккаунта? Зарегистрироваться
-				</button>
+				<div class="mt-2 flex flex-col gap-2">
+					<Button
+						color="primary"
+						class="w-full"
+						:disabled="!props.kLauncherLoginValue || props.kLauncherLoginValue.trim().length < 3"
+						@click="goToKLauncherStep2"
+					>
+						{{ formatMessage(messages.continueAction) }}
+					</Button>
+					<button
+						class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer self-center mt-1"
+						@click="openKLauncherRegister"
+					>
+						Нет аккаунта? Зарегистрироваться
+					</button>
+				</div>
 			</div>
 
 			<!-- Step 2: Password input -->
@@ -370,27 +538,19 @@ defineExpose({
 					:placeholder="formatMessage(messages.kLauncherPasswordPlaceholder)"
 					class="input soft-input"
 					@input="emit('update:kLauncherPassword', ($event.target as HTMLInputElement).value)"
+					@keydown.enter="props.kLauncherPassword && emit('submit-klauncher')"
 				/>
-				<div class="flex gap-2 mt-4">
+				<div class="mt-2 flex flex-col gap-2">
 					<Button
 						color="primary"
-						class="flex-1"
-						:disabled="props.kLauncherLoginDisabled"
+						class="w-full"
+						:disabled="props.kLauncherLoginDisabled || !props.kLauncherPassword"
 						@click="emit('submit-klauncher')"
 					>
 						{{ formatMessage(messages.loginAction) }}
 					</Button>
-					<Button
-						color="brand"
-						type="outlined"
-						class="flex-1"
-						:disabled="props.kLauncherLoginDisabled"
-						@click="submitKLauncherWithoutPassword"
-					>
-						Войти без пароля
-					</Button>
 				</div>
-				<div class="flex items-center justify-between mt-1">
+				<div class="flex items-center justify-between mt-2">
 					<button
 						class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer"
 						@click="kLauncherStep = 1"
@@ -404,6 +564,47 @@ defineExpose({
 						Забыли пароль?
 					</button>
 				</div>
+			</div>
+		</div>
+	</ModalWrapper>
+	<ModalWrapper
+		ref="addTLauncherModal"
+		class="modal"
+		:header="formatMessage(messages.addTLauncherHeader)"
+	>
+		<div class="flex flex-col gap-4 px-6 py-5 w-[360px]">
+			<!-- Header -->
+			<div class="flex items-center gap-3 p-3 bg-surface-2 border border-solid border-surface-5 rounded-xl">
+				<div
+					class="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center text-amber-400 text-base font-bold"
+				>
+					TL
+				</div>
+				<div class="flex flex-col min-w-0">
+					<span class="font-bold text-contrast truncate text-sm">
+						TLauncher
+					</span>
+					<span class="text-xs text-amber-400 font-medium">В будущем сделаем</span>
+				</div>
+			</div>
+
+			<!-- Info banner -->
+			<div class="p-3 bg-surface-2 border border-solid border-surface-5 rounded-xl flex flex-col gap-1 text-center">
+				<span class="text-sm font-semibold text-contrast">Вход временно недоступен</span>
+				<p class="text-xs text-secondary m-0">
+					Авторизация через аккаунты TLauncher находится в разработке. В будущем сделаем поддержку входа.
+				</p>
+			</div>
+
+			<!-- Disabled button -->
+			<div class="mt-2">
+				<Button
+					color="primary"
+					class="w-full opacity-50 cursor-not-allowed"
+					disabled
+				>
+					В будущем сделаем
+				</Button>
 			</div>
 		</div>
 	</ModalWrapper>

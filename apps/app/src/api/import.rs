@@ -11,8 +11,24 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             get_importable_instances,
             is_valid_importable_instance,
             get_default_launcher_path,
+            detect_external_instances,
+            import_external_launcher_instance,
         ])
         .build()
+}
+
+/// Detects instances installed in external launchers across standard paths
+#[tauri::command]
+pub async fn detect_external_instances() -> Result<Vec<theseus::instance::DetectedExternalInstance>> {
+    Ok(theseus::instance::detect_external_instances().await?)
+}
+
+/// Imports a detected external instance
+#[tauri::command]
+pub async fn import_external_launcher_instance(
+    instance: theseus::instance::DetectedExternalInstance,
+) -> Result<String> {
+    Ok(theseus::instance::import_external_instance(instance).await?)
 }
 
 /// Gets a list of importable instances from a launcher type and base path
@@ -47,3 +63,4 @@ pub async fn get_default_launcher_path(
 ) -> Result<Option<PathBuf>> {
     Ok(import::get_default_launcher_path(launcher_type))
 }
+

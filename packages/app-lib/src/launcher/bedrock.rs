@@ -41,7 +41,20 @@ impl BedrockInstallationType {
     }
 }
 
-pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Result<PathBuf> {
+#[derive(Debug, Clone)]
+pub struct MountedBedrockTarget {
+    pub mojang_dir: PathBuf,
+    pub backup_dir: Option<PathBuf>,
+    pub is_uwp: bool,
+}
+
+pub async fn get_bedrock_target_dirs(
+    install_type: BedrockInstallationType,
+    exe_path_to_inject: Option<&PathBuf>,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    let mut games_dirs = Vec::new();
+    let mut gdk_roots = Vec::new();
+
     if install_type.is_gdk() {
         let appdata = std::env::var("APPDATA").unwrap_or_else(|_| {
             let mut path = dirs::home_dir().unwrap_or_default();
@@ -50,41 +63,95 @@ pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Re
             path.to_string_lossy().into_owned()
         });
 
-        let gdk_games_dir = PathBuf::from(appdata)
-            .join("Minecraft Bedrock")
-            .join("users")
-            .join("shared")
+        let appdata_buf = PathBuf::from(appdata);
+        if install_type.is_preview() {
+            gdk_roots.push(appdata_buf.join("Minecraft Bedrock Preview"));
+            let rel = appdata_buf.join("Minecraft Bedrock");
+            if rel.exists() {
+                gdk_roots.push(rel);
+            }
+        } else {
+            gdk_roots.push(appdata_buf.join("Minecraft Bedrock"));
+            let prev = appdata_buf.join("Minecraft Bedrock Preview");
+            if prev.exists() {
+                gdk_roots.push(prev);
+            }
+        }
+
+        for root in &gdk_roots {
+            if !root.exists() {
+                let _ = fs::create_dir_all(root).await;
+            }
+
+            // Always add Users/Shared/games
+            let shared_games = root.join("Users").join("Shared").join("games");
+            games_dirs.push(shared_games);
+
+            // Scan root/Users for all user directories (e.g. XUIDs like 8984797414555868453)
+            let users_dir = root.join("Users");
+            if users_dir.exists() {
+                if let Ok(mut entries) = fs::read_dir(&users_dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        if let Ok(ft) = entry.file_type().await {
+                            if ft.is_dir() {
+                                let name = entry.file_name().to_string_lossy().to_string();
+                                if !name.eq_ignore_ascii_case("shared") {
+                                    let user_games = entry.path().join("games");
+                                    games_dirs.push(user_games);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check if exe_path_to_inject has local data folder
+        if let Some(exe_path) = exe_path_to_inject {
+            if let Some(exe_dir) = exe_path.parent() {
+                let local_games = exe_dir.join("Minecraft Bedrock").join("LocalState").join("games");
+                games_dirs.push(local_games);
+            }
+        }
+    } else {
+        // UWP
+        let local_appdata = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
+            let mut path = dirs::home_dir().unwrap_or_default();
+            path.push("AppData");
+            path.push("Local");
+            path.to_string_lossy().into_owned()
+        });
+
+        let pkg_folder = if install_type.is_preview() {
+            "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe"
+        } else {
+            "Microsoft.MinecraftUWP_8wekyb3d8bbwe"
+        };
+
+        let uwp_games_dir = PathBuf::from(local_appdata)
+            .join("Packages")
+            .join(pkg_folder)
+            .join("LocalState")
             .join("games");
 
-        if !gdk_games_dir.exists() {
-            let _ = fs::create_dir_all(&gdk_games_dir).await;
+        games_dirs.push(uwp_games_dir);
+    }
+
+    let mut unique = Vec::new();
+    for d in games_dirs {
+        if !unique.contains(&d) {
+            unique.push(d);
         }
-        return Ok(gdk_games_dir);
     }
 
-    let local_appdata = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
-        let mut path = dirs::home_dir().unwrap_or_default();
-        path.push("AppData");
-        path.push("Local");
-        path.to_string_lossy().into_owned()
-    });
+    Ok((unique, gdk_roots))
+}
 
-    let pkg_folder = if install_type.is_preview() {
-        "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe"
-    } else {
-        "Microsoft.MinecraftUWP_8wekyb3d8bbwe"
-    };
-
-    let uwp_games_dir = PathBuf::from(local_appdata)
-        .join("Packages")
-        .join(pkg_folder)
-        .join("LocalState")
-        .join("games");
-
-    if !uwp_games_dir.exists() {
-        let _ = fs::create_dir_all(&uwp_games_dir).await;
-    }
-    Ok(uwp_games_dir)
+pub async fn get_bedrock_target_dir(install_type: BedrockInstallationType) -> Result<PathBuf> {
+    let (dirs, _) = get_bedrock_target_dirs(install_type, None).await?;
+    dirs.into_iter().next().ok_or_else(|| {
+        ErrorKind::LauncherError("Could not determine Bedrock target directory".to_string()).into()
+    })
 }
 
 async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -114,38 +181,132 @@ async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::
     Ok(())
 }
 
-struct BedrockJunctionGuard {
-    instance_id: String,
-    mojang_dir: PathBuf,
-    instance_mojang: PathBuf,
-    backup_dir: PathBuf,
+pub async fn mount_mojang_target(
+    target_games_dir: &std::path::Path,
+    instance_mojang: &std::path::Path,
     is_uwp: bool,
+) -> Result<MountedBedrockTarget> {
+    if !target_games_dir.exists() {
+        let _ = fs::create_dir_all(target_games_dir).await;
+    }
+    let _ = crate::launcher::inject::grant_all_application_packages_access(target_games_dir).await;
+
+    let mojang_dir = target_games_dir.join("com.mojang");
+    let mut backup_dir: Option<PathBuf> = None;
+
+    if mojang_dir.exists() {
+        let is_reparse = fs::symlink_metadata(&mojang_dir)
+            .await
+            .map(|m| (m.file_attributes() & 0x00000400) != 0)
+            .unwrap_or(false);
+
+        if is_reparse {
+            let _ = fs::remove_dir(&mojang_dir).await;
+        } else {
+            let mut actual_backup = target_games_dir.join("com.mojang.backup");
+            if actual_backup.exists() {
+                let ts = chrono::Utc::now().timestamp_millis();
+                actual_backup = target_games_dir.join(format!("com.mojang.backup_{}", ts));
+            }
+
+            // Copy player options.txt if instance doesn't have options yet
+            let inst_opt = instance_mojang.join("minecraftpe").join("options.txt");
+            let target_opt = mojang_dir.join("minecraftpe").join("options.txt");
+            if !inst_opt.exists() && target_opt.exists() {
+                if let Some(parent) = inst_opt.parent() {
+                    let _ = fs::create_dir_all(parent).await;
+                }
+                let _ = tokio::fs::copy(&target_opt, &inst_opt).await;
+            }
+
+            match fs::rename(&mojang_dir, &actual_backup).await {
+                Ok(_) => {
+                    backup_dir = Some(actual_backup);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to rename {} to backup: {}", mojang_dir.display(), e);
+                }
+            }
+        }
+    }
+
+    if is_uwp {
+        if !mojang_dir.exists() {
+            let _ = fs::create_dir_all(&mojang_dir).await;
+        }
+        let _ = copy_dir_all(instance_mojang, &mojang_dir).await;
+    } else {
+        use std::os::windows::process::CommandExt;
+        let output = std::process::Command::new("cmd")
+            .creation_flags(0x08000000)
+            .arg("/c")
+            .raw_arg(format!("mklink /J \"{}\" \"{}\"", mojang_dir.display(), instance_mojang.display()))
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                tracing::info!("Bedrock junction mounted: {}", mojang_dir.display());
+            }
+            Ok(out) => {
+                let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                let out_msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                tracing::warn!("Bedrock junction issue at {}: {} {}", mojang_dir.display(), err_msg, out_msg);
+            }
+            Err(e) => {
+                tracing::warn!("Bedrock junction error at {}: {}", mojang_dir.display(), e);
+            }
+        }
+    }
+
+    let _ = crate::launcher::inject::grant_all_application_packages_access(&mojang_dir).await;
+
+    Ok(MountedBedrockTarget {
+        mojang_dir,
+        backup_dir,
+        is_uwp,
+    })
+}
+
+pub struct BedrockJunctionGuard {
+    pub instance_id: String,
+    pub instance_mojang: PathBuf,
+    pub targets: std::sync::Arc<std::sync::Mutex<Vec<MountedBedrockTarget>>>,
 }
 
 impl Drop for BedrockJunctionGuard {
     fn drop(&mut self) {
-        if self.is_uwp {
-            let mojang = self.mojang_dir.clone();
-            let inst = self.instance_mojang.clone();
-            let _ = std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-                rt.block_on(async {
-                    let worlds_src = mojang.join("minecraftWorlds");
-                    let worlds_dst = inst.join("minecraftWorlds");
-                    if worlds_src.exists() {
-                        let _ = copy_dir_all(&worlds_src, &worlds_dst).await;
-                    }
-                    let opt_src = mojang.join("options.txt");
-                    let opt_dst = inst.join("options.txt");
-                    if opt_src.exists() {
-                        let _ = tokio::fs::copy(&opt_src, &opt_dst).await;
-                    }
-                });
-            });
+        let targets = if let Ok(guard) = self.targets.lock() {
+            guard.clone()
         } else {
-            let _ = std::fs::remove_dir(&self.mojang_dir);
-            if self.backup_dir.exists() {
-                let _ = std::fs::rename(&self.backup_dir, &self.mojang_dir);
+            Vec::new()
+        };
+
+        for target in targets {
+            if target.is_uwp {
+                let mojang = target.mojang_dir.clone();
+                let inst = self.instance_mojang.clone();
+                let _ = std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+                    rt.block_on(async {
+                        let worlds_src = mojang.join("minecraftWorlds");
+                        let worlds_dst = inst.join("minecraftWorlds");
+                        if worlds_src.exists() {
+                            let _ = copy_dir_all(&worlds_src, &worlds_dst).await;
+                        }
+                        let opt_src = mojang.join("minecraftpe").join("options.txt");
+                        let opt_dst = inst.join("minecraftpe").join("options.txt");
+                        if opt_src.exists() {
+                            let _ = tokio::fs::copy(&opt_src, &opt_dst).await;
+                        }
+                    });
+                });
+            } else {
+                let _ = std::fs::remove_dir(&target.mojang_dir);
+                if let Some(backup_dir) = target.backup_dir {
+                    if backup_dir.exists() {
+                        let _ = std::fs::rename(&backup_dir, &target.mojang_dir);
+                    }
+                }
             }
         }
         crate::state::emit_legacy_log_pub(&self.instance_id, "Восстановление оригинальных системных сохранений...");
@@ -359,102 +520,7 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
         let _ = crate::launcher::inject::grant_all_application_packages_access(&instance_mojang_clone).await;
     });
 
-    let target_games_dir = get_bedrock_target_dir(install_type).await?;
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&target_games_dir).await;
-
-    if let Some(ref exe_path) = exe_path_to_inject {
-        let exe_dir = exe_path.parent().unwrap();
-        let local_data_root = exe_dir.join("Minecraft Bedrock");
-        if !local_data_root.exists() {
-            let _ = fs::create_dir_all(&local_data_root).await;
-        }
-        let local_games_dir = local_data_root.join("LocalState").join("games");
-        if !local_games_dir.exists() {
-            let _ = fs::create_dir_all(&local_games_dir).await;
-        }
-        let _ = crate::launcher::inject::grant_all_application_packages_access(&local_games_dir).await;
-        let local_mojang = local_games_dir.join("com.mojang");
-        if local_mojang.exists() {
-            let meta: std::fs::Metadata = fs::symlink_metadata(&local_mojang).await?;
-            let is_reparse_point = (meta.file_attributes() & 0x00000400) != 0;
-            if is_reparse_point {
-                let _ = fs::remove_dir(&local_mojang).await;
-            } else {
-                let _ = fs::remove_dir_all(&local_mojang).await;
-            }
-        }
-        use std::os::windows::process::CommandExt;
-        let local_junction_output = std::process::Command::new("cmd")
-            .creation_flags(0x08000000)
-            .arg("/c")
-            .raw_arg(format!("mklink /J \"{}\" \"{}\"", local_mojang.display(), instance_mojang.display()))
-            .output();
-
-        match local_junction_output {
-            Ok(out) if out.status.success() => {
-                log_metric(&format!("Local GDK data junction mounted: {}", local_mojang.display()));
-            }
-            Ok(out) => {
-                let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                let out_msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                log_metric(&format!("WARNING: Local GDK junction issue: {} {}", err_msg, out_msg));
-            }
-            Err(e) => {
-                log_metric(&format!("WARNING: Local GDK junction error: {}", e));
-            }
-        }
-
-        let junction_ok = std::fs::symlink_metadata(&local_mojang)
-            .map(|m| (m.file_attributes() & 0x00000400) != 0)
-            .unwrap_or(false);
-        if !junction_ok {
-            log_metric(&format!("WARNING: Local GDK junction verification failed at {} - retrying.", local_mojang.display()));
-            let _ = fs::remove_dir_all(&local_mojang).await;
-            let retry_output = std::process::Command::new("cmd")
-                .creation_flags(0x08000000)
-                .arg("/c")
-                .raw_arg(format!("mklink /J \"{}\" \"{}\"", local_mojang.display(), instance_mojang.display()))
-                .output();
-            match retry_output {
-                Ok(out) if out.status.success() => {
-                    log_metric("Local GDK data junction mounted on retry.");
-                }
-                _ => {
-                    log_metric("ERROR: Local GDK data junction could not be mounted after retry.");
-                }
-            }
-        }
-    }
-
-    let mojang_dir = target_games_dir.join("com.mojang");
-    let mut actual_backup_dir = target_games_dir.join("com.mojang.backup");
-
-    if !target_games_dir.exists() {
-        fs::create_dir_all(&target_games_dir).await?;
-    }
-
-    if mojang_dir.exists() {
-        let meta: std::fs::Metadata = fs::symlink_metadata(&mojang_dir).await?;
-        let is_reparse_point = (meta.file_attributes() & 0x00000400) != 0;
-
-        if is_reparse_point {
-            fs::remove_dir(&mojang_dir).await?;
-        } else {
-            if actual_backup_dir.exists() {
-                let ts = chrono::Utc::now().timestamp();
-                actual_backup_dir = target_games_dir.join(format!("com.mojang.backup_{}", ts));
-            }
-            match fs::rename(&mojang_dir, &actual_backup_dir).await {
-                Ok(_) => {}
-                Err(e) => {
-                    return Err(ErrorKind::LauncherError(format!(
-                        "Не удалось создать бэкап оригинальной папки com.mojang: {}", e
-                    ))
-                    .into());
-                }
-            }
-        }
-    }
+    let (target_games_dirs, gdk_roots) = get_bedrock_target_dirs(install_type, exe_path_to_inject.as_ref()).await?;
 
     let is_ancient_bedrock = content_set.game_version.starts_with("0.")
         || content_set.game_version.starts_with("1.0.")
@@ -467,35 +533,63 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
     }
 
     log_metric("Mounting isolated profile filesystem...");
-    if install_type.is_uwp() {
-        if !mojang_dir.exists() {
-            let _ = fs::create_dir_all(&mojang_dir).await;
-        }
-        let _ = copy_dir_all(&instance_mojang, &mojang_dir).await;
-    } else {
-        use std::os::windows::process::CommandExt;
-        let output = std::process::Command::new("cmd")
-            .creation_flags(0x08000000)
-            .arg("/c")
-            .raw_arg(format!("mklink /J \"{}\" \"{}\"", mojang_dir.display(), instance_mojang.display()))
-            .output()?;
+    let mounted_targets = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
-        if !output.status.success() {
-            let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let out_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Err(
-                ErrorKind::LauncherError(format!("Не удалось примонтировать файловую систему профиля: {} {}", err_msg, out_msg)).into()
-            );
+    for games_dir in &target_games_dirs {
+        match mount_mojang_target(games_dir, &instance_mojang, install_type.is_uwp()).await {
+            Ok(target) => {
+                if let Ok(mut lock) = mounted_targets.lock() {
+                    lock.push(target);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to mount target at {}: {}", games_dir.display(), e);
+            }
         }
     }
-    let _ = crate::launcher::inject::grant_all_application_packages_access(&mojang_dir).await;
+
+    if install_type.is_gdk() && !gdk_roots.is_empty() {
+        let targets_watcher = mounted_targets.clone();
+        let inst_mojang_watcher = instance_mojang.clone();
+        let gdk_roots_watcher = gdk_roots.clone();
+        tokio::spawn(async move {
+            for _ in 0..20 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                for root in &gdk_roots_watcher {
+                    let users_dir = root.join("Users");
+                    if users_dir.exists() {
+                        if let Ok(mut entries) = tokio::fs::read_dir(&users_dir).await {
+                            while let Ok(Some(entry)) = entries.next_entry().await {
+                                if let Ok(ft) = entry.file_type().await {
+                                    if ft.is_dir() {
+                                        let user_games = entry.path().join("games");
+                                        let user_mojang = user_games.join("com.mojang");
+                                        let already = if let Ok(lock) = targets_watcher.lock() {
+                                            lock.iter().any(|t| t.mojang_dir == user_mojang)
+                                        } else {
+                                            false
+                                        };
+                                        if !already {
+                                            if let Ok(target) = mount_mojang_target(&user_games, &inst_mojang_watcher, false).await {
+                                                if let Ok(mut lock) = targets_watcher.lock() {
+                                                    lock.push(target);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     let junction_guard = BedrockJunctionGuard {
         instance_id: instance.id.clone(),
-        mojang_dir,
         instance_mojang: instance_mojang.clone(),
-        backup_dir: actual_backup_dir,
-        is_uwp: install_type.is_uwp(),
+        targets: mounted_targets,
     };
 
     crate::state::instances::commands::set_instance_last_played(
@@ -662,7 +756,7 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
 
         let process = state
             .process_manager
-            .insert_new_process(
+            .insert_new_bedrock_process(
                 &instance.id,
                 &instance.path,
                 &instance.name,
@@ -672,7 +766,7 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
                 false,
                 keep_alive,
                 rpc_server,
-                async |metadata, _, pid| {
+                async |metadata, _, pid: Option<u32>| {
                     crate::state::emit_legacy_log_pub(&metadata.instance_id, "Minecraft.Windows.exe successfully launched");
                     if gdk_unlocker_enabled {
                         #[cfg(target_os = "windows")]
@@ -822,7 +916,7 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
 
         let process = state
             .process_manager
-            .insert_new_process(
+            .insert_new_bedrock_process(
                 &instance.id,
                 &instance.path,
                 &instance.name,
@@ -832,7 +926,7 @@ pub async fn launch_bedrock(context: &InstanceLaunchContext) -> Result<ProcessMe
                 false,
                 keep_alive,
                 rpc_server,
-                async |_, _, _| Ok(()),
+                async |_, _, _: Option<u32>| Ok(()),
             )
             .await?;
 

@@ -885,15 +885,23 @@ export function createContentInstall(opts: {
 					const targetFile = versionId
 						? files.find((f: any) => String(f.id) === String(versionId)) || files[0]
 						: files[0]
-					if (targetFile?.downloadUrl) {
+					const downloadUrl = targetFile?.downloadUrl || targetFile?.download_url
+					if (downloadUrl) {
 						await invoke('plugin:bedrock-addons|download_and_install_bedrock_curseforge_addon', {
 							profilePath: instanceId,
-							downloadUrl: targetFile.downloadUrl,
+							downloadUrl,
 							curseforgeModId: modId,
 						})
-						callback(String(targetFile.id), [project.id])
+						const ids = [project.id, String(modId), (project as any).slug, (project as any).title].filter(Boolean)
+						callback(String(targetFile.id), ids)
+						return
+					} else {
+						opts.handleError('Download URL not found for this Bedrock add-on file.')
 						return
 					}
+				} else {
+					opts.handleError('No files found for this Bedrock add-on.')
+					return
 				}
 			}
 		}

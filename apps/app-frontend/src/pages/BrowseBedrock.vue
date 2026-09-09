@@ -3,6 +3,7 @@ import type { Labrinth } from '@modrinth/api-client'
 import {
 	CheckIcon,
 	ClipboardCopyIcon,
+	DownloadIcon,
 	ExternalIcon,
 	getCategoryIcon,
 	GlobeIcon,
@@ -302,6 +303,16 @@ const bedrockCategoriesMap = computed<Record<string, any[]>>(() => ({
 	],
 }))
 
+const categoryNameById = computed<Record<string, string>>(() => {
+	const map: Record<string, string> = {}
+	for (const list of Object.values(bedrockCategoriesMap.value)) {
+		for (const cat of list) {
+			map[cat.id] = cat.name
+		}
+	}
+	return map
+})
+
 const tags: Ref<Tags> = computed(() => {
 	const activeType = (projectType.value as string) || 'addon'
 	const rawCats = (bedrockCategoriesMap.value[activeType] || bedrockCategoriesMap.value['addon']) as any[]
@@ -392,15 +403,21 @@ async function refreshInstalledProjectIds() {
 		return
 	}
 
-	const ids = (await getInstalledProjectIds(route.query.i as string).catch(handleError)) || []
-	const bedrockAddons = await invoke<any[]>('plugin:bedrock-addons|list_bedrock_addons', {
-		profilePath: route.query.i as string,
-	}).catch(() => [])
+	const profileRef = (instance.value?.path || route.query.i) as string
+	const ids = (await getInstalledProjectIds(profileRef).catch(handleError)) || []
+	const [bedrockAddons, installedIds] = await Promise.all([
+		invoke<any[]>('plugin:bedrock-addons|list_bedrock_addons', {
+			profilePath: profileRef,
+		}).catch(() => []),
+		invoke<string[]>('plugin:bedrock-addons|get_bedrock_installed_ids', {
+			profilePath: profileRef,
+		}).catch(() => []),
+	])
 
-	const bedrockIds = bedrockAddons
+	const bedrockIds = (bedrockAddons || [])
 		.map((a: any) => (a.curseforge_mod_id != null ? String(a.curseforge_mod_id) : null))
 		.filter((id: string | null): id is string => id !== null)
-	const combinedIds = Array.from(new Set([...ids, ...bedrockIds]))
+	const combinedIds = Array.from(new Set([...ids, ...bedrockIds, ...(installedIds || [])]))
 	debugLog('installedProjectIds loaded', { count: combinedIds.length })
 	installedProjectIds.value = combinedIds
 }
@@ -920,7 +937,7 @@ function getCardActions(
 							? commonMessages.installButton
 							: messages.addToAnInstance,
 			),
-			icon: isInstalling ? SpinnerIcon : isInstalled ? CheckIcon : PlusIcon,
+			icon: isInstalling ? SpinnerIcon : isInstalled ? CheckIcon : shouldUseInstallIcon ? DownloadIcon : PlusIcon,
 			iconClass: isInstalling ? 'animate-spin' : undefined,
 			disabled: isInstalled || isInstalling,
 			color: 'brand',
@@ -929,17 +946,18 @@ function getCardActions(
 				setProjectInstalling(projectResult.project_id, true)
 				try {
 					const modId = parseInt(projectResult.project_id)
-					if (!isNaN(modId) && instance.value) {
+					const profileRef = (instance.value?.path || route.query.i) as string
+					if (!isNaN(modId) && profileRef) {
 						const files: any[] = await invoke('plugin:bedrock-addons|get_bedrock_curseforge_addon_files', { modId })
 						if (files && files.length > 0) {
-							const downloadUrl = files[0].downloadUrl
+							const downloadUrl = files[0].downloadUrl || files[0].download_url
 							if (downloadUrl) {
 								await invoke('plugin:bedrock-addons|download_and_install_bedrock_curseforge_addon', {
-									profilePath: instance.value.path,
+									profilePath: profileRef,
 									downloadUrl,
 									curseforgeModId: modId,
 								})
-								onSearchResultsInstalled([projectResult.project_id])
+								onSearchResultsInstalled([projectResult.project_id, String(modId)])
 							} else {
 								throw new Error('Download URL not found for this project.')
 							}
@@ -1129,7 +1147,12 @@ async function search(requestParams: string) {
 			.replace(/\s+/g, ' ')
 			.trim()
 
-		const mappedCategories = hit.categories?.map((c: any) => c.id?.toString() || c.slug) || []
+		const mappedCategories =
+			hit.categories?.map((c: any) => c.id?.toString() || c.slug?.toString() || c.toString()) || []
+		const displayCategories = (hit.categories || []).map((c: any) => {
+			const idStr = c.id?.toString() || c.slug?.toString() || c.toString()
+			return categoryNameById.value[idStr] || c.name || idStr
+		})
 		const mapped = {
 			project_id: hit.id.toString(),
 			slug: hit.slug,
@@ -1140,7 +1163,7 @@ async function search(requestParams: string) {
 			downloads: hit.downloadCount,
 			icon_url: hit.logo?.thumbnailUrl || hit.logo?.url,
 			categories: mappedCategories,
-			display_categories: mappedCategories,
+			display_categories: displayCategories.length > 0 ? displayCategories : mappedCategories,
 			loaders: ['bedrock'],
 			project_types: [pt],
 			author: authorName,

@@ -152,21 +152,26 @@ import { ArchiveIcon, CompassIcon, DownloadIcon, GlobeIcon, SearchIcon, SpinnerI
 import { ButtonStyled, EmptyState, injectNotificationManager,NewModal, ReadyTransition, StyledInput } from '@modrinth/ui'
 import { convertFileSrc,invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { computed, onMounted,ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { GameInstance } from '@/helpers/types'
+import { injectInstancePage } from './instance-context'
 
 const router = useRouter()
 
 const props = defineProps<{
-	instance: GameInstance
+	instance?: GameInstance
 }>()
 
+const instancePage = injectInstancePage()
+const instance = computed(() => props.instance || instancePage?.instance.value)
+
 function openCurseForgeWorlds() {
+	if (!instance.value?.path) return
 	router.push({
 		path: '/browse/bedrock/world',
-		query: { i: props.instance.path },
+		query: { i: instance.value.path },
 	})
 }
 
@@ -215,10 +220,14 @@ function formatDate(timestamp: number) {
 }
 
 async function fetchWorlds() {
+	if (!instance.value?.path) {
+		loading.value = false
+		return
+	}
 	loading.value = true
 	try {
 		worlds.value = await invoke('plugin:bedrock-worlds|fetch_bedrock_worlds', {
-			profilePath: props.instance.path,
+			profilePath: instance.value.path,
 		})
 	} catch (e) {
 		notifications.handleError(e as Error)
@@ -228,11 +237,12 @@ async function fetchWorlds() {
 }
 
 async function deleteWorld(world: BedrockWorld) {
+	if (!instance.value?.path) return
 	if (!confirm(`Вы действительно хотите удалить мир ${world.name}?`)) return
 
 	try {
 		await invoke('plugin:bedrock-worlds|delete_bedrock_world', {
-			profilePath: props.instance.path,
+			profilePath: instance.value.path,
 			folderName: world.folderName,
 		})
 		await fetchWorlds()
@@ -242,6 +252,7 @@ async function deleteWorld(world: BedrockWorld) {
 }
 
 async function exportWorld(world: BedrockWorld) {
+	if (!instance.value?.path) return
 	const outPath = await save({
 		filters: [
 			{
@@ -256,7 +267,7 @@ async function exportWorld(world: BedrockWorld) {
 		loading.value = true
 		try {
 			await invoke('plugin:bedrock-worlds|export_bedrock_world', {
-				profilePath: props.instance.path,
+				profilePath: instance.value.path,
 				folderName: world.folderName,
 				outPath: outPath,
 			})
@@ -274,6 +285,7 @@ async function exportWorld(world: BedrockWorld) {
 }
 
 async function importFromFile() {
+	if (!instance.value?.path) return
 	const file = await open({
 		multiple: false,
 		filters: [
@@ -296,7 +308,7 @@ async function importFromFile() {
 			loading.value = true
 			try {
 				await invoke('plugin:bedrock-worlds|import_bedrock_world', {
-					profilePath: props.instance.path,
+					profilePath: instance.value.path,
 					archivePath: pathStr,
 				})
 				notifications.addNotification({
@@ -319,10 +331,11 @@ function worldNameFor(folderName: string) {
 }
 
 async function fetchBackups() {
+	if (!instance.value?.path) return
 	backupsLoading.value = true
 	try {
 		backups.value = await invoke('plugin:bedrock-worlds|list_bedrock_world_backups', {
-			profilePath: props.instance.path,
+			profilePath: instance.value.path,
 		})
 	} catch (e) {
 		notifications.handleError(e as Error)
@@ -337,10 +350,11 @@ async function openBackups() {
 }
 
 async function backupNow(world: BedrockWorld) {
+	if (!instance.value?.path) return
 	backingUp.value = world.folderName
 	try {
 		await invoke('plugin:bedrock-worlds|backup_bedrock_world_now', {
-			profilePath: props.instance.path,
+			profilePath: instance.value.path,
 			folderName: world.folderName,
 		})
 		notifications.addNotification({
@@ -356,11 +370,12 @@ async function backupNow(world: BedrockWorld) {
 }
 
 async function restoreBackup(backup: BedrockWorldBackup) {
+	if (!instance.value?.path) return
 	if (!confirm(`Восстановить мир ${worldNameFor(backup.folderName)} из снапшота от ${formatDate(backup.created)}? Текущее состояние мира будет заменено.`)) return
 	restoringBackup.value = backup.backupName
 	try {
 		await invoke('plugin:bedrock-worlds|restore_bedrock_world_backup', {
-			profilePath: props.instance.path,
+			profilePath: instance.value.path,
 			folderName: backup.folderName,
 			backupName: backup.backupName,
 		})
@@ -378,10 +393,11 @@ async function restoreBackup(backup: BedrockWorldBackup) {
 }
 
 async function deleteBackup(backup: BedrockWorldBackup) {
+	if (!instance.value?.path) return
 	if (!confirm(`Удалить снапшот от ${formatDate(backup.created)}?`)) return
 	try {
 		await invoke('plugin:bedrock-worlds|delete_bedrock_world_backup', {
-			profilePath: props.instance.path,
+			profilePath: instance.value.path,
 			folderName: backup.folderName,
 			backupName: backup.backupName,
 		})
@@ -390,6 +406,14 @@ async function deleteBackup(backup: BedrockWorldBackup) {
 		notifications.handleError(e as Error)
 	}
 }
+
+watch(
+	() => instance.value?.path,
+	(path) => {
+		if (path) fetchWorlds()
+	},
+	{ immediate: true },
+)
 
 onMounted(() => {
 	fetchWorlds()

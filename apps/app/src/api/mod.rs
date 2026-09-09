@@ -15,6 +15,7 @@ pub mod logs;
 pub mod metadata;
 pub mod minecraft_skins;
 pub mod mr_auth;
+pub mod onboarding_checklist;
 pub mod process;
 pub mod reports;
 pub mod settings;
@@ -57,11 +58,6 @@ pub enum TheseusSerializableError {
     #[error("Tauri error: {0}")]
     Tauri(#[from] tauri::Error),
 
-    #[cfg(feature = "updater")]
-    #[error("Updater error: {0}")]
-    Updater(#[from] tauri_plugin_updater::Error),
-
-    #[cfg(feature = "updater")]
     #[error("HTTP error: {0}")]
     Http(#[from] tauri_plugin_http::reqwest::Error),
 }
@@ -89,8 +85,6 @@ macro_rules! impl_serialize {
                     // For the Theseus variant, we add a special display for the error,
                     // to view the spans if subscribed to them (which is information that is lost when serializing)
                     TheseusSerializableError::Theseus(theseus_error) => {
-                        $crate::error::display_tracing_error(theseus_error);
-
                         let unavailable_reason = match theseus_error.raw.as_ref() {
                             theseus::ErrorKind::SharedInstanceUnavailable(reason) => Some(reason),
                             _ => None,
@@ -132,17 +126,8 @@ macro_rules! impl_serialize {
     };
 }
 
-// Use the macro to implement Serialize for TheseusSerializableError
-#[cfg(not(feature = "updater"))]
 impl_serialize! {
     IO,
     Tauri,
-}
-
-#[cfg(feature = "updater")]
-impl_serialize! {
-    IO,
-    Tauri,
-    Updater,
     Http,
 }

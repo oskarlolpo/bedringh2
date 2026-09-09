@@ -472,6 +472,107 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
         }
     }
 
+    let is_tl = crate::launcher::tlauncher::is_tlauncher_user(
+        &selected_credentials.access_token,
+        &selected_credentials.refresh_token,
+    );
+
+    if is_tl {
+        let name = &selected_credentials.offline_profile.name;
+        let client = &*KL_CLIENT;
+        let mut downloaded_bytes: Option<bytes::Bytes> = None;
+
+        // 1. Пробуем получить скин через TLauncher API на skins.tl.vg
+        let profile_url = format!("http://skins.tl.vg/skin/profile/texture/login/{}", name);
+        if let Ok(resp) = client.get(&profile_url).header("User-Agent", "TLauncher/2.9374").send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    let raw_skin_opt = json
+                        .get("SKIN")
+                        .and_then(|s| s.get("url"))
+                        .and_then(|u| u.as_str())
+                        .or_else(|| json.get("skinUrl").and_then(|u| u.as_str()))
+                        .or_else(|| {
+                            json.get("textures")
+                                .and_then(|t| t.get("SKIN"))
+                                .and_then(|s| s.get("url"))
+                                .and_then(|u| u.as_str())
+                        });
+                    if let Some(raw_skin) = raw_skin_opt {
+                        let direct_url = raw_skin
+                            .replace("https://auth.tlauncher.org", "http://skins.tl.vg")
+                            .replace("http://auth.tlauncher.org", "http://skins.tl.vg")
+                            .replace("https://auth.tlauncher.ru", "http://skins.tl.vg")
+                            .replace("http://auth.tlauncher.ru", "http://skins.tl.vg");
+                        if let Ok(bytes_resp) = client.get(&direct_url).send().await {
+                            if bytes_resp.status().is_success() {
+                                if let Ok(bytes) = bytes_resp.bytes().await {
+                                    if !bytes.is_empty() {
+                                        downloaded_bytes = Some(bytes);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback на прямое имя файла скина TLauncher
+        if downloaded_bytes.is_none() {
+            let direct_file_url = format!("http://skins.tl.vg/skin/fileservice/skins/skin_{}.png", name);
+            if let Ok(bytes_resp) = client.get(&direct_file_url).send().await {
+                if bytes_resp.status().is_success() {
+                    if let Ok(bytes) = bytes_resp.bytes().await {
+                        if !bytes.is_empty() {
+                            downloaded_bytes = Some(bytes);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback на mc-heads.net, только если локальных скинов ещё нет
+        if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
+            if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
+                if bytes_resp.status().is_success() {
+                    if let Ok(bytes) = bytes_resp.bytes().await {
+                        if !bytes.is_empty() {
+                            downloaded_bytes = Some(bytes);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(bytes) = downloaded_bytes {
+            let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+            let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
+            if !already_saved {
+                let insert_pos = if saved_custom_skins.is_empty() {
+                    CustomMinecraftSkinInsertPosition::Top
+                } else {
+                    CustomMinecraftSkinInsertPosition::Bottom
+                };
+                let _ = CustomMinecraftSkin::add(
+                    profile_id,
+                    &texture_key,
+                    &bytes,
+                    MinecraftSkinVariant::Classic,
+                    None,
+                    insert_pos,
+                    &state.pool,
+                )
+                .await;
+
+                saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
+                    .await?
+                    .collect::<Vec<_>>()
+                    .await;
+            }
+        }
+    }
+
     // Mirror the original KLauncher skins tab: pull the whole owned-skin
     // history, not just the currently equipped texture.
     if let Some(kl_token) = klauncher_token(&selected_credentials) {

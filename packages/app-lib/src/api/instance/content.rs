@@ -41,12 +41,25 @@ pub async fn get_installed_project_ids(
     instance_id: &str,
 ) -> crate::Result<Vec<String>> {
     let state = State::get().await?;
-    crate::state::get_installed_project_ids_for_instance(
+    let mut ids = match crate::state::get_installed_project_ids_for_instance(
         instance_id,
         None,
         &state,
     )
-    .await
+    .await {
+        Ok(ids) => ids,
+        Err(_) => Vec::new(),
+    };
+
+    if let Ok(bedrock_ids) = crate::api::bedrock_addons::get_bedrock_installed_ids(instance_id).await {
+        for bid in bedrock_ids {
+            if !ids.contains(&bid) {
+                ids.push(bid);
+            }
+        }
+    }
+
+    Ok(ids)
 }
 
 #[tracing::instrument]
@@ -72,6 +85,12 @@ pub async fn get_content_items(
 ) -> crate::Result<Vec<ContentItem>> {
     let state = State::get().await?;
     crate::state::list_content(instance_id, None, cache_behaviour, &state).await
+}
+
+#[tracing::instrument]
+pub async fn refresh_content_updates(instance_id: &str) -> crate::Result<()> {
+    let state = State::get().await?;
+    crate::state::refresh_content_updates(instance_id, &state).await
 }
 
 #[tracing::instrument]

@@ -4,6 +4,7 @@ import {
 	CheckIcon,
 	ClipboardCopyIcon,
 	CompassIcon,
+	DownloadIcon,
 	ExternalIcon,
 	GlobeIcon,
 	PlusIcon,
@@ -939,7 +940,7 @@ function getCardActions(
 							? commonMessages.installButton
 							: messages.addToAnInstance,
 			),
-			icon: isInstalling ? SpinnerIcon : showAsInstalled ? CheckIcon : PlusIcon,
+			icon: isInstalling ? SpinnerIcon : showAsInstalled ? CheckIcon : shouldUseInstallIcon ? DownloadIcon : PlusIcon,
 			iconClass: isInstalling ? 'animate-spin' : undefined,
 			disabled: showAsInstalled || isInstalling,
 			color: 'brand',

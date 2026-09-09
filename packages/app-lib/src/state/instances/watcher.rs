@@ -40,6 +40,7 @@ pub async fn init_watcher() -> crate::Result<FileWatcher> {
                 Ok(events) => {
                     let instance_ids = event_instance_ids.read().await;
                     let mut visited_instances = Vec::new();
+                    let mut visited_screenshot_instances = Vec::new();
 
                     for e in &events {
                         let mut instance_path = None;
@@ -72,6 +73,9 @@ pub async fn init_watcher() -> crate::Result<FileWatcher> {
                                 .skip_while(|x| x.as_os_str() != instance_path)
                                 .nth(1)
                                 .map(|x| x.as_os_str());
+                            let is_screenshot_event = first_file_name
+                                .as_ref()
+                                .is_some_and(|name| *name == "screenshots");
                             if first_file_name
                                 .as_ref()
                                 .is_some_and(|x| *x == "crash-reports")
@@ -81,13 +85,25 @@ pub async fn init_watcher() -> crate::Result<FileWatcher> {
                                     .is_some_and(|x| *x == "txt")
                             {
                                 crash_task(instance_id);
-                            } else if !visited_instances.contains(&instance_id)
+                            } else if (is_screenshot_event
+                                && !visited_screenshot_instances
+                                    .contains(&instance_id))
+                                || (!is_screenshot_event
+                                    && !visited_instances
+                                        .contains(&instance_id))
                             {
                                 let event = if first_file_name
                                     .as_ref()
                                     .is_some_and(|x| *x == "servers.dat")
                                 {
                                     Some(InstancePayloadType::ServersUpdated)
+                                } else if first_file_name
+                                    .as_ref()
+                                    .is_some_and(|x| *x == "screenshots")
+                                {
+                                    Some(
+                                        InstancePayloadType::ScreenshotsUpdated,
+                                    )
                                 } else if first_file_name.as_ref().is_some_and(
                                     |x| {
                                         *x == "saves"
@@ -138,7 +154,11 @@ pub async fn init_watcher() -> crate::Result<FileWatcher> {
                                 };
                                 if let Some(event) = event {
                                     let emit_instance_id = instance_id.clone();
-                                    let mark_shared_stale = first_file_name
+                                    let reconcile_screenshots = matches!(
+                                        &event,
+                                        InstancePayloadType::ScreenshotsUpdated
+                                    );
+                                    let sync_content = first_file_name
                                         .as_ref()
                                         .is_some_and(|name| {
                                             ProjectType::iterator().any(
@@ -149,19 +169,54 @@ pub async fn init_watcher() -> crate::Result<FileWatcher> {
                                                 },
                                             )
                                         });
+                                    let synced_option_file = first_file_name
+                                        .as_ref()
+                                        .and_then(|name| name.to_str())
+                                        .filter(|name| {
+                                            matches!(
+                                                *name,
+                                                "command_history.txt"
+                                                    | "hotbar.nbt"
+                                                    | "servers.dat"
+                                            )
+                                        })
+                                        .map(ToOwned::to_owned);
                                     tokio::spawn(async move {
-                                        if mark_shared_stale
+                                        if sync_content
                                             && let Ok(state) =
                                                 State::get().await
                                             && let Err(error) =
-                                                crate::state::mark_shared_instance_stale(
+                                                crate::state::sync_content_files(
                                                     &emit_instance_id,
-                                                    &state.pool,
+                                                    &state,
+                                                )
+                                                .await
+										{
+                                            tracing::error!(
+                                                "Failed to sync instance content after filesystem change: {error}"
+                                            );
+										}
+                                        if let Some(file_name) = synced_option_file
+											&& let Err(error) =
+												crate::api::instance::reconcile_synced_option_file(
+													&emit_instance_id,
+													&file_name,
+												)
+												.await
+										{
+											tracing::error!(
+												"Failed to reconcile {file_name} after filesystem change: {error}"
+											);
+										}
+                                        if reconcile_screenshots
+                                            && let Err(error) =
+                                                crate::api::instance::reconcile_screenshots(
+                                                    &emit_instance_id,
                                                 )
                                                 .await
                                         {
                                             tracing::error!(
-                                                "Failed to mark shared instance stale after filesystem sync: {error}"
+                                                "Failed to reconcile screenshots after filesystem change: {error}"
                                             );
                                         }
                                         let _ = emit_instance(
@@ -170,7 +225,12 @@ pub async fn init_watcher() -> crate::Result<FileWatcher> {
                                         )
                                         .await;
                                     });
-                                    visited_instances.push(instance_id);
+                                    if is_screenshot_event {
+                                        visited_screenshot_instances
+                                            .push(instance_id);
+                                    } else {
+                                        visited_instances.push(instance_id);
+                                    }
                                 }
                             }
                         }
@@ -199,6 +259,14 @@ pub(crate) async fn watch_instances_init(
     for instance in instances {
         watch_instance_folder(&instance.id, &instance.path, watcher, dirs)
             .await;
+        if let Err(error) =
+            crate::api::instance::reconcile_screenshots(&instance.id).await
+        {
+            tracing::warn!(
+                "Failed to reconcile screenshots for {} during watcher initialization: {error}",
+                instance.id
+            );
+        }
     }
 }
 
@@ -245,7 +313,12 @@ pub(crate) async fn watch_instance_folder(
     } else {
         ProjectType::iterator()
             .map(|x| x.get_folder().to_string())
-            .chain(["crash-reports".to_string(), "saves".to_string(), CONFIG_DIRECTORY.to_string()])
+            .chain([
+                "crash-reports".to_string(),
+                "saves".to_string(),
+                "screenshots".to_string(),
+                CONFIG_DIRECTORY.to_string(),
+            ])
             .collect()
     };
 
@@ -256,9 +329,10 @@ pub(crate) async fn watch_instance_folder(
         let exists = meta.is_ok();
         let is_symlink = meta.ok().is_some_and(|m| m.file_type().is_symlink());
 
+        let is_dir_target = sub_path == "com.mojang" || !sub_path.contains(".");
         if !exists
             && !is_symlink
-            && !sub_path.contains(".")
+            && is_dir_target
             && let Err(e) = crate::util::io::create_dir_all(&full_path).await
         {
             tracing::error!(
@@ -267,7 +341,9 @@ pub(crate) async fn watch_instance_folder(
             return;
         }
 
-        to_watch.push(full_path);
+        if full_path.exists() {
+            to_watch.push(full_path);
+        }
     }
 
     let mut debouncer = watcher.watcher.write().await;

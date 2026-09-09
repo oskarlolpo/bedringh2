@@ -7,7 +7,7 @@
 			project.discord_url ||
 			project.site_url ||
 			projectV3?.link_urls.store?.url ||
-			(project.donation_urls?.length ?? 0) > 0
+			project.donation_urls.length > 0
 		"
 		class="flex flex-col gap-3"
 	>
@@ -83,12 +83,12 @@
 						project.discord_url ||
 						projectV3?.link_urls.site?.url ||
 						projectV3?.link_urls.store?.url) &&
-					(project.donation_urls?.length ?? 0) > 0
+					project.donation_urls.length > 0
 				"
 				class="w-full border-button-border my-0.5"
 			/>
 			<a
-				v-for="(donation, index) in (project.donation_urls || [])"
+				v-for="(donation, index) in project.donation_urls"
 				:key="index"
 				:href="donation.url"
 				:target="linkTarget"

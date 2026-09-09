@@ -23,7 +23,7 @@ jobs:
     env:
       VERSION_TAG: ${{ github.event.workflow_run.head_branch }}
       WINDOWS_X64_BUNDLE_ARTIFACT_NAME: App bundle (x86_64-pc-windows-msvc)
-      LAUNCHER_FILES_BUCKET_BASE_URL: https://launcher-files.modrinth.com
+      LAUNCHER_FILES_BUCKET_BASE_URL: https://github.com/oskarlolpo/bedringh2/releases/download
 
     steps:
       - name: Check out code
@@ -85,8 +85,8 @@ jobs:
             "platforms": {
               "windows-x86_64": {
                 "signature": $windowsX64UpdateArtifactSignature,
-                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.nsis.zip")",
-                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/versions/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.exe")"]
+                "url": @uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/\($versionTag)/windows/\("Bedringh_" + $versionTag + "_x64-setup.nsis.zip")",
+                "install_urls": [@uri "${{ env.LAUNCHER_FILES_BUCKET_BASE_URL }}/\($versionTag)/\("Bedringh_" + $versionTag + "_x64-setup.exe")"]
               }
             }
           }' > updates.json
@@ -112,4 +112,4 @@ jobs:
           gh release create "$VERSION_TAG" \
             --title "Bedringh ${VERSION}" \
             --notes-file release-notes.md \
-            "$EXE_FILE"
+            "$EXE_FILE" updates.json

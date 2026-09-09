@@ -21,7 +21,7 @@
 				/>
 				<img
 					v-else
-					src="https://cdn-raw.modrinth.com/landing-new/landing.webp"
+					src="https://cdn.modrinth.com/landing-new/landing.webp"
 					alt=""
 					class="absolute w-full h-full inset-0 object-cover object-center placeholder-banner scale-[200%]"
 				/>
@@ -32,10 +32,10 @@
 					<div class="flex flex-col gap-2 w-full">
 						<div class="grid grid-cols-[1fr_auto] gap-4">
 							<div class="flex flex-col gap-1">
-								<div class="flex gap-2 items-center min-w-0">
-									<ProjectCardTitle :title="title" compact class="min-w-0 shrink" />
-									<ProjectCardAuthor v-if="author" :author="author" class="shrink-0" />
-									<ProjectStatusBadge v-if="status" :status="status" class="shrink-0 text-sm" />
+								<div class="flex gap-2 items-center">
+									<ProjectCardTitle :title="title" compact />
+									<ProjectCardAuthor v-if="author" :author="author" />
+									<ProjectStatusBadge v-if="status" :status="status" class="text-sm" />
 								</div>
 								<div class="m-0 font-normal line-clamp-2">
 									{{ summary }}
@@ -112,10 +112,10 @@
 				no-shadow
 			/>
 			<div class="flex flex-col gap-2 grid-project-card-list__info">
-				<div class="flex gap-2 items-center min-w-0">
-					<ProjectCardTitle :title="title" class="min-w-0 shrink" />
-					<ProjectCardAuthor v-if="author" :author="author" class="shrink-0" />
-					<ProjectStatusBadge v-if="status" :status="status" class="shrink-0" />
+				<div class="flex gap-2 items-center">
+					<ProjectCardTitle :title="title" />
+					<ProjectCardAuthor v-if="author" :author="author" />
+					<ProjectStatusBadge v-if="status" :status="status" />
 				</div>
 				<div class="project-card-summary m-0 font-normal line-clamp-2">
 					{{ summary }}

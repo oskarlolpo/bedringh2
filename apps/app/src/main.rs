@@ -13,22 +13,22 @@ use tauri_plugin_fs::FsExt;
 use theseus::prelude::*;
 
 mod api;
-mod error;
 
 #[cfg(target_os = "macos")]
 mod macos;
 
-#[cfg(feature = "updater")]
 mod updater_impl;
-#[cfg(not(feature = "updater"))]
-mod updater_impl_noop;
+
 
 // Should be called in launcher initialization
 #[tracing::instrument(skip_all)]
 #[tauri::command]
-async fn initialize_state(app: tauri::AppHandle) -> api::Result<()> {
+async fn initialize_state(
+    app: tauri::AppHandle,
+    events: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
+) -> api::Result<()> {
     tracing::info!("Initializing app event state...");
-    theseus::EventState::init(app.clone()).await?;
+    theseus::EventState::init(app.clone(), events).await?;
 
     tracing::info!("Initializing app state...");
     State::init(app.config().identifier.clone()).await?;
@@ -63,14 +63,10 @@ fn is_dev() -> bool {
 
 #[tauri::command]
 fn are_updates_enabled() -> bool {
-    false // Disabled for Bedringh
+    true
 }
 
-#[cfg(feature = "updater")]
 pub use updater_impl::*;
-
-#[cfg(not(feature = "updater"))]
-pub use updater_impl_noop::*;
 
 // Toggles decorations
 #[tauri::command]
@@ -102,6 +98,12 @@ async fn set_restart_after_pending_update(
 // if Tauri app is called with arguments, then those arguments will be treated as commands
 // ie: deep links or filepaths for .mrpacks
 fn main() {
+    #[cfg(feature = "export-app-events")]
+    theseus::export_app_event_bindings(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../app-frontend/src/generated/app-events"),
+    )
+    .expect("failed to export app event TypeScript bindings");
     /*
         tracing is set basd on the environment variable RUST_LOG=xxx, depending on the amount of logs to show
             ERROR > WARN > INFO > DEBUG > TRACE
@@ -117,6 +119,15 @@ fn main() {
 
     */
 
+    // Initialize a multi-threaded Tokio runtime with an expanded stack size (16MB)
+    // to prevent stack overflow on worker threads during heavy operations (e.g. Minecraft installation).
+    let _tokio_runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(16 * 1024 * 1024)
+        .build()
+        .expect("Failed to initialize multi-threaded tokio runtime");
+    tauri::async_runtime::set(_tokio_runtime.handle().clone());
+
     let tauri_context = tauri::generate_context!();
 
     let _log_guard = theseus::start_logger(&tauri_context.config().identifier);
@@ -125,20 +136,14 @@ fn main() {
 
     let mut builder = tauri::Builder::default();
 
-    #[cfg(feature = "updater")]
+    #[cfg(target_os = "macos")]
     {
-        use tauri_plugin_http::reqwest::header::{HeaderValue, USER_AGENT};
-        use theseus::launcher_user_agent;
-        builder = builder.plugin(
-            tauri_plugin_updater::Builder::new()
-                .header(
-                    USER_AGENT,
-                    HeaderValue::from_str(&launcher_user_agent()).unwrap(),
-                )
-                .unwrap()
-                .build(),
-        );
+        builder = builder
+            .menu(|app| macos::menu::create(app))
+            .on_menu_event(macos::menu::handle_event);
     }
+
+    builder = builder.plugin(updater_impl::init());
 
     builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -163,6 +168,7 @@ fn main() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_filename("app-window-state.json")
+                .with_denylist(&["signin"])
                 // Use *only* POSITION and SIZE state flags, because saving VISIBLE causes the `visible: false` to not take effect
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::POSITION
@@ -223,6 +229,7 @@ fn main() {
     builder = builder
         .plugin(api::auth::init())
         .plugin(api::mr_auth::init())
+        .plugin(api::onboarding_checklist::init())
         .plugin(api::import::init())
         .plugin(api::install::init())
         .plugin(api::instance::init())
@@ -275,7 +282,7 @@ fn main() {
                     }
                 }
 
-                #[cfg(not(any(feature = "updater", target_os = "macos")))]
+                #[cfg(not(target_os = "macos"))]
                 let _ = app;
 
                 if matches!(&event, tauri::RunEvent::ExitRequested { .. })
@@ -288,7 +295,6 @@ fn main() {
                     );
                 }
 
-                #[cfg(feature = "updater")]
                 if matches!(&event, tauri::RunEvent::Exit) {
                     let update_data = app.state::<PendingUpdateData>().inner();
                     let should_restart = State::get_if_initialized()
@@ -296,7 +302,7 @@ fn main() {
                             s.restart_after_pending_update.load(Ordering::Relaxed)
                         })
                         .unwrap_or(false);
-                    if let Some((update, data)) = &*update_data.0.lock().unwrap()
+                    if let Some(pending) = update_data.0.lock().unwrap().take()
                     {
                         fn set_changelog_toast(version: Option<String>) {
                             let toast_result: theseus::Result<()> = tauri::async_runtime::block_on(async move {
@@ -312,42 +318,44 @@ fn main() {
                             }
                         }
 
-                        set_changelog_toast(Some(update.version.clone()));
-                        let update = if should_restart {
-                            (**update).clone()
-                        } else {
-                            (**update).clone().restart_after_install(false)
-                        };
-                        match update.install(data) {
-                            Ok(()) => {
-                                if should_restart {
-                                    tracing::info!(
-                                        "Pending update installed successfully (version {}); restarting because user requested reload",
-                                        update.version
-                                    );
-                                    app.restart();
-                                } else {
-                                    tracing::info!(
-                                        "Pending update installed successfully (version {}); exiting without relaunch (user did not request reload)",
-                                        update.version
-                                    );
-                                }
+                        set_changelog_toast(Some(pending.version.clone()));
+                        tracing::info!(
+                            "Launching Bedringh update installer: {:?} (restart: {})",
+                            pending.installer_path,
+                            should_restart
+                        );
+
+                        #[cfg(windows)]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            let mut cmd = std::process::Command::new(&pending.installer_path);
+                            if should_restart {
+                                cmd.args(["/P", "/R"]);
+                            } else {
+                                cmd.args(["/P"]);
                             }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Pending update install failed (version {}): {e}",
-                                    update.version
-                                );
+                            const DETACHED_PROCESS: u32 = 0x00000008;
+                            cmd.creation_flags(DETACHED_PROCESS);
+
+                            if let Err(e) = cmd.spawn() {
+                                tracing::error!("Failed to launch update installer: {e}");
                                 set_changelog_toast(None);
 
-                                DialogBuilder::message()
+                                let _ = DialogBuilder::message()
                                     .set_level(MessageLevel::Error)
                                     .set_title("Update error")
-                                    .set_text(format!("Failed to install update due to an error:\n{e}"))
+                                    .set_text(format!("Failed to launch update installer: {e}"))
                                     .alert()
-                                    .show()
-                                    .unwrap();
+                                    .show();
                             }
+                        }
+
+                        #[cfg(not(windows))]
+                        {
+                            tracing::info!(
+                                "Update downloaded to {:?}",
+                                pending.installer_path
+                            );
                         }
                     }
                 }

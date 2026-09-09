@@ -17,6 +17,17 @@ pub fn prepare_klauncher_authlib(libraries_dir: &Path, class_paths: &str) -> Str
 
     let target_jar = authlib_dir.join(jar_name);
 
+    // If target_jar exists but is corrupt or 0-bytes, remove it
+    if target_jar.exists() {
+        if let Ok(meta) = target_jar.metadata() {
+            if meta.len() < 1024 {
+                let _ = std::fs::remove_file(&target_jar);
+            }
+        } else {
+            let _ = std::fs::remove_file(&target_jar);
+        }
+    }
+
     if !target_jar.exists() {
         // Try copying from local KLauncher installation if available
         if let Ok(appdata) = std::env::var("APPDATA") {
@@ -28,21 +39,51 @@ pub fn prepare_klauncher_authlib(libraries_dir: &Path, class_paths: &str) -> Str
                 .join("klauncher")
                 .join("authlib")
                 .join(jar_name);
-            if klauncher_jar.exists() {
+            if klauncher_jar.exists() && klauncher_jar.metadata().map(|m| m.len() > 1024).unwrap_or(false) {
                 let _ = std::fs::copy(&klauncher_jar, &target_jar);
             }
         }
     }
 
     if !target_jar.exists() {
-        // Download via curl if still missing
+        // Download via curl if still missing, using -f to fail on HTTP errors (e.g. 404)
         let url = format!("https://repos.klaun.ch/authlib/{}", jar_name);
         let _ = std::process::Command::new("curl.exe")
-            .args(["-sL", &url, "-o", &target_jar.to_string_lossy()])
+            .args(["-f", "-sL", &url, "-o", &target_jar.to_string_lossy()])
             .output();
+
+        // If download failed or created an invalid/empty file, clean it up immediately
+        if target_jar.exists() && target_jar.metadata().map(|m| m.len() < 1024).unwrap_or(true) {
+            let _ = std::fs::remove_file(&target_jar);
+        }
     }
 
-    if target_jar.exists() {
+    // Verify zip archive integrity (magic bytes PK\x03\x04 and size > 1KB)
+    let is_valid_jar = if target_jar.exists() {
+        if let Ok(meta) = target_jar.metadata() {
+            if meta.len() > 1024 {
+                if let Ok(mut f) = std::fs::File::open(&target_jar) {
+                    use std::io::Read;
+                    let mut magic = [0u8; 4];
+                    f.read_exact(&mut magic).is_ok() && &magic == b"PK\x03\x04"
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !is_valid_jar && target_jar.exists() {
+        let _ = std::fs::remove_file(&target_jar);
+    }
+
+    if is_valid_jar {
         let target_str = target_jar.to_string_lossy().to_string();
         let sep = if cfg!(windows) { ";" } else { ":" };
         let parts: Vec<&str> = class_paths.split(sep).collect();
@@ -57,6 +98,7 @@ pub fn prepare_klauncher_authlib(libraries_dir: &Path, class_paths: &str) -> Str
         return new_parts.join(sep);
     }
 
+    // Fall back to vanilla Mojang authlib safely if custom authlib is not present or invalid
     class_paths.to_string()
 }
 

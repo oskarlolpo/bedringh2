@@ -131,10 +131,11 @@ impl InstallProgressReporter {
         let app_state = crate::State::get().await?;
         let mut state = self.state.lock().await;
         let phase_started = state.job.progress.phase != phase
-            || matches!(
+            || (matches!(
                 &state.job.progress.details,
                 InstallPhaseDetails::Empty
-            ) && !matches!(&details, InstallPhaseDetails::Empty);
+            ) && !matches!(&details, InstallPhaseDetails::Empty))
+            || (state.job.progress.progress.is_none() && progress.is_some());
 
         state.job.set_progress(phase, progress, details);
         for event in events {
@@ -166,8 +167,8 @@ impl InstallProgressReporterState {
             return true;
         }
 
-        let progressed_enough =
-            if self.job.progress.phase == InstallPhaseId::DownloadingContent {
+        let progressed_enough = match self.job.progress.phase {
+            InstallPhaseId::DownloadingContent => {
                 self.last_persisted_progress
                     .map(|(phase, current)| {
                         phase != self.job.progress.phase
@@ -175,9 +176,18 @@ impl InstallProgressReporterState {
                                 >= CONTENT_PROGRESS_PERSIST_STEPS
                     })
                     .unwrap_or(true)
-            } else {
-                false
-            };
+            }
+            InstallPhaseId::DownloadingMinecraft => {
+                self.last_persisted_progress
+                    .map(|(phase, current)| {
+                        phase != self.job.progress.phase
+                            || progress.current.saturating_sub(current)
+                                >= 1024 * 1024 // 1 MB
+                    })
+                    .unwrap_or(true)
+            }
+            _ => false,
+        };
 
         progressed_enough
             || self.last_persisted_at.elapsed() >= PROGRESS_PERSIST_INTERVAL
@@ -203,11 +213,11 @@ pub async fn emit_install_job(
         use tauri::Emitter;
 
         let result: crate::Result<()> = (|| {
-            let event_state = crate::EventState::get()?;
-            event_state
-                .app
-                .emit("install_job", snapshot)
-                .map_err(crate::event::EventError::from)?;
+            let event_state = crate::EventState::get();
+            let _ = event_state.app.emit("install_job", snapshot);
+            event_state.send(crate::event::AppEvent::InstallJob(
+                std::sync::Arc::new(snapshot.clone()),
+            ))?;
             Ok(())
         })();
         if let Err(error) = result {

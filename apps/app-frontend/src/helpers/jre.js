@@ -8,8 +8,8 @@ import { invoke } from '@tauri-apps/api/core'
 /*
 
 JavaVersion {
-	path: Path
-	version: String
+    path: Path
+    version: String
 }
 
 */
@@ -38,7 +38,6 @@ export async function get_jre(path) {
 // Tests JRE version by running 'java -version' on it.
 // Returns true if the version is valid, and matches given (after extraction)
 export async function test_jre(path, majorVersion) {
-	if (!path) return false
 	return await invoke('plugin:jre|jre_test_jre', { path, majorVersion })
 }
 

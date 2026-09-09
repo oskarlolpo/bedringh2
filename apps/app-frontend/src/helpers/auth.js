@@ -81,3 +81,13 @@ export async function offline_login(name) {
 export async function klauncher_login(name, password) {
 	return await invoke('plugin:auth|klauncher_login', { name, password: password || null })
 }
+
+/**
+ * Authenticates via TLauncher account or TLauncher offline mode
+ * @param {string} name
+ * @param {string} [password]
+ */
+export async function tlauncher_login(name, password) {
+	return await invoke('plugin:auth|tlauncher_login', { name, password: password || null })
+}
+

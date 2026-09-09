@@ -5,7 +5,7 @@
  */
 import type { Labrinth } from '@modrinth/api-client'
 import type { ContentItem, ContentOwner } from '@modrinth/ui'
-import { invoke } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 
 import type { InstallJobSnapshot, SharedInstanceUpdateDiff } from './install'
 import type {
@@ -13,9 +13,16 @@ import type {
 	ContentFile,
 	ContentFileProjectType,
 	GameInstance,
+	InstanceIconConfig,
 	InstanceLoader,
 	SharedInstanceAttachment,
 } from './types'
+
+export function getInstanceIconUrl(iconPath: string | null | undefined): string | null {
+	if (!iconPath) return null
+	if (iconPath.startsWith('http://') || iconPath.startsWith('https://')) return iconPath
+	return convertFileSrc(iconPath)
+}
 
 export async function remove(instanceId: string): Promise<void> {
 	return await invoke('plugin:instance|instance_remove', { instanceId })
@@ -74,13 +81,21 @@ export async function get_content_items(
 	instanceId: string,
 	cacheBehaviour?: CacheBehaviour,
 ): Promise<ContentItem[]> {
-	return await invoke('plugin:instance|instance_get_content_items', { instanceId, cacheBehaviour })
+	const items = await invoke<ContentItem[]>('plugin:instance|instance_get_content_items', {
+		instanceId,
+		cacheBehaviour,
+	})
+	return adaptContentItems(items)
+}
+
+export async function refresh_content_updates(instanceId: string): Promise<void> {
+	return await invoke('plugin:instance|instance_refresh_content_updates', { instanceId })
 }
 
 // Linked modpack info returned from backend
 export interface LinkedModpackInfo {
 	project: Labrinth.Projects.v2.Project
-	version: Labrinth.Versions.v2.Version
+	version: Labrinth.Versions.v2.Version | null
 	owner: ContentOwner | null
 	has_update: boolean
 	update_version_id: string | null
@@ -107,10 +122,11 @@ export async function get_linked_modpack_content(
 	instanceId: string,
 	cacheBehaviour?: CacheBehaviour,
 ): Promise<ContentItem[]> {
-	return await invoke('plugin:instance|instance_get_linked_modpack_content', {
+	const items = await invoke<ContentItem[]>('plugin:instance|instance_get_linked_modpack_content', {
 		instanceId,
 		cacheBehaviour,
 	})
+	return adaptContentItems(items)
 }
 
 // Convert a list of dependencies into ContentItems with rich metadata
@@ -118,9 +134,28 @@ export async function get_dependencies_as_content_items(
 	dependencies: Labrinth.Versions.v3.Dependency[],
 	cacheBehaviour?: CacheBehaviour,
 ): Promise<ContentItem[]> {
-	return await invoke('plugin:instance|instance_get_dependencies_as_content_items', {
-		dependencies,
-		cacheBehaviour,
+	const items = await invoke<ContentItem[]>(
+		'plugin:instance|instance_get_dependencies_as_content_items',
+		{
+			dependencies,
+			cacheBehaviour,
+		},
+	)
+	return adaptContentItems(items)
+}
+
+function adaptContentItems(items: ContentItem[]): ContentItem[] {
+	return items.map((item) => {
+		const embeddedMetadata = item.embedded_metadata
+		if (!embeddedMetadata?.icon_path) return item
+
+		return {
+			...item,
+			embedded_metadata: {
+				...embeddedMetadata,
+				icon_url: convertFileSrc(embeddedMetadata.icon_path),
+			},
+		}
 	})
 }
 
@@ -130,6 +165,221 @@ export async function get_full_path(instanceId: string): Promise<string> {
 
 export async function get_mod_full_path(instanceId: string, projectPath: string): Promise<string> {
 	return await invoke('plugin:instance|instance_get_mod_full_path', { instanceId, projectPath })
+}
+
+export type ScreenshotKey = {
+	instance_id: string
+	file_name: string
+}
+
+export type InstanceScreenshot = ScreenshotKey & {
+	id: string
+	instance_name: string
+	created_at: string
+	modified_at: number
+	group_id?: string | null
+	path: string
+	url: string
+}
+
+export type ScreenshotGroup = {
+	id: string
+	name: string
+}
+
+export type ScreenshotGroupMembershipUpdate = {
+	screenshot_id: string
+	group_id?: string | null
+}
+
+export type ScreenshotGroupImport = ScreenshotGroup & {
+	screenshot_ids: string[]
+}
+
+export async function list_instance_screenshots(instanceId: string): Promise<InstanceScreenshot[]> {
+	return await invoke('plugin:instance|instance_list_screenshots', { instanceId })
+}
+
+export async function list_all_screenshots(): Promise<InstanceScreenshot[]> {
+	return await invoke('plugin:instance|instance_list_all_screenshots')
+}
+
+export async function list_synced_screenshots(): Promise<InstanceScreenshot[]> {
+	return await invoke('plugin:instance|instance_list_synced_screenshots')
+}
+
+export async function save_edited_screenshot(
+	key: ScreenshotKey,
+	pngBytes: Uint8Array,
+	mode: 'create_copy' | 'replace_edit',
+): Promise<InstanceScreenshot> {
+	return await invoke('plugin:instance|instance_save_edited_screenshot', {
+		key,
+		pngBytes: Array.from(pngBytes),
+		mode,
+	})
+}
+
+export async function list_screenshot_groups(): Promise<ScreenshotGroup[]> {
+	return await invoke('plugin:instance|instance_list_screenshot_groups')
+}
+
+export async function create_screenshot_group(
+	name: string,
+	screenshotIds: string[],
+): Promise<ScreenshotGroup> {
+	return await invoke('plugin:instance|instance_create_screenshot_group', {
+		name,
+		screenshotIds,
+	})
+}
+
+export async function rename_screenshot_group(
+	id: string,
+	newName: string,
+): Promise<ScreenshotGroup> {
+	return await invoke('plugin:instance|instance_rename_screenshot_group', { id, newName })
+}
+
+export async function delete_screenshot_group(id: string): Promise<void> {
+	return await invoke('plugin:instance|instance_delete_screenshot_group', { id })
+}
+
+export async function set_screenshot_group_memberships(
+	updates: ScreenshotGroupMembershipUpdate[],
+): Promise<void> {
+	return await invoke('plugin:instance|instance_set_screenshot_group_memberships', { updates })
+}
+
+export async function import_screenshot_groups(groups: ScreenshotGroupImport[]): Promise<void> {
+	return await invoke('plugin:instance|instance_import_screenshot_groups', { groups })
+}
+
+export async function delete_screenshots(keys: ScreenshotKey[]): Promise<void> {
+	return await invoke('plugin:instance|instance_delete_screenshots', { keys })
+}
+
+export async function export_screenshots(keys: ScreenshotKey[], exportPath: string): Promise<void> {
+	return await invoke('plugin:instance|instance_export_screenshots', { keys, exportPath })
+}
+
+export async function move_screenshots(
+	keys: ScreenshotKey[],
+	targetInstanceId: string,
+): Promise<ScreenshotKey[]> {
+	return await invoke('plugin:instance|instance_move_screenshots', { keys, targetInstanceId })
+}
+
+export async function open_screenshot(key: ScreenshotKey): Promise<void> {
+	return await invoke('plugin:instance|instance_open_screenshot', { key })
+}
+
+export async function set_synced_option(
+	instanceId: string,
+	option: SyncedOption,
+	enabled: boolean,
+	resolution?: SyncedOptionJoinResolution,
+): Promise<GameInstance> {
+	return await invoke('plugin:instance|instance_set_synced_option', {
+		instanceId,
+		option,
+		enabled,
+		resolution,
+	})
+}
+
+export type SyncedOption =
+	| 'command_history'
+	| 'multiplayer_servers'
+	| 'creative_hotbars'
+	| 'screenshots'
+
+export type GlobalSyncedOptions = Record<SyncedOption, boolean>
+
+export type SyncedOptionJoinAction = 'seed_shared' | 'attach' | 'merge' | 'requires_resolution'
+
+export type SyncedOptionJoinResolution = 'use_synced' | 'use_instance'
+
+export type SyncedOptionJoinPreview = {
+	action: SyncedOptionJoinAction
+}
+
+export type SyncedOptionCapability = {
+	option: SyncedOption
+	supported: boolean
+	disabled_reason?: string | null
+}
+
+export type SyncedOptionsOverview = {
+	global_options: GlobalSyncedOptions
+	capabilities: SyncedOptionCapability[]
+}
+
+export async function get_synced_option_join_preview(
+	instanceId: string,
+	option: SyncedOption,
+): Promise<SyncedOptionJoinPreview> {
+	return await invoke('plugin:instance|instance_get_synced_option_join_preview', {
+		instanceId,
+		option,
+	})
+}
+
+export async function get_synced_options_overview(
+	instanceId: string,
+): Promise<SyncedOptionsOverview> {
+	return await invoke('plugin:instance|instance_get_synced_options_overview', { instanceId })
+}
+
+export async function get_global_synced_options(): Promise<GlobalSyncedOptions> {
+	return await invoke('plugin:instance|instance_get_global_synced_options')
+}
+
+export async function set_global_synced_option(
+	option: SyncedOption,
+	enabled: boolean,
+	baseInstanceId?: string,
+): Promise<GlobalSyncedOptions> {
+	return await invoke('plugin:instance|instance_set_global_synced_option', {
+		option,
+		enabled,
+		baseInstanceId,
+	})
+}
+
+export async function get_command_history(): Promise<string> {
+	return await invoke('plugin:instance|instance_get_command_history')
+}
+
+export async function set_command_history(contents: string): Promise<string> {
+	return await invoke('plugin:instance|instance_set_command_history', { contents })
+}
+
+export async function open_synced_options_folder(): Promise<void> {
+	return await invoke('plugin:instance|instance_open_synced_options_folder')
+}
+
+export type SyncedServer = {
+	id: string
+	name: string
+	address: string
+	accept_textures?: boolean | null
+}
+
+export async function list_synced_servers(): Promise<SyncedServer[]> {
+	return await invoke('plugin:instance|instance_list_synced_servers')
+}
+
+export async function update_synced_server(server: SyncedServer): Promise<void> {
+	return await invoke('plugin:instance|instance_update_synced_server', { server })
+}
+
+export async function remove_synced_server(serverId: string): Promise<void> {
+	return await invoke('plugin:instance|instance_remove_synced_server', { serverId })
+}
+
+export async function rebuild_synced_options(instanceId?: string): Promise<void> {
+	return await invoke('plugin:instance|instance_rebuild_synced_options', { instanceId })
 }
 
 export interface JavaVersion {
@@ -260,6 +510,18 @@ export async function toggle_disable_project(
 	})
 }
 
+export async function set_project_locked(
+	instanceId: string,
+	projectPath: string,
+	locked: boolean,
+): Promise<void> {
+	return await invoke('plugin:instance|instance_set_project_locked', {
+		instanceId,
+		projectPath,
+		locked,
+	})
+}
+
 // Remove a project
 export async function remove_project(instanceId: string, projectPath: string): Promise<void> {
 	return await invoke('plugin:instance|instance_remove_project', { instanceId, projectPath })
@@ -282,12 +544,13 @@ export async function update_repair_modrinth(instanceId: string): Promise<Instal
 }
 
 // Export an instance to .mrpack
-// included_overrides is an array of paths to override folders to include (ie: 'mods', 'resource_packs')
+// included_overrides and excluded_overrides are inherited path rules for files in the export.
 // Version id is optional (ie: 1.1.5)
 export async function export_instance_mrpack(
 	instanceId: string,
 	exportLocation: string,
 	includedOverrides: string[],
+	excludedOverrides: string[],
 	versionId?: string,
 	description?: string,
 	name?: string,
@@ -296,22 +559,33 @@ export async function export_instance_mrpack(
 		instanceId,
 		exportLocation,
 		includedOverrides,
+		excludedOverrides,
 		versionId,
 		description,
 		name,
 	})
 }
 
-// Given a folder path, populate an array of all the subfolders
-// Intended to be used for finding potential override folders
-// profile
-// -- mods
-// -- resourcepacks
-// -- file1
-// => [mods, resourcepacks]
-// allows selection for 'included_overrides' in export_instance_mrpack
-export async function get_pack_export_candidates(instanceId: string): Promise<string[]> {
-	return await invoke('plugin:instance|instance_get_pack_export_candidates', { instanceId })
+export type PackExportCandidate = {
+	path: string
+	type: 'directory' | 'file'
+	size?: number
+	modified?: number
+	count?: number
+	disabled: boolean
+	defaultSelected: boolean
+}
+
+// Given a folder path, populate an array of exportable direct children.
+// Allows selection for 'included_overrides' in export_instance_mrpack.
+export async function get_pack_export_candidates(
+	instanceId: string,
+	parent?: string,
+): Promise<PackExportCandidate[]> {
+	return await invoke('plugin:instance|instance_get_pack_export_candidates', {
+		instanceId,
+		parent: parent ?? null,
+	})
 }
 
 // Run Minecraft using an instance
@@ -335,6 +609,48 @@ export async function edit(instanceId: string, editInstance: Partial<GameInstanc
 // Edits an instance's icon
 export async function edit_icon(instanceId: string, iconPath: string | null): Promise<void> {
 	return await invoke('plugin:instance|instance_edit_icon', { instanceId, iconPath })
+}
+
+export async function edit_generated_icon(
+	instanceId: string,
+	config: InstanceIconConfig,
+	symbolBytes: number[],
+): Promise<string> {
+	return await invoke('plugin:instance|instance_edit_generated_icon', {
+		instanceId,
+		config,
+		symbolBytes,
+	})
+}
+
+export async function edit_generated_icon_if_empty(
+	instanceId: string,
+	config: InstanceIconConfig,
+	symbolBytes: number[],
+): Promise<boolean> {
+	const result = await invoke<string | null>('plugin:instance|instance_edit_generated_icon', {
+		instanceId,
+		config,
+		symbolBytes,
+		onlyIfEmpty: true,
+	})
+	return result !== null
+}
+
+export async function cache_generated_icon(
+	config: InstanceIconConfig,
+	symbolBytes: number[],
+	addToRecents = false,
+): Promise<string> {
+	return await invoke('plugin:instance|instance_cache_generated_icon', {
+		config,
+		symbolBytes,
+		addToRecents,
+	})
+}
+
+export async function get_recent_icon_configs(): Promise<InstanceIconConfig[]> {
+	return await invoke('plugin:instance|instance_get_recent_icon_configs')
 }
 
 export type SharedInstanceUsers = {
@@ -446,3 +762,60 @@ export async function unlink_shared_instance(instanceId: string): Promise<void> 
 export async function unpublish_shared_instance(instanceId: string): Promise<void> {
 	return await invoke('plugin:instance|instance_share_unpublish', { instanceId })
 }
+
+export type DedupReport = {
+	scanned_files: number
+	duplicate_files: number
+	hardlinks_created: number
+	bytes_saved: number
+}
+
+export async function deduplicate_mods(instanceId?: string): Promise<DedupReport> {
+	return await invoke('plugin:files|file_deduplicate_mods', {
+		instanceId: instanceId ?? null,
+	})
+}
+
+export type CrashAnalysisResult = {
+	has_crash: boolean
+	title: string
+	description: string
+	cause: string
+	fix_action_type?: string | null
+	fix_action_label?: string | null
+	fix_target?: string | null
+}
+
+export async function analyze_instance_crash(instanceId: string): Promise<CrashAnalysisResult> {
+	return await invoke('plugin:instance|instance_analyze_crash', { instanceId })
+}
+
+export async function apply_crash_fix(
+	instanceId: string,
+	actionType: string,
+	target?: string,
+): Promise<string> {
+	return await invoke('plugin:instance|instance_apply_crash_fix', {
+		instanceId,
+		actionType,
+		target: target ?? null,
+	})
+}
+
+export type ScannedJarMetadata = {
+	file_name: string
+	mod_id?: string | null
+	name: string
+	version?: string | null
+	description?: string | null
+	icon_data_url?: string | null
+	curseforge_fingerprint: number
+}
+
+export async function scan_instance_local_mods(
+	instanceId: string,
+): Promise<ScannedJarMetadata[]> {
+	return await invoke('plugin:instance|instance_scan_local_mods', { instanceId })
+}
+
+

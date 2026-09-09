@@ -31,10 +31,14 @@ import {
 import { get_full_path } from '@/helpers/instance'
 import type { GameInstance } from '@/helpers/types'
 import { highlightInFolder } from '@/helpers/utils.js'
+import { injectInstancePage } from './instance-context'
 
 const props = defineProps<{
-	instance: GameInstance
+	instance?: GameInstance
 }>()
+
+const instancePage = injectInstancePage()
+const instance = computed(() => props.instance || instancePage?.instance.value)
 
 const { formatMessage } = useVIntl()
 const { handleError, addNotification } = injectNotificationManager()
@@ -73,14 +77,16 @@ const loading = ref(true)
 const rawAddons = ref<BedrockAddon[]>([])
 
 async function fetchAddons(showSpinner = true) {
-	if (!props.instance?.path) return
+	if (!instance.value?.path) return
 	try {
 		if (showSpinner) loading.value = true
-		const list = await invoke<BedrockAddon[]>('plugin:bedrock-addons|list_bedrock_addons', {
-			profilePath: props.instance.path,
-		})
+		const list = await invoke<BedrockAddon[]>('plugin:bedrock-addons|check_bedrock_addon_updates', {
+			profilePath: instance.value.path,
+		}).catch(() => invoke<BedrockAddon[]>('plugin:bedrock-addons|list_bedrock_addons', {
+			profilePath: instance.value!.path,
+		}))
 		rawAddons.value = list || []
-		autoResolveAddonMetadata(props.instance.path, rawAddons.value)
+		autoResolveAddonMetadata(instance.value.path, rawAddons.value)
 	} catch (e) {
 		console.error('Failed to list bedrock addons:', e)
 		handleError(e as Error)
@@ -90,7 +96,7 @@ async function fetchAddons(showSpinner = true) {
 }
 
 watch(
-	() => props.instance?.path,
+	() => instance.value?.path,
 	(newPath) => {
 		if (newPath) fetchAddons(true)
 	},
@@ -104,7 +110,7 @@ onMounted(() => {
 const contentItems = computed<ContentItem[]>(() => {
 	// Access metadataVersion to ensure reactivity when background metadata resolution completes
 	const _v = metadataVersion.value
-	const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
+	const metaMap = instance.value?.path ? loadBedrockMetadataMap(instance.value.path) : {}
 
 	return rawAddons.value.map((addon) => {
 		const cleanTitle = addon.name.replace(/§[0-9a-fk-or]/gi, '').trim()
@@ -198,7 +204,7 @@ async function installFromFile() {
 		const path = (file as { path?: string }).path ?? file
 		try {
 			await invoke('plugin:bedrock-addons|install_bedrock_addon_from_file', {
-				profilePath: props.instance.path,
+				profilePath: instance.value?.path,
 				archivePath: path,
 			})
 			count++
@@ -217,10 +223,10 @@ async function installFromFile() {
 }
 
 function handleBrowseContent() {
-	if (!props.instance) return
+	if (!instance.value) return
 	router.push({
 		path: '/browse/bedrock/addon',
-		query: { i: props.instance.path },
+		query: { i: instance.value.id || instance.value.path },
 	})
 }
 
@@ -236,11 +242,11 @@ function kindToDir(kind: string | undefined): string {
 }
 
 async function showAddonInFolder(item: ContentItem) {
-	if (!props.instance?.path) return
+	if (!instance.value?.path) return
 	try {
 		const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
 		const kindDir = kindToDir(rawAddon?.kind)
-		const instanceFullPath = await get_full_path(props.instance.path)
+		const instanceFullPath = await get_full_path(instance.value.path)
 		const sep = instanceFullPath.includes('\\') ? '\\' : '/'
 		const addonPath = [instanceFullPath, 'com.mojang', kindDir, item.file_name].join(sep)
 		await highlightInFolder(addonPath)
@@ -258,7 +264,7 @@ function getOverflowOptions(item: ContentItem): OverflowMenuOption[] {
 		action: () => showAddonInFolder(item),
 	})
 
-	const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
+	const metaMap = instance.value?.path ? loadBedrockMetadataMap(instance.value.path) : {}
 	const cleanKey = (item.project?.title || item.file_name).replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()
 	const meta = metaMap[cleanKey] || metaMap[item.file_name.toLowerCase()]
 	const projectUrl = meta?.projectUrl
@@ -276,11 +282,40 @@ function getOverflowOptions(item: ContentItem): OverflowMenuOption[] {
 	return options
 }
 
+async function updateBedrockAddon(item: ContentItem) {
+	if (!instance.value?.path) return
+	const rawAddon = rawAddons.value.find((a) => a.folder_name === item.file_name)
+	const projectId = rawAddon?.curseforge_mod_id ? String(rawAddon.curseforge_mod_id) : (item.project?.id || item.id)
+	try {
+		await invoke('plugin:bedrock-addons|update_bedrock_addon', {
+			profilePath: instance.value.path,
+			projectId,
+			targetFileId: null,
+		})
+		addNotification({
+			type: 'success',
+			title: 'Обновление завершено',
+			text: `${item.project?.title || item.file_name} успешно обновлен`,
+		})
+		await fetchAddons(false)
+	} catch (e) {
+		handleError(e as Error)
+	}
+}
+
+async function bulkUpdateAllBedrock() {
+	if (!instance.value?.path) return
+	const updatables = contentItems.value.filter((i) => i.has_update)
+	for (const item of updatables) {
+		await updateBedrockAddon(item)
+	}
+}
+
 provideContentManager({
 	items: contentItems,
 	loading,
 	error: ref(null),
-	modpack: ref(null),
+	managedContent: ref(null),
 	isPackLocked: ref(false),
 	isBusy: ref(false),
 	isBulkOperating: ref(false),
@@ -290,11 +325,17 @@ provideContentManager({
 	refresh: () => fetchAddons(true),
 	browse: handleBrowseContent,
 	uploadFiles: installFromFile,
-	hasUpdateSupport: false,
+	hasUpdateSupport: true,
+	updateItem: async (id: string) => {
+		const item = contentItems.value.find((i) => i.id === id)
+		if (item) await updateBedrockAddon(item)
+	},
+	bulkUpdateItem: updateBedrockAddon,
+	bulkUpdateAll: bulkUpdateAllBedrock,
 	getOverflowOptions,
 	mapToTableItem: (item: ContentItem): ContentCardTableItem => {
 		const targetId = item.project?.id || item.id
-		const metaMap = props.instance?.path ? loadBedrockMetadataMap(props.instance.path) : {}
+		const metaMap = instance.value?.path ? loadBedrockMetadataMap(instance.value.path) : {}
 		const cleanKey = (item.project?.title || item.file_name).replace(/§[0-9a-fk-or]/gi, '').trim().toLowerCase()
 		const meta = metaMap[cleanKey] || metaMap[item.file_name.toLowerCase()]
 		const memberLink = meta?.projectUrl || (item.owner?.name ? `https://www.curseforge.com/members/${encodeURIComponent(item.owner.name)}` : undefined)
@@ -304,7 +345,7 @@ provideContentManager({
 			project: item.project ?? { id: item.id, slug: item.id, title: item.file_name, icon_url: undefined },
 			projectLink: {
 				path: `/project/${encodeURIComponent(targetId)}`,
-				query: { i: props.instance.path },
+				query: { i: instance.value?.path },
 			},
 			version: item.version,
 			enabled: item.enabled,

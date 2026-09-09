@@ -1620,19 +1620,37 @@
     "message": "Your 2FA code here..."
   },
   "astralrinth.app.minecraft-account.input.klauncher.header": {
-    "message": "Авторизация KLauncher"
+    "message": "KLauncher Authorization"
   },
   "astralrinth.app.minecraft-account.input.klauncher.login.label": {
-    "message": "Никнейм или Логин"
+    "message": "Username or Login"
   },
   "astralrinth.app.minecraft-account.input.klauncher.login.placeholder": {
-    "message": "Ваш никнейм в KLauncher..."
+    "message": "Your KLauncher username..."
   },
   "astralrinth.app.minecraft-account.input.klauncher.password.label": {
-    "message": "Пароль (необязательно для офлайн-режима)"
+    "message": "Password (optional for offline mode)"
   },
   "astralrinth.app.minecraft-account.input.klauncher.password.placeholder": {
-    "message": "Пароль от аккаунта KLauncher..."
+    "message": "KLauncher account password..."
+  },
+  "astralrinth.app.minecraft-account.input.tlauncher.header": {
+    "message": "TLauncher Authorization"
+  },
+  "astralrinth.app.minecraft-account.input.tlauncher.login.label": {
+    "message": "Username or Email"
+  },
+  "astralrinth.app.minecraft-account.input.tlauncher.login.placeholder": {
+    "message": "Your TLauncher username or email..."
+  },
+  "astralrinth.app.minecraft-account.input.tlauncher.password.label": {
+    "message": "Password (optional for offline mode)"
+  },
+  "astralrinth.app.minecraft-account.input.tlauncher.password.placeholder": {
+    "message": "TLauncher account password..."
+  },
+  "minecraft-account.sign-in-tlauncher": {
+    "message": "Sign in with TLauncher"
   },
   "astralrinth.app.minecraft-account.input.login-action": {
     "message": "Login"

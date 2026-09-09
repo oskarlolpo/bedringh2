@@ -1,183 +1,196 @@
 <script setup lang="ts">
-import { Combobox, defineMessages, ThemeSelector, Toggle, useVIntl } from '@modrinth/ui'
-import { computed, ref, watch } from 'vue'
+import {
+	AppearanceSettingsLayout,
+	Combobox,
+	injectAuth,
+	injectUserPreferences,
+	provideAppearanceSettings,
+	useSavable,
+} from '@modrinth/ui'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import { get, set } from '@/helpers/settings.ts'
+import { type ColorTheme, isDarkTheme, useTheme } from '@/composables/use-theme.ts'
+import { type AppSettings, get, set } from '@/helpers/settings.ts'
 import { getOS } from '@/helpers/utils'
-import { useTheming } from '@/store/state'
-import type { ColorTheme } from '@/store/theme.ts'
+import { appSettingsModalContextKey } from '@/providers/app-settings-modal'
 
-const themeStore = useTheming()
-const { formatMessage } = useVIntl()
-
-const messages = defineMessages({
-	colorThemeTitle: {
-		id: 'app.appearance-settings.color-theme.title',
-		defaultMessage: 'Color theme',
-	},
-	colorThemeDescription: {
-		id: 'app.appearance-settings.color-theme.description',
-		defaultMessage: 'Choose the color theme used by Modrinth App.',
-	},
-	accentColorTitle: {
-		id: 'app.appearance-settings.accent-color.title',
-		defaultMessage: 'Accent Color',
-	},
-	accentColorDescription: {
-		id: 'app.appearance-settings.accent-color.description',
-		defaultMessage: 'Select your preferred accent color for the UI.',
-	},
-	accentColorGreen: {
-		id: 'app.appearance-settings.accent-color.green',
-		defaultMessage: 'Green',
-	},
-	accentColorPurple: {
-		id: 'app.appearance-settings.accent-color.purple',
-		defaultMessage: 'Purple',
-	},
-	accentColorBlue: {
-		id: 'app.appearance-settings.accent-color.blue',
-		defaultMessage: 'Blue',
-	},
-	accentColorRed: {
-		id: 'app.appearance-settings.accent-color.red',
-		defaultMessage: 'Red',
-	},
-	accentColorOrange: {
-		id: 'app.appearance-settings.accent-color.orange',
-		defaultMessage: 'Orange',
-	},
-	accentColorPink: {
-		id: 'app.appearance-settings.accent-color.pink',
-		defaultMessage: 'Pink',
-	},
-	accentColorTeal: {
-		id: 'app.appearance-settings.accent-color.teal',
-		defaultMessage: 'Teal',
-	},
-	accentColorCyan: {
-		id: 'app.appearance-settings.accent-color.cyan',
-		defaultMessage: 'Cyan',
-	},
-	accentColorYellow: {
-		id: 'app.appearance-settings.accent-color.yellow',
-		defaultMessage: 'Yellow',
-	},
-	advancedRenderingTitle: {
-		id: 'app.appearance-settings.advanced-rendering.title',
-		defaultMessage: 'Advanced rendering',
-	},
-	advancedRenderingDescription: {
-		id: 'app.appearance-settings.advanced-rendering.description',
-		defaultMessage:
-			'Enable visual effects such as background blur. This may reduce performance without hardware acceleration.',
-	},
-	nativeDecorationsTitle: {
-		id: 'app.appearance-settings.native-decorations.title',
-		defaultMessage: 'System window frame',
-	},
-	nativeDecorationsDescription: {
-		id: 'app.appearance-settings.native-decorations.description',
-		defaultMessage:
-			"Use your operating system's title bar and window controls. Requires an app restart.",
-	},
-	chibiTitle: {
-		id: 'app.appearance-settings.chibi.title',
-		defaultMessage: 'Chibi character',
-	},
-	chibiDescription: {
-		id: 'app.appearance-settings.chibi.description',
-		defaultMessage:
-			'Display a chibi character sitting in the launcher sidebar using your active skin.',
-	},
-})
-
-const os = ref(await getOS())
+const theme = useTheme()
+const auth = injectAuth()
+const { updatePreferences } = injectUserPreferences()
+const settingsModal = inject(appSettingsModalContextKey, null)
+const os = await getOS()
 const settings = ref(await get())
-if (settings.value.chibi_enabled !== undefined) {
-	themeStore.chibiEnabled = settings.value.chibi_enabled
+
+type AppearanceSettingsState = {
+	theme: ColorTheme
+	syncAcrossDevices: boolean
+	advancedRendering: boolean
+	nativeDecorations: boolean
 }
-const themeOptions = computed(() =>
-	themeStore
-		.getThemeOptions()
-		.filter((theme) => theme !== 'retro' || themeStore.devMode || settings.value.theme === 'retro'),
+
+function getAppearanceSettingsState(settings: AppSettings): AppearanceSettingsState {
+	return {
+		theme: settings.theme,
+		syncAcrossDevices: settings.sync_theme_across_devices,
+		advancedRendering: settings.advanced_rendering,
+		nativeDecorations: settings.native_decorations,
+	}
+}
+
+const { saved, current, changes, saving, hasChanges, reset, save } = useSavable(
+	() => getAppearanceSettingsState(settings.value),
+	async (appearanceChanges) => {
+		const value = current.value
+		if (
+			value.syncAcrossDevices &&
+			auth.user.value &&
+			(appearanceChanges.theme !== undefined || appearanceChanges.syncAcrossDevices !== undefined)
+		) {
+			await updatePreferences({
+				appearance: value.theme === 'system' ? { auto: true } : { auto: false, theme: value.theme },
+			})
+		}
+
+		const nextSettings: AppSettings = {
+			...settings.value,
+			theme: value.theme,
+			sync_theme_across_devices: value.syncAcrossDevices,
+			advanced_rendering: value.advancedRendering,
+			native_decorations: value.nativeDecorations,
+		}
+
+		await set(nextSettings)
+		settings.value = nextSettings
+		if (isDarkTheme(value.theme)) {
+			theme.preferredDark = value.theme
+		}
+		theme.preferred = value.theme
+		theme.syncAcrossDevices = value.syncAcrossDevices
+		theme.advancedRendering = value.advancedRendering
+	},
 )
 
-const ACCENT_COLORS = [
-	'green',
-	'purple',
-	'blue',
-	'red',
-	'orange',
-	'pink',
-	'teal',
-	'cyan',
-	'yellow',
-] as const
+const themeOptions = computed(() =>
+	theme.options.filter(
+		(option) =>
+			option !== 'retro' || settings.value.developer_mode || current.value.theme === 'retro',
+	),
+)
 
-function applyAccentColor(color: string) {
-	const html = document.documentElement
-	html.style.removeProperty('--brand-h')
-	for (const c of ACCENT_COLORS) {
-		html.classList.remove(`theme-${c}`)
-	}
-	html.classList.add(`theme-${color}`)
-	window?.localStorage?.setItem('accent_color', color)
+const preferredDarkTheme = computed(() =>
+	isDarkTheme(current.value.theme) ? current.value.theme : theme.preferredDark,
+)
+
+function setTheme(value: ColorTheme): void {
+	current.value.theme = value
 }
 
-const accentColor = ref(window?.localStorage?.getItem('accent_color') || 'green')
-applyAccentColor(accentColor.value)
+function setSyncAcrossDevices(enabled: boolean): void {
+	current.value.syncAcrossDevices = enabled
+}
 
-const accentColorOptions = computed(() => [
-	{ value: 'green', label: formatMessage(messages.accentColorGreen) },
-	{ value: 'purple', label: formatMessage(messages.accentColorPurple) },
-	{ value: 'blue', label: formatMessage(messages.accentColorBlue) },
-	{ value: 'red', label: formatMessage(messages.accentColorRed) },
-	{ value: 'orange', label: formatMessage(messages.accentColorOrange) },
-	{ value: 'pink', label: formatMessage(messages.accentColorPink) },
-	{ value: 'teal', label: formatMessage(messages.accentColorTeal) },
-	{ value: 'cyan', label: formatMessage(messages.accentColorCyan) },
-	{ value: 'yellow', label: formatMessage(messages.accentColorYellow) },
-])
+function setAdvancedRendering(enabled: boolean): void {
+	current.value.advancedRendering = enabled
+}
 
-const accentColorLabel = computed(() => {
-	const opt = accentColorOptions.value.find((o) => o.value === accentColor.value)
-	return opt?.label ?? accentColor.value
-})
+function setNativeDecorations(enabled: boolean): void {
+	current.value.nativeDecorations = enabled
+}
 
 watch(
-	settings,
-	async () => {
-		await set(settings.value)
+	[() => current.value.theme, () => saved.value.theme],
+	([selectedTheme, savedTheme]) => {
+		theme.preview = selectedTheme === savedTheme ? null : selectedTheme
 	},
-	{ deep: true },
+	{ immediate: true },
 )
+
+async function saveAppearanceSettings(): Promise<void> {
+	try {
+		await save()
+	} catch {
+		return
+	}
+}
+
+onMounted(() => {
+	settingsModal?.registerUnsavedChangesController({
+		hasChanges: () => hasChanges.value,
+		getOriginal: () => saved.value,
+		getModified: () => changes.value,
+		isSaving: () => saving.value,
+		reset,
+		save: saveAppearanceSettings,
+	})
+})
+
+onBeforeUnmount(() => {
+	theme.preview = null
+	settingsModal?.registerUnsavedChangesController(null)
+})
+
+provideAppearanceSettings({
+	deferPersistence: true,
+	theme: {
+		current: computed(() => current.value.theme),
+		options: themeOptions,
+		system: computed(() => (theme.native === 'light' ? 'light' : preferredDarkTheme.value)),
+		preferredDark: preferredDarkTheme,
+		set: setTheme,
+		syncAcrossDevices: {
+			value: computed(() => current.value.syncAcrossDevices),
+			set: setSyncAcrossDevices,
+		},
+		syncDisabled: computed(() => !auth.user.value),
+	},
+	advancedRendering: {
+		value: computed(() => current.value.advancedRendering),
+		set: setAdvancedRendering,
+	},
+	nativeDecorations:
+		os !== 'MacOS'
+			? {
+					value: computed(() => current.value.nativeDecorations),
+					set: setNativeDecorations,
+				}
+			: undefined,
+	updatePreferences,
+})
+
+const accentColor = ref(localStorage.getItem('accent_color') || 'green')
+
+const accentColorOptions = [
+	{ value: 'green', label: 'Green' },
+	{ value: 'purple', label: 'Purple' },
+	{ value: 'blue', label: 'Blue' },
+	{ value: 'red', label: 'Red' },
+	{ value: 'orange', label: 'Orange' },
+]
+
+const accentColorDisplay = computed(() => {
+	const opt = accentColorOptions.find((o) => o.value === accentColor.value)
+	return opt ? opt.label : 'Green'
+})
+
+function setAccentColor(val: string) {
+	accentColor.value = val
+	localStorage.setItem('accent_color', val)
+	document.documentElement.className = document.documentElement.className.replace(/theme-\w+/, 'theme-' + val)
+	if (!document.documentElement.className.includes('theme-' + val)) {
+		document.documentElement.classList.add('theme-' + val)
+	}
+}
 </script>
+
 <template>
-	<h2 class="m-0 text-lg font-semibold text-contrast">
-		{{ formatMessage(messages.colorThemeTitle) }}
-	</h2>
-
-	<p class="m-0 mt-1">{{ formatMessage(messages.colorThemeDescription) }}</p>
-
-	<ThemeSelector
-		:update-color-theme="
-			(theme: ColorTheme) => {
-				themeStore.setThemeState(theme)
-				settings.theme = theme
-			}
-		"
-		:current-theme="settings.theme"
-		:theme-options="themeOptions"
-		system-theme-color="system"
-	/>
+	<AppearanceSettingsLayout />
 
 	<div class="mt-6 flex items-center justify-between">
 		<div>
 			<h2 class="m-0 text-lg font-semibold text-contrast">
-				{{ formatMessage(messages.accentColorTitle) }}
+				Accent Color
 			</h2>
-			<p class="m-0 mt-1">{{ formatMessage(messages.accentColorDescription) }}</p>
+			<p class="m-0 mt-1 text-secondary">Select your preferred accent color for the UI.</p>
 		</div>
 		<Combobox
 			id="accent-color"
@@ -185,65 +198,8 @@ watch(
 			name="Accent color dropdown"
 			class="max-w-40"
 			:options="accentColorOptions"
-			:display-value="accentColorLabel"
-			@update:model-value="(val) => {
-				accentColor = val;
-				applyAccentColor(val);
-			}"
+			:display-value="accentColorDisplay"
+			@update:model-value="setAccentColor"
 		/>
-	</div>
-
-	<div class="mt-6 flex items-center justify-between">
-		<div>
-			<h2 class="m-0 text-lg font-semibold text-contrast">
-				{{ formatMessage(messages.advancedRenderingTitle) }}
-			</h2>
-			<p class="m-0 mt-1">
-				{{ formatMessage(messages.advancedRenderingDescription) }}
-			</p>
-		</div>
-
-		<Toggle
-			id="advanced-rendering"
-			:model-value="themeStore.advancedRendering"
-			@update:model-value="
-				(e) => {
-					themeStore.advancedRendering = !!e
-					settings.advanced_rendering = themeStore.advancedRendering
-				}
-			"
-		/>
-	</div>
-
-	<div class="mt-6 flex items-center justify-between">
-		<div>
-			<h2 class="m-0 text-lg font-semibold text-contrast">
-				{{ formatMessage(messages.chibiTitle) }}
-			</h2>
-			<p class="m-0 mt-1">
-				{{ formatMessage(messages.chibiDescription) }}
-			</p>
-		</div>
-
-		<Toggle
-			id="chibi-enabled"
-			:model-value="themeStore.chibiEnabled"
-			@update:model-value="
-				(e) => {
-					themeStore.chibiEnabled = !!e
-					settings.chibi_enabled = themeStore.chibiEnabled
-				}
-			"
-		/>
-	</div>
-
-	<div v-if="os !== 'MacOS'" class="mt-6 flex items-center justify-between gap-4">
-		<div>
-			<h2 class="m-0 text-lg font-semibold text-contrast">
-				{{ formatMessage(messages.nativeDecorationsTitle) }}
-			</h2>
-			<p class="m-0 mt-1">{{ formatMessage(messages.nativeDecorationsDescription) }}</p>
-		</div>
-		<Toggle id="native-decorations" v-model="settings.native_decorations" />
 	</div>
 </template>

@@ -269,7 +269,7 @@ export async function setupSkinModel(
 }> {
 	const [gltf, texture] = await Promise.all([loadModel(modelUrl), loadTexture(textureUrl, config)])
 
-	const model = gltf.scene.clone()
+	const model = gltf?.scene ? gltf.scene.clone() : new THREE.Group()
 	applyTexture(model, texture)
 
 	if (capeTextureUrl) {

@@ -1,4 +1,5 @@
 import type { Labrinth } from '@modrinth/api-client'
+import { capitalizeString } from '@modrinth/utils'
 
 import { defineMessage, defineMessages, type MessageDescriptor } from '../composables/i18n'
 
@@ -34,6 +35,10 @@ export const commonMessages = defineMessages({
 	allProjectType: {
 		id: 'project-type.all',
 		defaultMessage: 'All',
+	},
+	addAnotherButton: {
+		id: 'button.add-another',
+		defaultMessage: 'Add another',
 	},
 	addServerToInstanceButton: {
 		id: 'button.add-server-to-instance',
@@ -143,6 +148,10 @@ export const commonMessages = defineMessages({
 		id: 'notification.error.title',
 		defaultMessage: 'An error occurred',
 	},
+	explanationLabel: {
+		id: 'label.explanation',
+		defaultMessage: 'Explanation',
+	},
 	filterByLabel: {
 		id: 'label.filter-by',
 		defaultMessage: 'Filter by',
@@ -166,6 +175,10 @@ export const commonMessages = defineMessages({
 	gridInputView: {
 		id: 'input.view.grid',
 		defaultMessage: 'Grid view',
+	},
+	iUnderstandButton: {
+		id: 'button.i-understand',
+		defaultMessage: 'I understand',
 	},
 	listInputView: {
 		id: 'input.view.list',
@@ -577,6 +590,10 @@ export const commonMessages = defineMessages({
 		id: 'label.upload-failed',
 		defaultMessage: 'Upload failed',
 	},
+	uploadVersionsEmptyStateDescription: {
+		id: 'empty-state.upload-versions.description',
+		defaultMessage: `Come back once you've uploaded your versions.`,
+	},
 	renameFailedLabel: {
 		id: 'label.rename-failed',
 		defaultMessage: 'Rename failed',
@@ -811,10 +828,7 @@ export const financialMessages = defineMessages({
 
 const PROJECT_TYPE_ALIASES: Record<string, string> = {
 	shaderpack: 'shader',
-	skin: 'skinpack',
-	skinpack: 'skinpack',
-	'skin-pack': 'skinpack',
-	'skin-packs': 'skinpack',
+	minecraft_java_server: 'server',
 }
 
 export function normalizeProjectType(type: string): string {
@@ -824,10 +838,6 @@ export function normalizeProjectType(type: string): string {
 type FormatMessage = (descriptor: MessageDescriptor, values?: Record<string, unknown>) => string
 
 export const commonProjectTypeCategoryMessages = defineMessages({
-	addon: {
-		id: 'app.browse.project-type.addons',
-		defaultMessage: 'Add-ons',
-	},
 	datapack: {
 		id: 'project-type.datapack.category',
 		defaultMessage: 'Data Packs',
@@ -852,18 +862,6 @@ export const commonProjectTypeCategoryMessages = defineMessages({
 		id: 'project-type.shader.category',
 		defaultMessage: 'Shaders',
 	},
-	skinpack: {
-		id: 'app.bedrock.category.skin-packs',
-		defaultMessage: 'Skin Packs',
-	},
-	world: {
-		id: 'app.browse.project-type.worlds',
-		defaultMessage: 'Worlds',
-	},
-	script: {
-		id: 'app.browse.project-type.scripts',
-		defaultMessage: 'Scripts',
-	},
 	server: {
 		id: 'project-type.server.category',
 		defaultMessage: 'Servers',
@@ -875,10 +873,6 @@ export const commonProjectTypeCategoryMessages = defineMessages({
 })
 
 export const commonProjectTypeTitleMessages = defineMessages({
-	addon: {
-		id: 'app.browse.project-type.addons',
-		defaultMessage: '{count, plural, one {Add-on} other {Add-ons}}',
-	},
 	datapack: {
 		id: 'project-type.datapack.capital',
 		defaultMessage: '{count, plural, one {Data Pack} other {Data Packs}}',
@@ -903,18 +897,6 @@ export const commonProjectTypeTitleMessages = defineMessages({
 		id: 'project-type.shader.capital',
 		defaultMessage: '{count, plural, one {Shader} other {Shaders}}',
 	},
-	skinpack: {
-		id: 'app.bedrock.category.skin-packs',
-		defaultMessage: '{count, plural, one {Skin Pack} other {Skin Packs}}',
-	},
-	world: {
-		id: 'app.browse.project-type.worlds',
-		defaultMessage: '{count, plural, one {World} other {Worlds}}',
-	},
-	script: {
-		id: 'app.browse.project-type.scripts',
-		defaultMessage: '{count, plural, one {Script} other {Scripts}}',
-	},
 	server: {
 		id: 'project-type.server.capital',
 		defaultMessage: '{count, plural, one {Server} other {Servers}}',
@@ -926,10 +908,6 @@ export const commonProjectTypeTitleMessages = defineMessages({
 })
 
 export const commonProjectTypeSentenceMessages = defineMessages({
-	addon: {
-		id: 'app.browse.project-type.addons',
-		defaultMessage: '{count, plural, one {add-on} other {add-ons}}',
-	},
 	datapack: {
 		id: 'project-type.datapack.lowercase',
 		defaultMessage: '{count, plural, one {data pack} other {data packs}}',
@@ -953,18 +931,6 @@ export const commonProjectTypeSentenceMessages = defineMessages({
 	shader: {
 		id: 'project-type.shader.lowercase',
 		defaultMessage: '{count, plural, one {shader} other {shaders}}',
-	},
-	skinpack: {
-		id: 'app.bedrock.category.skin-packs',
-		defaultMessage: '{count, plural, one {skin pack} other {skin packs}}',
-	},
-	world: {
-		id: 'app.browse.project-type.worlds',
-		defaultMessage: '{count, plural, one {world} other {worlds}}',
-	},
-	script: {
-		id: 'app.browse.project-type.scripts',
-		defaultMessage: '{count, plural, one {script} other {scripts}}',
 	},
 	server: {
 		id: 'project-type.server.lowercase',
@@ -1059,6 +1025,51 @@ export function formatReportItemType(
 	return formatMessage(reportItemTypeMessages[key])
 }
 
+export const reportTypeMessages = defineMessages({
+	spam: {
+		id: 'report.type.spam',
+		defaultMessage: 'Spam',
+	},
+	copyright: {
+		id: 'report.type.copyright',
+		defaultMessage: 'Reuploaded work',
+	},
+	inappropriate: {
+		id: 'report.type.inappropriate',
+		defaultMessage: 'Inappropriate',
+	},
+	malicious: {
+		id: 'report.type.malicious',
+		defaultMessage: 'Malicious',
+	},
+	'name-squatting': {
+		id: 'report.type.name-squatting',
+		defaultMessage: 'Name squatting',
+	},
+	'missing-disclosure': {
+		id: 'report.type.missing-disclosure',
+		defaultMessage: 'Missing or incorrect disclosure',
+	},
+	'ai-images': {
+		id: 'report.type.ai-images',
+		defaultMessage: 'AI-generated images in icon, gallery, or description',
+	},
+	'fully-ai-generated': {
+		id: 'report.type.fully-ai-generated',
+		defaultMessage: 'Fully AI-generated project',
+	},
+})
+
+export function formatReportType(formatMessage: FormatMessage, type: string | undefined): string {
+	if (!type) return ''
+
+	if (type in reportTypeMessages) {
+		return formatMessage(reportTypeMessages[type as keyof typeof reportTypeMessages])
+	}
+
+	return capitalizeString(type.replace('-', ' '))
+}
+
 export const fileItemTypeMessages = defineMessages({
 	file: {
 		id: 'files.item-type.file',
@@ -1146,6 +1157,10 @@ export const commonProjectSettingsMessages = defineMessages({
 		id: 'project.settings.content.title',
 		defaultMessage: 'Content',
 	},
+	disclosures: {
+		id: 'project.settings.disclosures.title',
+		defaultMessage: 'Disclosures',
+	},
 	description: {
 		id: 'project.settings.description.title',
 		defaultMessage: 'Description',
@@ -1209,6 +1224,40 @@ export const commonProjectSettingsMessages = defineMessages({
 	withheldVersionsWarningResolve: {
 		id: 'project.versions.withheld-versions-warning.resolve-button',
 		defaultMessage: 'Resolve',
+	},
+})
+
+export const disclosureAiUsageMessages = defineMessages({
+	code: {
+		id: 'project.settings.disclosures.ai.types-code',
+		defaultMessage: 'Code',
+	},
+	assets: {
+		id: 'project.settings.disclosures.ai.types-assets',
+		defaultMessage: 'Assets',
+	},
+	text: {
+		id: 'project.settings.disclosures.ai.types-text',
+		defaultMessage: 'Text',
+	},
+	functionality: {
+		id: 'project.settings.disclosures.ai.types-functionality',
+		defaultMessage: 'Functionality',
+	},
+})
+
+export const disclosureTelemetryConsentMessages = defineMessages({
+	opt_in: {
+		id: 'project.settings.disclosures.telemetry.consent-opt-in',
+		defaultMessage: 'Opt-in',
+	},
+	opt_out: {
+		id: 'project.settings.disclosures.telemetry.consent-opt-out',
+		defaultMessage: 'Opt-out',
+	},
+	always_active: {
+		id: 'project.settings.disclosures.telemetry.consent-always-active',
+		defaultMessage: 'Always active',
 	},
 })
 
@@ -1381,10 +1430,6 @@ export const projectCompatibilityMessages = defineMessages({
 		id: `project.about.compatibility.game.minecraftJava`,
 		defaultMessage: 'Minecraft: Java Edition',
 	},
-	minecraftBedrock: {
-		id: `project.about.compatibility.game.minecraftBedrock`,
-		defaultMessage: 'Minecraft: Bedrock Edition',
-	},
 	platforms: {
 		id: `project.about.compatibility.platforms`,
 		defaultMessage: 'Platforms',
@@ -1421,7 +1466,7 @@ export const fileTypeMessages: Record<
 	}),
 	'sources-jar': defineMessage({
 		id: 'version.file-type.sources-jar',
-		defaultMessage: 'Source jar',
+		defaultMessage: 'Sources jar',
 	}),
 	'dev-jar': defineMessage({
 		id: 'version.file-type.dev-jar',
@@ -1429,7 +1474,7 @@ export const fileTypeMessages: Record<
 	}),
 	'javadoc-jar': defineMessage({
 		id: 'version.file-type.javadoc-jar',
-		defaultMessage: 'Javadoc jar',
+		defaultMessage: 'Javadocs jar',
 	}),
 	signature: defineMessage({
 		id: 'version.file-type.signature',

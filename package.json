@@ -3,27 +3,26 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "web:dev": "turbo run dev --filter=@modrinth/frontend",
+    "web:dev": "pnpm i18n:coverage && turbo run dev --filter=@modrinth/frontend",
     "web:build": "turbo run build --filter=@modrinth/frontend",
     "app:dev": "turbo run dev --filter=@modrinth/app",
     "app:build": "turbo run build --filter=@modrinth/app",
     "docs:dev": "turbo run dev --filter=@modrinth/docs",
-    "pages:build": "NITRO_PRESET=cloudflare-pages pnpm --filter frontend run build",
+    "pages:build": "pnpm i18n:coverage && NITRO_PRESET=cloudflare-pages pnpm --filter frontend run build",
     "build": "turbo run build --continue",
     "lint": "turbo run lint lint:ancillary --continue",
     "lint:ancillary": "prettier --check .github *.*",
-    "test": "turbo run test --continue",
-    "fix": "turbo run fix fix:ancillary --continue",
-    "fix:ancillary": "prettier --write .github *.*",
-    "ci": "turbo run lint test --continue",
-    "prepr": "turbo run prepr --continue",
-    "prepr:frontend": "turbo run prepr --filter=@modrinth/frontend --filter=@modrinth/app-frontend",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
+    "prepr:frontend": "turbo run prepr --filter=frontend --filter=@modrinth/ui --filter=@modrinth/moderation --filter=@modrinth/assets --filter=@modrinth/blog --filter=@modrinth/api-client --filter=@modrinth/utils --filter=@modrinth/tooling-config",
     "prepr:frontend:lib": "turbo run prepr --filter=@modrinth/ui --filter=@modrinth/moderation --filter=@modrinth/assets --filter=@modrinth/blog --filter=@modrinth/api-client --filter=@modrinth/utils --filter=@modrinth/tooling-config",
     "prepr:frontend:web": "turbo run prepr --filter=@modrinth/frontend",
     "prepr:frontend:app": "turbo run prepr --filter=@modrinth/app-frontend",
-    "storybook": "pnpm --filter @modrinth/ui storybook",
-    "build-storybook": "pnpm --filter @modrinth/ui build-storybook",
+    "storybook": "pnpm i18n:coverage && pnpm --filter @modrinth/ui storybook",
+    "build-storybook": "pnpm i18n:coverage && pnpm --filter @modrinth/ui build-storybook",
     "icons:add": "pnpm --filter @modrinth/assets icons:add",
+    "i18n:coverage": "node scripts/run.mjs coverage-i18n --write packages/ui/src/layouts/wrapped/settings/language-settings/language-settings-coverage.generated.ts --quiet",
     "changelog:collect": "node scripts/run.mjs collect-changelog",
     "changelog:combine-for-app": "node scripts/run.mjs build-theseus-release-notes",
     "scripts": "node scripts/run.mjs"
@@ -52,7 +51,8 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "readable-stream@2.3.8": "patches/readable-stream@2.3.8.patch"
+      "readable-stream@2.3.8": "patches/readable-stream@2.3.8.patch",
+      "@tresjs/core@4.3.4": "patches/@tresjs__core@4.3.4.patch"
     },
     "peerDependencyRules": {
       "allowedVersions": {

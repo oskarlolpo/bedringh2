@@ -89,15 +89,17 @@ pub async fn import_gdlauncher(
         None
     };
 
+    let final_name = match &override_title {
+        Some(t) if !t.starts_with('[') => format!("[GDLauncher] {t}"),
+        Some(t) => t.clone(),
+        None => format!("[GDLauncher] {backup_name}"),
+    };
+
     crate::api::instance::edit(
         instance_id,
         EditInstance {
             install_stage: Some(InstanceInstallStage::PackInstalling),
-            name: Some(
-                override_title
-                    .clone()
-                    .unwrap_or_else(|| backup_name.to_string()),
-            ),
+            name: Some(final_name),
             icon_path: Some(
                 icon.clone().map(|x| x.to_string_lossy().to_string()),
             ),

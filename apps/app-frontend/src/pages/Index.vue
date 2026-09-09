@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { HomeIcon } from '@modrinth/assets'
 import { injectNotificationManager } from '@modrinth/ui'
-import type { SearchResult } from '@modrinth/utils'
 import dayjs from 'dayjs'
 import { computed, onUnmounted, ref } from 'vue'
 
 import RowDisplay from '@/components/RowDisplay.vue'
 import RecentWorldsList from '@/components/ui/world/RecentWorldsList.vue'
-import { get_search_results } from '@/helpers/cache.js'
 import { instance_listener } from '@/helpers/events'
 import { list } from '@/helpers/instance'
 import type { GameInstance } from '@/helpers/types'
@@ -25,10 +23,6 @@ useRootBreadcrumb({
 
 const instances = ref<GameInstance[]>([])
 
-const featuredModpacks = ref<SearchResult[]>([])
-const featuredMods = ref<SearchResult[]>([])
-const installedModpacksFilter = ref('')
-
 const recentInstances = computed(() =>
 	instances.value
 		.filter((x) => x.last_played)
@@ -36,68 +30,15 @@ const recentInstances = computed(() =>
 		.sort((a, b) => dayjs(b.last_played).diff(dayjs(a.last_played))),
 )
 
-const hasFeaturedProjects = computed(
-	() => (featuredModpacks.value?.length ?? 0) + (featuredMods.value?.length ?? 0) > 0,
-)
-
-const offline = ref<boolean>(!navigator.onLine)
-window.addEventListener('offline', () => {
-	offline.value = true
-})
-window.addEventListener('online', () => {
-	offline.value = false
-})
-
 async function fetchInstances() {
-	instances.value = await list().catch(handleError)
-
-	const filters = []
-	for (const instance of instances.value) {
-		if (instance.link && instance.link.project_id) {
-			filters.push(`NOT"project_id"="${instance.link.project_id}"`)
-		}
-	}
-	installedModpacksFilter.value = filters.join(' AND ')
-}
-
-async function fetchFeaturedModpacks() {
-	const response = await get_search_results(
-		`?facets=[["project_type:modpack"]]&limit=10&index=follows&filters=${installedModpacksFilter.value}`,
-	)
-
-	if (response) {
-		featuredModpacks.value = response.result.hits
-	} else {
-		featuredModpacks.value = []
-	}
-}
-
-async function fetchFeaturedMods() {
-	const response = await get_search_results('?facets=[["project_type:mod"]]&limit=10&index=follows')
-
-	if (response) {
-		featuredMods.value = response.result.hits
-	} else {
-		featuredModpacks.value = []
-	}
-}
-
-async function refreshFeaturedProjects() {
-	await Promise.all([fetchFeaturedModpacks(), fetchFeaturedMods()])
+	instances.value = (await list().catch(handleError)) || []
 }
 
 await fetchInstances()
-await refreshFeaturedProjects()
 
-const unlistenInstance = await instance_listener(
-	async (e: { event: string; instance_id: string }) => {
-		await fetchInstances()
-
-		if (e.event === 'added' || e.event === 'created' || e.event === 'removed') {
-			await refreshFeaturedProjects()
-		}
-	},
-)
+const unlistenInstance = await instance_listener(async () => {
+	await fetchInstances()
+})
 
 onUnmounted(() => {
 	unlistenInstance()
@@ -105,24 +46,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="p-6 flex flex-col gap-2">
+	<div class="p-6 flex flex-col gap-4">
 		<h1 v-if="recentInstances?.length > 0" class="m-0 text-2xl font-extrabold">Welcome back!</h1>
 		<h1 v-else class="m-0 text-2xl font-extrabold">Welcome to Bedringh!</h1>
 		<RecentWorldsList :recent-instances="recentInstances" />
 		<RowDisplay
-			v-if="hasFeaturedProjects"
+			v-if="instances.length > 0"
 			:instances="[
 				{
-					label: 'Discover a modpack',
-					route: '/browse/modpack',
-					instances: featuredModpacks,
-					downloaded: false,
-				},
-				{
-					label: 'Discover mods',
-					route: '/browse/mod',
-					instances: featuredMods,
-					downloaded: false,
+					label: 'Ваши сборки',
+					route: '/library',
+					instances: instances,
+					instance: true,
 				},
 			]"
 			:can-paginate="true"

@@ -232,16 +232,16 @@ async fn import_atlauncher_unmanaged(
         }
         _ => None,
     };
+    let final_name = match &description.override_title {
+        Some(t) if !t.starts_with('[') => format!("[ATLauncher] {t}"),
+        Some(t) => t.clone(),
+        None => format!("[ATLauncher] {backup_name}"),
+    };
     crate::api::instance::edit(
         instance_id,
         EditInstance {
             install_stage: Some(InstanceInstallStage::PackInstalling),
-            name: Some(
-                description
-                    .override_title
-                    .clone()
-                    .unwrap_or_else(|| backup_name.to_string()),
-            ),
+            name: Some(final_name),
             icon_path: Some(
                 description
                     .icon

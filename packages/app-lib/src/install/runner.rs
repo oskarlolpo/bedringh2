@@ -16,13 +16,16 @@ use crate::ErrorKind;
 use crate::api::pack::install_from::{
     CreatePackLocation, generate_pack_from_file,
     generate_pack_from_version_id_with_reporter, get_instance_from_pack,
+    get_local_pack_instance,
 };
 use crate::api::pack::install_mrpack::install_zipped_mrpack_files_with_reporter;
 use crate::event::InstancePayloadType;
 use crate::event::emit::emit_instance;
 use crate::state::instances::adapters::sqlite::content_rows;
+use crate::state::instances::commands::resolve_icon_path;
 use crate::state::{
-    ContentSourceKind, InstanceInstallStage, InstanceLink, ModLoader, State,
+    ContentSourceKind, InstanceIconConfig, InstanceInstallStage, InstanceLink,
+    ModLoader, State,
 };
 use crate::util::fetch::DownloadReason;
 use std::collections::HashSet;
@@ -35,6 +38,7 @@ pub async fn create_instance(
     loader: ModLoader,
     loader_version: Option<String>,
     icon_path: Option<String>,
+    icon_config: Option<InstanceIconConfig>,
     link: InstanceLink,
 ) -> crate::Result<InstallJobSnapshot> {
     start(InstallRequest::CreateInstance {
@@ -43,6 +47,7 @@ pub async fn create_instance(
         loader,
         loader_version,
         icon_path,
+        icon_config,
         link,
     })
     .await
@@ -163,16 +168,6 @@ pub async fn retry_job(job_id: Uuid) -> crate::Result<InstallJobSnapshot> {
     job.state.progress.phase = InstallPhaseId::PreparingInstance;
     job.state.progress.progress = None;
     job.state.progress.details = InstallPhaseDetails::Empty;
-    if let Err(error) = prepare_initial_instance(&mut job.state, &state).await {
-        if let Err(cleanup_error) =
-            recovery::apply_cleanup(&job.state, &state).await
-        {
-            tracing::error!(
-                "Error cleaning up install job {job_id} retry preparation: {cleanup_error}"
-            );
-        }
-        return Err(error);
-    }
     job.state.record_event(InstallJobEventKind::JobQueued {
         kind: job.state.request.kind(),
     });
@@ -192,6 +187,42 @@ pub async fn retry_job(job_id: Uuid) -> crate::Result<InstallJobSnapshot> {
             {
                 tracing::error!(
                     "Error cleaning up unqueued install job {job_id}: {cleanup_error}"
+                );
+            }
+            return Err(error);
+        }
+    };
+    emit_install_job(&record.snapshot()).await?;
+
+    if let Err(error) = prepare_initial_instance(&mut job.state, &state).await {
+        let error_view = install_error_view(
+            job.state.progress.phase,
+            &error,
+            job.state.context.clone(),
+        );
+        if let Err(terminal_error) =
+            terminalize_failed_job(job_id, job.state, error_view, &state).await
+        {
+            tracing::error!(
+                "Failed to terminalize retried install job {job_id}: {terminal_error}"
+            );
+        }
+        return Err(error);
+    }
+    let record = match store::update_state(job_id, &job.state, &state).await {
+        Ok(record) => record,
+        Err(error) => {
+            let error_view = install_error_view(
+                job.state.progress.phase,
+                &error,
+                job.state.context.clone(),
+            );
+            if let Err(terminal_error) =
+                terminalize_failed_job(job_id, job.state, error_view, &state)
+                    .await
+            {
+                tracing::error!(
+                    "Failed to terminalize retried install job {job_id}: {terminal_error}"
                 );
             }
             return Err(error);
@@ -337,31 +368,39 @@ async fn start(request: InstallRequest) -> crate::Result<InstallJobSnapshot> {
     let state = State::get().await?;
     let id = Uuid::new_v4();
     let mut job_state = InstallJobState::new(request);
+    set_initial_display(&mut job_state);
+    let record =
+        store::insert(id, &job_state, InstallJobStatus::Queued, &state).await?;
+    emit_install_job(&record.snapshot()).await?;
+
     if let Err(error) = prepare_initial_instance(&mut job_state, &state).await {
-        if let Err(cleanup_error) =
-            recovery::apply_cleanup(&job_state, &state).await
+        let error_view = install_error_view(
+            job_state.progress.phase,
+            &error,
+            job_state.context.clone(),
+        );
+        if let Err(terminal_error) =
+            terminalize_failed_job(id, job_state, error_view, &state).await
         {
             tracing::error!(
-                "Error cleaning up install job preparation: {cleanup_error}"
+                "Failed to terminalize install job {id} after setup error: {terminal_error}"
             );
         }
         return Err(error);
     }
-    let record = match store::insert(
-        id,
-        &job_state,
-        InstallJobStatus::Queued,
-        &state,
-    )
-    .await
-    {
+    let record = match store::update_state(id, &job_state, &state).await {
         Ok(record) => record,
         Err(error) => {
-            if let Err(cleanup_error) =
-                recovery::apply_cleanup(&job_state, &state).await
+            let error_view = install_error_view(
+                job_state.progress.phase,
+                &error,
+                job_state.context.clone(),
+            );
+            if let Err(terminal_error) =
+                terminalize_failed_job(id, job_state, error_view, &state).await
             {
                 tracing::error!(
-                    "Error cleaning up untracked install job {id}: {cleanup_error}"
+                    "Failed to terminalize install job {id} after setup error: {terminal_error}"
                 );
             }
             return Err(error);
@@ -400,6 +439,7 @@ async fn prepare_initial_instance(
             loader,
             loader_version,
             icon_path,
+            icon_config,
             link,
         } => {
             let metadata = crate::api::instance::create(
@@ -408,6 +448,7 @@ async fn prepare_initial_instance(
                 loader,
                 loader_version,
                 icon_path,
+                icon_config,
                 link,
             )
             .await?;
@@ -422,7 +463,12 @@ async fn prepare_initial_instance(
             location,
             post_install_edit,
         } => {
-            let preview = get_instance_from_pack(location).await?;
+            let preview = match location {
+                CreatePackLocation::FromFile { path } => {
+                    get_local_pack_instance(&path)
+                }
+                location => get_instance_from_pack(location).await?,
+            };
             let name = post_install_edit
                 .as_ref()
                 .and_then(|edit| edit.name.clone())
@@ -449,6 +495,7 @@ async fn prepare_initial_instance(
                 preview.modloader,
                 preview.loader_version,
                 icon_path,
+                None,
                 link,
             )
             .await?;
@@ -494,6 +541,7 @@ async fn prepare_initial_instance(
                 loader,
                 loader_version,
                 icon_path,
+                None,
                 shared_link,
             )
             .await?;
@@ -508,13 +556,29 @@ async fn prepare_initial_instance(
             emit_instance(&instance_id, InstancePayloadType::Edited).await?;
         }
         InstallRequest::ImportInstance {
-            instance_folder, ..
+            instance_folder,
+            launcher_type,
+            ..
         } => {
+            let prefix = match launcher_type {
+                crate::api::pack::import::ImportLauncherType::Curseforge => "CurseForge",
+                crate::api::pack::import::ImportLauncherType::PrismLauncher => "Prism",
+                crate::api::pack::import::ImportLauncherType::MultiMC => "MultiMC",
+                crate::api::pack::import::ImportLauncherType::ATLauncher => "ATLauncher",
+                crate::api::pack::import::ImportLauncherType::GDLauncher => "GDLauncher",
+                _ => "Import",
+            };
+            let display_name = if instance_folder.starts_with('[') {
+                instance_folder
+            } else {
+                format!("[{prefix}] {instance_folder}")
+            };
             let metadata = crate::api::instance::create(
-                instance_folder,
+                display_name,
                 "1.19.4".to_string(),
                 ModLoader::Vanilla,
                 Some("latest".to_string()),
+                None,
                 None,
                 InstanceLink::Unmanaged,
             )
@@ -541,6 +605,7 @@ async fn prepare_initial_instance(
                 metadata.applied_content_set.loader,
                 metadata.applied_content_set.loader_version,
                 metadata.instance.icon_path,
+                None,
                 metadata.link,
             )
             .await?;
@@ -765,6 +830,7 @@ async fn run_request(
             loader,
             loader_version: _,
             icon_path: _,
+            icon_config: _,
             link: _,
         } => {
             let Some(instance_id) = current_instance_id(job_state) else {
@@ -1044,12 +1110,23 @@ async fn apply_post_install_edit(
     instance_id: &str,
     edit: Option<InstallPostInstallEdit>,
 ) -> crate::Result<()> {
-    let Some(edit) = edit else {
+    let Some(mut edit) = edit else {
         return Ok(());
     };
 
     if edit.name.is_none() && edit.icon_path.is_none() && edit.link.is_none() {
         return Ok(());
+    }
+
+    if let Some(icon_path) = edit.icon_path.take() {
+        let icon_path = match icon_path {
+            Some(icon_path) => {
+                let state = State::get().await?;
+                resolve_icon_path(Some(&icon_path), false, &state).await?
+            }
+            None => None,
+        };
+        edit.icon_path = Some(icon_path);
     }
 
     crate::api::instance::edit(
@@ -1441,6 +1518,26 @@ fn set_display(
     icon: Option<String>,
 ) {
     job_state.display = Some(InstallJobDisplay { title, icon });
+}
+
+fn set_initial_display(job_state: &mut InstallJobState) {
+    let display = match &job_state.request {
+        InstallRequest::CreateModpackInstance { location, .. } => {
+            match location {
+                CreatePackLocation::FromVersionId {
+                    title, icon_url, ..
+                } => Some((title.clone(), icon_url.clone())),
+                CreatePackLocation::FromFile { path } => {
+                    Some((get_local_pack_instance(path).name, None))
+                }
+            }
+        }
+        _ => None,
+    };
+
+    if let Some((title, icon)) = display {
+        set_display(job_state, title, icon);
+    }
 }
 
 fn install_error_view(

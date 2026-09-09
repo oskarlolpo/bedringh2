@@ -308,23 +308,8 @@
   "instances.content-install.new-tab": {
     "defaultMessage": "อินสแตนซ์อันใหม่"
   },
-  "instances.content-install.remove-icon": {
-    "defaultMessage": "ลบไอคอน"
-  },
   "instances.content-install.search-placeholder": {
     "defaultMessage": "ค้นหาอินสแตนซ์"
-  },
-  "instances.content-install.select-icon": {
-    "defaultMessage": "เลือกไอคอน"
-  },
-  "instances.modpack-content-modal.empty-title": {
-    "defaultMessage": "ไม่พบเนื้อหา"
-  },
-  "instances.modpack-content-modal.header": {
-    "defaultMessage": "เนื้อหาม็อดแพ็ค"
-  },
-  "instances.modpack-content-modal.loading": {
-    "defaultMessage": "กำลังโหลดเนื้อหา"
   },
   "label.available": {
     "defaultMessage": "ว่างอยู่ {amount}"
@@ -647,9 +632,6 @@
   "settings.display.theme.dark": {
     "defaultMessage": "มืด"
   },
-  "settings.display.theme.description": {
-    "defaultMessage": "เลือกธีมสีที่คุณต้องการสำหรับ Modrinth บนอุปกรณ์นี้"
-  },
   "settings.display.theme.light": {
     "defaultMessage": "สว่าง"
   },
@@ -661,8 +643,6 @@
   },
   "settings.language.title": {
     "defaultMessage": "ภาษา"
-  },
-  "app.bedrock.category.skin-packs": {
-    "message": "Skin Packs"
   }
 }
+

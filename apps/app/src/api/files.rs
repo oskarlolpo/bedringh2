@@ -12,6 +12,7 @@ pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
             file_extract_zip,
             file_save_as,
             file_read_dragged_file,
+            file_deduplicate_mods,
         ])
         .build()
 }
@@ -176,3 +177,11 @@ pub async fn file_save_as<R: Runtime>(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn file_deduplicate_mods(
+    instance_id: Option<String>,
+) -> Result<theseus::instance::DedupReport> {
+    Ok(theseus::instance::deduplicate_mods(instance_id).await?)
+}
+

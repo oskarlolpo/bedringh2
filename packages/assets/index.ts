@@ -141,6 +141,8 @@ export const MinecraftServerIcon = _MinecraftServerIcon
 export const LinuxIcon = _LinuxIcon
 
 export * from './generated-icons'
+export { TagCategoryZapIcon as BoltIcon } from './generated-icons'
+export { TriangleAlertIcon as AlertTriangleIcon } from './generated-icons'
 export { default as ClassicPlayerModel } from './models/classic-player.gltf?url'
 export { default as SlimPlayerModel } from './models/slim-player.gltf?url'
 

@@ -3,5 +3,8 @@
 	"description": "",
 	"local": true,
 	"windows": ["main"],
-	"permissions": ["updater:default"]
+	"permissions": [
+		"updater:allow-check",
+		"updater:default"
+	]
 }

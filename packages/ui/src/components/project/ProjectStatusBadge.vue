@@ -16,13 +16,10 @@ const props = defineProps<{
 
 const { formatMessage } = useVIntl()
 
-const metadata = computed(() => {
-	const currentStatus = props.status && statusMetadata[props.status] ? props.status : 'approved'
-	return {
-		icon: PROJECT_STATUS_ICONS[currentStatus] ?? PROJECT_STATUS_ICONS.approved,
-		formattedName: formatMessage(statusMetadata[currentStatus].message),
-	}
-})
+const metadata = computed(() => ({
+	icon: PROJECT_STATUS_ICONS[props.status] ?? PROJECT_STATUS_ICONS.unknown,
+	formattedName: formatMessage(statusMetadata[props.status]?.message ?? props.status),
+}))
 
 const statusMetadata: Record<ProjectStatus, { message: MessageDescriptor }> = {
 	approved: {

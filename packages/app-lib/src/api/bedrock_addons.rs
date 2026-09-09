@@ -19,6 +19,28 @@ pub struct BedrockAddon {
     pub curseforge_mod_id: Option<i32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BedrockInstalledContentRecord {
+    pub project_id: String,
+    pub slug: Option<String>,
+    pub title: String,
+    pub version_id: Option<String>,
+    pub version_number: Option<String>,
+    pub installed_file_name: Option<String>,
+    pub source: String, // "curseforge", "modrinth", "local"
+    pub curseforge_mod_id: Option<i32>,
+    pub curseforge_file_id: Option<i32>,
+    pub modrinth_project_id: Option<String>,
+    pub modrinth_version_id: Option<String>,
+    pub kind: String, // "behavior", "resource", "skin", "world"
+    pub installed_folders: Vec<String>,
+    pub installed_at: String,
+    pub has_update: bool,
+    pub latest_version_id: Option<String>,
+    pub latest_version_number: Option<String>,
+    pub download_url: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct BedrockManifest {
     header: BedrockManifestHeader,
@@ -528,26 +550,140 @@ pub async fn delete_bedrock_addon(profile_path: &str, kind: &str, folder_name: &
     Ok(())
 }
 
-pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &str, curseforge_mod_id: Option<i32>) -> Result<()> {
-    // We will use async_zip to extract the package.
-    use async_zip::tokio::read::fs::ZipFileReader;
-    let file_path = PathBuf::from(archive_path);
-    if !file_path.exists() {
-        return Err(ErrorKind::OtherError("Archive not found".into()).into());
-    }
+const INSTALLED_CONTENT_FILENAME: &str = "bedrock_installed_content.json";
 
-    let reader = match ZipFileReader::new(&file_path).await {
-        Ok(r) => r,
-        Err(_) => return Err(ErrorKind::OtherError("Failed to open zip archive".into()).into()),
+pub async fn load_installed_content_records(com_mojang: &std::path::Path) -> Vec<BedrockInstalledContentRecord> {
+    let registry_path = com_mojang.join(INSTALLED_CONTENT_FILENAME);
+    let mut records: Vec<BedrockInstalledContentRecord> = if registry_path.exists() {
+        fs::read_to_string(&registry_path).await
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
     };
 
-    let temp_extract_dir = std::env::temp_dir().join("bedringh").join(uuid::Uuid::new_v4().to_string());
-    fs::create_dir_all(&temp_extract_dir).await?;
+    let mut modified = false;
+    for kind in &["behavior_packs", "resource_packs", "skin_packs"] {
+        let kind_dir = com_mojang.join(kind);
+        if let Ok(mut entries) = fs::read_dir(&kind_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                if !path.is_dir() { continue; }
+                let folder_name = entry.file_name().to_string_lossy().to_string();
+                let meta_path = path.join(".bedrin-meta.json");
+                let mut cf_id = None;
+                if meta_path.exists() {
+                    if let Ok(s) = fs::read_to_string(&meta_path).await {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&s) {
+                            cf_id = val.get("curseforge_mod_id").and_then(|v| v.as_i64()).map(|i| i as i32);
+                        }
+                    }
+                }
+
+                let manifest_path = if path.join("manifest.json").exists() {
+                    path.join("manifest.json")
+                } else {
+                    path.join("manifest.json.disabled")
+                };
+
+                let mut title = folder_name.clone();
+                let mut version = "1.0.0".to_string();
+                if manifest_path.exists() {
+                    if let Ok(content) = fs::read_to_string(&manifest_path).await {
+                        let cleaned = clean_json_content(&content);
+                        if let Ok(manifest) = serde_json::from_str::<BedrockManifest>(&cleaned) {
+                            title = manifest.header.name;
+                            let ver_vec = parse_version_vec(&manifest.header.version);
+                            version = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
+                        }
+                    }
+                }
+
+                let clean_title = title.replace('§', "").trim().to_string();
+                let key_id = cf_id.map(|id| id.to_string()).unwrap_or_else(|| folder_name.clone());
+
+                let folder_rel = format!("{kind}/{folder_name}");
+                let existing = records.iter_mut().find(|r| {
+                    (cf_id.is_some() && r.curseforge_mod_id == cf_id) ||
+                    r.project_id == key_id ||
+                    r.installed_folders.iter().any(|f| f == &folder_rel || f.ends_with(&folder_name)) ||
+                    r.title.eq_ignore_ascii_case(&clean_title)
+                });
+
+                if let Some(rec) = existing {
+                    if !rec.installed_folders.contains(&folder_rel) {
+                        rec.installed_folders.push(folder_rel);
+                        modified = true;
+                    }
+                    if rec.curseforge_mod_id.is_none() && cf_id.is_some() {
+                        rec.curseforge_mod_id = cf_id;
+                        modified = true;
+                    }
+                } else {
+                    records.push(BedrockInstalledContentRecord {
+                        project_id: key_id,
+                        slug: None,
+                        title: clean_title,
+                        version_id: None,
+                        version_number: Some(version),
+                        installed_file_name: None,
+                        source: if cf_id.is_some() { "curseforge".into() } else { "local".into() },
+                        curseforge_mod_id: cf_id,
+                        curseforge_file_id: None,
+                        modrinth_project_id: None,
+                        modrinth_version_id: None,
+                        kind: match *kind {
+                            "resource_packs" => "resource".into(),
+                            "skin_packs" => "skin".into(),
+                            _ => "behavior".into(),
+                        },
+                        installed_folders: vec![folder_rel],
+                        installed_at: chrono::Utc::now().to_rfc3339(),
+                        has_update: false,
+                        latest_version_id: None,
+                        latest_version_number: None,
+                        download_url: None,
+                    });
+                    modified = true;
+                }
+            }
+        }
+    }
+
+    if modified {
+        let _ = save_installed_content_records(com_mojang, &records).await;
+    }
+
+    records
+}
+
+pub async fn save_installed_content_records(com_mojang: &std::path::Path, records: &[BedrockInstalledContentRecord]) -> Result<()> {
+    let registry_path = com_mojang.join(INSTALLED_CONTENT_FILENAME);
+    if let Ok(pretty) = serde_json::to_string_pretty(records) {
+        let _ = fs::write(&registry_path, pretty).await;
+    }
+    Ok(())
+}
+
+async fn extract_zip_archive(archive_file: &std::path::Path, out_dir: &std::path::Path) -> Result<()> {
+    use async_zip::tokio::read::fs::ZipFileReader;
+    if !archive_file.exists() {
+        return Err(ErrorKind::OtherError(format!("Archive file not found: {:?}", archive_file)).into());
+    }
+
+    let reader = match ZipFileReader::new(archive_file).await {
+        Ok(r) => r,
+        Err(e) => return Err(ErrorKind::OtherError(format!("Failed to open zip archive: {e}")).into()),
+    };
+
+    fs::create_dir_all(out_dir).await?;
 
     for i in 0..reader.file().entries().len() {
         let entry = reader.file().entries().get(i).unwrap();
         if let Ok(filename) = entry.filename().as_str() {
-            let out_path = temp_extract_dir.join(filename);
+            let clean_filename = filename.replace("..", "_");
+            let out_path = out_dir.join(&clean_filename);
 
             if filename.ends_with('/') || filename.ends_with('\\') {
                 let _ = fs::create_dir_all(&out_path).await;
@@ -566,65 +702,116 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
             }
         }
     }
+    Ok(())
+}
 
-    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
-    let com_mojang = instance_path.join("com.mojang");
+pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &str, curseforge_mod_id: Option<i32>) -> Result<()> {
+    let file_path = PathBuf::from(archive_path);
+    if !file_path.exists() {
+        return Err(ErrorKind::OtherError("Archive not found".into()).into());
+    }
 
-    // Figure out the "effective root" of the extracted archive - some archives
-    // (especially world/map downloads) wrap everything in a single top-level folder.
-    let mut effective_root = temp_extract_dir.clone();
-    if let Ok(mut root_entries) = fs::read_dir(&temp_extract_dir).await {
-        let mut items = Vec::new();
-        while let Ok(Some(e)) = root_entries.next_entry().await {
-            items.push(e.path());
+    let temp_extract_dir = std::env::temp_dir().join("bedringh").join(uuid::Uuid::new_v4().to_string());
+    fs::create_dir_all(&temp_extract_dir).await?;
+
+    // Initial extraction
+    extract_zip_archive(&file_path, &temp_extract_dir).await?;
+
+    // Recursively extract any nested .mcpack, .mcaddon, or .zip archives (up to 3 passes)
+    let mut passes = 0;
+    while passes < 3 {
+        passes += 1;
+        let mut nested_archives = Vec::new();
+        let mut stack = vec![temp_extract_dir.clone()];
+        while let Some(dir) = stack.pop() {
+            if let Ok(mut entries) = fs::read_dir(&dir).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let path = entry.path();
+                    if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+                        stack.push(path);
+                    } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        if ext_lower == "mcpack" || ext_lower == "mcaddon" || ext_lower == "zip" {
+                            nested_archives.push(path);
+                        }
+                    }
+                }
+            }
         }
-        if items.len() == 1 && items[0].is_dir() {
-            effective_root = items[0].clone();
+
+        if nested_archives.is_empty() {
+            break;
+        }
+
+        for nested in nested_archives {
+            let nested_stem = nested.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let sub_dir = nested.parent().unwrap_or(&temp_extract_dir).join(format!("_nested_{nested_stem}_{}", uuid::Uuid::new_v4().simple()));
+            let _ = fs::create_dir_all(&sub_dir).await;
+            if extract_zip_archive(&nested, &sub_dir).await.is_ok() {
+                let _ = fs::remove_file(&nested).await;
+            }
         }
     }
 
-    // A full world/map (e.g. a CurseForge "Maps" download) has a level.dat at its root
-    // and must be imported into minecraftWorlds, not treated as an installable pack.
-    if fs::metadata(effective_root.join("level.dat")).await.is_ok() {
-        // Verify this is actually a loadable save (has a non-empty LevelDB db/ folder)
-        // before we accept it - otherwise the launcher would show a "world" that
-        // Minecraft itself silently refuses to load, with no visible error anywhere.
-        let db_dir = effective_root.join("db");
-        let mut has_db_contents = false;
-        if let Ok(mut db_entries) = fs::read_dir(&db_dir).await {
-            if let Ok(Some(_)) = db_entries.next_entry().await {
-                has_db_contents = true;
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
+    let com_mojang = instance_path.join("com.mojang");
+    fs::create_dir_all(&com_mojang).await?;
+
+    let mut installed_folders = Vec::new();
+    let mut installed_title = String::new();
+    let mut installed_version = String::new();
+    let mut installed_kind = "behavior".to_string();
+
+    // 1. Deep scan for Worlds (look for level.dat)
+    let mut worlds_found = Vec::new();
+    let mut stack = vec![temp_extract_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        let level_dat = dir.join("level.dat");
+        if fs::metadata(&level_dat).await.is_ok() {
+            worlds_found.push(dir.clone());
+            continue;
+        }
+        if let Ok(mut entries) = fs::read_dir(&dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+                    stack.push(entry.path());
+                }
             }
         }
-        if !has_db_contents {
-            let _ = fs::remove_dir_all(&temp_extract_dir).await;
-            return Err(ErrorKind::OtherError(
-                "This download looks like a world/map but its 'db' save-data folder is missing or empty. \
-                 The file is likely incomplete, corrupted, or not a real world export - it will not be \
-                 loadable in Minecraft even though it would otherwise appear installed."
-                    .to_string(),
-            )
-            .into());
-        }
+    }
 
+    for world_dir in worlds_found {
         let target_uuid = uuid::Uuid::new_v4().to_string();
         let out_dir = com_mojang.join("minecraftWorlds").join(&target_uuid);
         let _ = fs::create_dir_all(&out_dir).await;
 
-        let mut entries = fs::read_dir(&effective_root).await?;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let _ = move_or_copy_dir(&entry.path(), &out_dir.join(entry.file_name())).await;
+        if let Ok(mut entries) = fs::read_dir(&world_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let _ = move_or_copy_dir(&entry.path(), &out_dir.join(entry.file_name())).await;
+            }
         }
 
-        let _ = fs::remove_dir_all(&temp_extract_dir).await;
-        return Ok(());
+        let world_name = fs::read_to_string(out_dir.join("levelname.txt")).await.unwrap_or_else(|_| "Imported World".to_string());
+        installed_title = world_name.trim().to_string();
+        installed_kind = "world".to_string();
+        let folder_rel = format!("minecraftWorlds/{target_uuid}");
+        installed_folders.push(folder_rel);
+
+        if let Some(mod_id) = curseforge_mod_id {
+            let meta = serde_json::json!({
+                "curseforge_mod_id": mod_id,
+                "kind": "world",
+                "name": installed_title,
+            });
+            if let Ok(meta_str) = serde_json::to_string(&meta) {
+                let _ = fs::write(out_dir.join(".bedrin-meta.json"), meta_str).await;
+            }
+        }
     }
 
-    // Now scan temp_extract_dir for manifest.json.
-    // It can be at root or inside a folder.
+    // 2. Scan for pack manifests
     let mut manifests_found = Vec::new();
     let mut stack = vec![temp_extract_dir.clone()];
-
     while let Some(dir) = stack.pop() {
         if let Ok(mut entries) = fs::read_dir(&dir).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
@@ -669,22 +856,36 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
                 let _ = fs::remove_dir_all(&target_path).await;
             }
 
-            // Move pack_dir to target_path safely
             let _ = move_or_copy_dir(&pack_dir, &target_path).await;
 
-            // Remember which CurseForge mod this came from (if any) so the browse
-            // page can correctly show "Installed" after a reload, instead of only
-            // remembering it for the current session.
+            let ver_vec = parse_version_vec(&manifest.header.version);
+            let ver_str = ver_vec.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(".");
+
+            if installed_title.is_empty() {
+                installed_title = manifest.header.name.clone();
+            }
+            if installed_version.is_empty() {
+                installed_version = ver_str.clone();
+            }
+            installed_kind = if is_skin { "skin".into() } else if is_resource { "resource".into() } else { "behavior".into() };
+
+            let folder_rel = format!("{kind_dir}/{safe_name}");
+            installed_folders.push(folder_rel);
+
             if let Some(mod_id) = curseforge_mod_id {
-                let meta = serde_json::json!({ "curseforge_mod_id": mod_id });
+                let meta = serde_json::json!({
+                    "curseforge_mod_id": mod_id,
+                    "kind": kind_dir,
+                    "name": manifest.header.name,
+                    "version": ver_str,
+                    "uuid": manifest.header.uuid,
+                });
                 if let Ok(meta_str) = serde_json::to_string(&meta) {
                     let _ = fs::write(target_path.join(".bedrin-meta.json"), meta_str).await;
                 }
             }
 
-            // Register pack in existing worlds (skin packs aren't referenced per-world)
             if !is_skin {
-                let ver_vec = parse_version_vec(&manifest.header.version);
                 register_pack_in_worlds(&com_mojang, &manifest.header.uuid, &ver_vec, is_resource).await;
             }
         }
@@ -692,40 +893,199 @@ pub async fn install_bedrock_addon_from_file(profile_path: &str, archive_path: &
 
     let _ = fs::remove_dir_all(&temp_extract_dir).await;
 
+    if installed_folders.is_empty() {
+        return Err(ErrorKind::OtherError(
+            "No valid Bedrock resource pack, behavior pack, skin pack, or world found in the downloaded archive.".to_string(),
+        ).into());
+    }
+
+    // Register in persistent content registry
+    let mut records = load_installed_content_records(&com_mojang).await;
+    let key_id = curseforge_mod_id.map(|id| id.to_string()).unwrap_or_else(|| {
+        installed_folders.first().cloned().unwrap_or_default()
+    });
+
+    let existing = records.iter_mut().find(|r| {
+        (curseforge_mod_id.is_some() && r.curseforge_mod_id == curseforge_mod_id) ||
+        r.project_id == key_id
+    });
+
+    if let Some(rec) = existing {
+        rec.installed_folders = installed_folders;
+        if !installed_version.is_empty() {
+            rec.version_number = Some(installed_version);
+        }
+        rec.has_update = false;
+        rec.installed_at = chrono::Utc::now().to_rfc3339();
+    } else {
+        records.push(BedrockInstalledContentRecord {
+            project_id: key_id,
+            slug: None,
+            title: installed_title,
+            version_id: None,
+            version_number: if installed_version.is_empty() { None } else { Some(installed_version) },
+            installed_file_name: file_path.file_name().map(|n| n.to_string_lossy().to_string()),
+            source: if curseforge_mod_id.is_some() { "curseforge".into() } else { "local".into() },
+            curseforge_mod_id,
+            curseforge_file_id: None,
+            modrinth_project_id: None,
+            modrinth_version_id: None,
+            kind: installed_kind,
+            installed_folders,
+            installed_at: chrono::Utc::now().to_rfc3339(),
+            has_update: false,
+            latest_version_id: None,
+            latest_version_number: None,
+            download_url: None,
+        });
+    }
+
+    let _ = save_installed_content_records(&com_mojang, &records).await;
+    let _ = sync_valid_known_packs(&com_mojang).await;
+
     Ok(())
 }
 
 pub async fn check_bedrock_addon_updates(profile_path: &str) -> Result<Vec<BedrockAddon>> {
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
+    let com_mojang = instance_path.join("com.mojang");
+    let mut records = load_installed_content_records(&com_mojang).await;
     let mut addons = list_bedrock_addons(profile_path).await?;
 
-    for addon in &mut addons {
-        if let Ok(search_results) = crate::api::bedrock_curseforge::search_addons(
-            &addon.name,
-            None,
-            Some(4984),
-            None,
-            None,
-            None,
-            Some(0),
-            Some(1),
-        ).await {
-            if let Some(match_mod) = search_results.data.into_iter().next() {
-                if let Ok(files) = crate::api::bedrock_curseforge::get_addon_files(match_mod.id).await {
-                    if let Some(latest_file) = files.first() {
-                        let remote_ver = &latest_file.display_name;
-                        if remote_ver != &addon.version {
-                            addon.has_update = Some(true);
-                            addon.latest_version = Some(remote_ver.clone());
-                        } else {
-                            addon.has_update = Some(false);
-                            addon.latest_version = Some(remote_ver.clone());
-                        }
-                    }
+    for rec in &mut records {
+        if let Some(mod_id) = rec.curseforge_mod_id {
+            if let Ok(files) = crate::api::bedrock_curseforge::get_addon_files(mod_id).await {
+                if let Some(latest) = files.first() {
+                    let remote_ver = latest.display_name.trim();
+                    let current_ver = rec.version_number.as_deref().unwrap_or("").trim();
+                    let current_fid = rec.curseforge_file_id;
+
+                    let has_up = if let Some(cfid) = current_fid {
+                        latest.id != cfid
+                    } else if !current_ver.is_empty() {
+                        remote_ver != current_ver
+                    } else {
+                        false
+                    };
+
+                    rec.has_update = has_up;
+                    rec.latest_version_id = Some(latest.id.to_string());
+                    rec.latest_version_number = Some(remote_ver.to_string());
                 }
             }
         }
     }
 
+    let _ = save_installed_content_records(&com_mojang, &records).await;
+
+    for addon in &mut addons {
+        if let Some(rec) = records.iter().find(|r| {
+            (addon.curseforge_mod_id.is_some() && r.curseforge_mod_id == addon.curseforge_mod_id) ||
+            r.installed_folders.iter().any(|f| f.ends_with(&addon.folder_name)) ||
+            r.title.eq_ignore_ascii_case(&addon.name)
+        }) {
+            addon.has_update = Some(rec.has_update);
+            addon.latest_version = rec.latest_version_number.clone();
+        }
+    }
+
     Ok(addons)
+}
+
+pub async fn update_bedrock_addon(
+    profile_path: &str,
+    project_id: &str,
+    target_file_id: Option<i32>,
+) -> Result<()> {
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
+    let com_mojang = instance_path.join("com.mojang");
+    let records = load_installed_content_records(&com_mojang).await;
+
+    let rec = records.iter().find(|r| {
+        r.project_id == project_id ||
+        r.curseforge_mod_id.map(|id| id.to_string()).as_deref() == Some(project_id) ||
+        r.installed_folders.iter().any(|f| f.contains(project_id))
+    }).cloned().ok_or_else(|| ErrorKind::InputError(format!("Project {project_id} not found in installed Bedrock content")))?;
+
+    let mod_id = rec.curseforge_mod_id.ok_or_else(|| {
+        ErrorKind::OtherError(format!("Project {project_id} does not have a CurseForge mod ID to update"))
+    })?;
+
+    let files = crate::api::bedrock_curseforge::get_addon_files(mod_id).await?;
+    if files.is_empty() {
+        return Err(ErrorKind::OtherError(format!("No update files found for mod {mod_id}")).into());
+    }
+
+    let target_file = if let Some(fid) = target_file_id {
+        files.iter().find(|f| f.id == fid).unwrap_or(&files[0])
+    } else {
+        &files[0]
+    };
+
+    let download_url = if let Some(u) = &target_file.download_url {
+        u.clone()
+    } else {
+        crate::api::bedrock_curseforge::resolve_file_download_url(mod_id, target_file.id, &target_file.file_name).await
+    };
+
+    let downloaded_file = crate::api::bedrock_curseforge::download_addon(&download_url).await?;
+
+    // Remove old folders
+    for folder_rel in &rec.installed_folders {
+        let p = com_mojang.join(folder_rel);
+        if p.exists() {
+            let _ = fs::remove_dir_all(p).await;
+        }
+    }
+
+    let install_res = install_bedrock_addon_from_file(profile_path, &downloaded_file, Some(mod_id)).await;
+    let _ = fs::remove_file(&downloaded_file).await;
+    install_res?;
+
+    let mut updated_records = load_installed_content_records(&com_mojang).await;
+    if let Some(r) = updated_records.iter_mut().find(|r| r.curseforge_mod_id == Some(mod_id)) {
+        r.version_number = Some(target_file.display_name.clone());
+        r.curseforge_file_id = Some(target_file.id);
+        r.has_update = false;
+    }
+    let _ = save_installed_content_records(&com_mojang, &updated_records).await;
+
+    Ok(())
+}
+
+pub async fn get_bedrock_installed_content(profile_path: &str) -> Result<Vec<BedrockInstalledContentRecord>> {
+    let instance_path = crate::api::instance::get_full_path_by_path(profile_path).await?;
+    let com_mojang = instance_path.join("com.mojang");
+    Ok(load_installed_content_records(&com_mojang).await)
+}
+
+pub async fn get_bedrock_installed_ids(profile_path: &str) -> Result<Vec<String>> {
+    let instance_path = match crate::api::instance::get_full_path_by_path(profile_path).await {
+        Ok(p) => p,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let com_mojang = instance_path.join("com.mojang");
+    if !com_mojang.exists() {
+        return Ok(Vec::new());
+    }
+    let records = load_installed_content_records(&com_mojang).await;
+    let mut ids = std::collections::HashSet::new();
+    for r in records {
+        ids.insert(r.project_id.clone());
+        if let Some(cf_id) = r.curseforge_mod_id {
+            ids.insert(cf_id.to_string());
+            ids.insert(format!("curseforge-{cf_id}"));
+            ids.insert(format!("curseforge:{cf_id}"));
+        }
+        if let Some(slug) = &r.slug {
+            ids.insert(slug.clone());
+            ids.insert(slug.to_lowercase());
+        }
+        let clean_t = r.title.replace('§', "").trim().to_lowercase();
+        if !clean_t.is_empty() {
+            ids.insert(clean_t);
+        }
+    }
+    Ok(ids.into_iter().collect())
 }
 

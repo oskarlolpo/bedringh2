@@ -373,10 +373,10 @@ export function useSkinPreviewScene({
 		earsTextureLoadVersion++
 		capeLoadVersion++
 
-		cleanupAnimationState(scene.value)
-		removeEarsMod(scene.value)
-		disposeSceneMaterials(scene.value)
-		scene.value = null
+		const currentScene = scene.value
+		cleanupAnimationState(currentScene)
+		removeEarsMod(currentScene)
+		disposeSceneMaterials(currentScene)
 		transparentTexture.dispose()
 	})
 

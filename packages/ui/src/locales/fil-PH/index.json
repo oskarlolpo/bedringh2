@@ -266,9 +266,6 @@
   "content.page-layout.share.project-links": {
     "defaultMessage": "Mga link ng proyekto"
   },
-  "content.page-layout.sort.alphabetical": {
-    "defaultMessage": "Alpabetiko"
-  },
   "content.page-layout.sort.date-added-newest": {
     "defaultMessage": "Pinakabago ang mauuna"
   },
@@ -340,9 +337,6 @@
   },
   "external-project-license-status.yes": {
     "defaultMessage": "Oo"
-  },
-  "files.editor.find-close": {
-    "defaultMessage": "Isara"
   },
   "files.editor.find-in-file": {
     "defaultMessage": "Hahanapin"
@@ -664,24 +658,6 @@
   },
   "instances.content-install.no-instances": {
     "defaultMessage": "Walang mahanap na magkatugmang instansiya"
-  },
-  "instances.modpack-content-modal.empty-description": {
-    "defaultMessage": "Hindi naglalaman ng karagdagang kontento ang modpack na ito."
-  },
-  "instances.modpack-content-modal.empty-title": {
-    "defaultMessage": "Walang mahanap na kontento"
-  },
-  "instances.modpack-content-modal.header": {
-    "defaultMessage": "Kontentong modpack"
-  },
-  "instances.modpack-content-modal.loading": {
-    "defaultMessage": "Inihahanda ang kontento..."
-  },
-  "instances.modpack-content-modal.no-results": {
-    "defaultMessage": "Walang proyektong tumugma sa iyong paghanap."
-  },
-  "instances.modpack-content-modal.search-placeholder": {
-    "defaultMessage": "Maghanap sa {count, number} {count, plural, one {proyekto} other {na proyekto}}"
   },
   "instances.updater-modal.badge.current": {
     "defaultMessage": "Kasalukuyan"
@@ -2072,9 +2048,6 @@
   "servers.list-empty.already-have-server-label": {
     "defaultMessage": "Mayroon ka nang server?"
   },
-  "servers.list-empty.sign-in-button": {
-    "defaultMessage": "Mag-sign-in"
-  },
   "servers.listing.copied-label": {
     "defaultMessage": "Kopyado"
   },
@@ -2236,9 +2209,6 @@
   },
   "settings.display.theme.dark": {
     "defaultMessage": "madilim"
-  },
-  "settings.display.theme.description": {
-    "defaultMessage": "Pumili ng iyong gugustohing paksang kulay para sa Modrinth ng nitong device."
   },
   "settings.display.theme.light": {
     "defaultMessage": "Liwanag"
@@ -2764,8 +2734,6 @@
   },
   "version.supplementary-resources.type": {
     "defaultMessage": "Uri"
-  },
-  "app.bedrock.category.skin-packs": {
-    "message": "Skin Packs"
   }
 }
+

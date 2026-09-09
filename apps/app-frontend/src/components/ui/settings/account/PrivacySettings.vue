@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Settings2Icon } from '@modrinth/assets'
 import {
-	ButtonStyled,
+	Button,
 	defineMessages,
 	injectNotificationManager,
 	injectPageContext,
@@ -78,19 +78,17 @@ watch(
 			{{ formatMessage(messages.adsConsentTitle) }}
 		</h2>
 		<div class="mt-2 flex flex-col gap-2.5 items-start">
-			<ButtonStyled>
-				<button class="!shadow-none" @click="manageAdsPreferences">
-					<Settings2Icon aria-hidden="true" />
-					{{ formatMessage(messages.adsConsentManage) }}
-				</button>
-			</ButtonStyled>
+			<Button @click="manageAdsPreferences">
+				<Settings2Icon aria-hidden="true" />
+				{{ formatMessage(messages.adsConsentManage) }}
+			</Button>
 			<div>
 				{{ formatMessage(messages.adsConsentIntro) }}
 			</div>
 		</div>
 	</div>
 
-	<div class="mt-8 flex items-center justify-between gap-4">
+	<div class="mt-8 first:mt-0 flex items-center justify-between gap-4">
 		<div>
 			<h2 class="m-0 text-lg font-semibold text-contrast">
 				{{ formatMessage(messages.telemetryTitle) }}

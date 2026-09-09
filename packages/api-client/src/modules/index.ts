@@ -9,16 +9,19 @@ import { ArchonNoticesV0Module } from './archon/notices/v0'
 import { ArchonOptionsV1Module } from './archon/options/v1'
 import { ArchonPropertiesV1Module } from './archon/properties/v1'
 import { ArchonServerUsersV1Module } from './archon/server-users/v1'
+import { ArchonServersInternalModule } from './archon/servers/internal'
 import { ArchonServersV0Module } from './archon/servers/v0'
 import { ArchonServersV1Module } from './archon/servers/v1'
 import { ArchonTransfersInternalModule } from './archon/transfers/internal'
 import { ISO3166Module } from './iso3166'
 import { KyrosContentV1Module } from './kyros/content/v1'
 import { KyrosFilesV0Module } from './kyros/files/v0'
+import { KyrosFilesV1Module } from './kyros/files/v1'
 import { KyrosLogsV1Module } from './kyros/logs/v1'
 import { KyrosUploadSessionsV1Module } from './kyros/upload-sessions/v1'
 import { LabrinthVersionsV2Module, LabrinthVersionsV3Module } from './labrinth'
 import { LabrinthAffiliateInternalModule } from './labrinth/affiliate/internal'
+import { LabrinthAnalyticsInternalModule } from './labrinth/analytics/internal'
 import { LabrinthAnalyticsV3Module } from './labrinth/analytics/v3'
 import { LabrinthAttributionInternalModule } from './labrinth/attribution/internal'
 import { LabrinthAuthInternalModule } from './labrinth/auth/internal'
@@ -31,6 +34,7 @@ import { LabrinthCollectionsModule } from './labrinth/collections'
 import { LabrinthContentV3Module } from './labrinth/content/v3'
 import { LabrinthExternalProjectsInternalModule } from './labrinth/external-projects/internal'
 import { LabrinthFriendsV3Module } from './labrinth/friends/v3'
+import { LabrinthGeoIpModule } from './labrinth/geoip'
 import { LabrinthGlobalsInternalModule } from './labrinth/globals/internal'
 import { LabrinthImagesV3Module } from './labrinth/images/v3'
 import { LabrinthLimitsV3Module } from './labrinth/limits/v3'
@@ -85,6 +89,7 @@ export const MODULE_REGISTRY = {
 	archon_options_v1: ArchonOptionsV1Module,
 	archon_properties_v1: ArchonPropertiesV1Module,
 	archon_server_users_v1: ArchonServerUsersV1Module,
+	archon_servers_internal: ArchonServersInternalModule,
 	archon_servers_v0: ArchonServersV0Module,
 	archon_servers_v1: ArchonServersV1Module,
 	archon_transfers_internal: ArchonTransfersInternalModule,
@@ -94,9 +99,11 @@ export const MODULE_REGISTRY = {
 	launchermeta_manifest_v0: LauncherMetaManifestV0Module,
 	kyros_content_v1: KyrosContentV1Module,
 	kyros_files_v0: KyrosFilesV0Module,
+	kyros_files_v1: KyrosFilesV1Module,
 	kyros_logs_v1: KyrosLogsV1Module,
 	kyros_upload_sessions_v1: KyrosUploadSessionsV1Module,
 	labrinth_affiliate_internal: LabrinthAffiliateInternalModule,
+	labrinth_analytics_internal: LabrinthAnalyticsInternalModule,
 	labrinth_analytics_v3: LabrinthAnalyticsV3Module,
 	labrinth_auth_internal: LabrinthAuthInternalModule,
 	labrinth_auth_v2: LabrinthAuthV2Module,
@@ -109,6 +116,7 @@ export const MODULE_REGISTRY = {
 	labrinth_content_v3: LabrinthContentV3Module,
 	labrinth_external_projects_internal: LabrinthExternalProjectsInternalModule,
 	labrinth_friends_v3: LabrinthFriendsV3Module,
+	labrinth_geoip: LabrinthGeoIpModule,
 	labrinth_globals_internal: LabrinthGlobalsInternalModule,
 	labrinth_images_v3: LabrinthImagesV3Module,
 	labrinth_moderation_internal: LabrinthModerationInternalModule,

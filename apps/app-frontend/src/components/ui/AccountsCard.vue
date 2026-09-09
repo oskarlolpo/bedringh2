@@ -133,14 +133,18 @@
 		v-model:offline-player-name="offlinePlayerName"
 		v-model:k-launcher-login-value="kLauncherLoginValue"
 		v-model:k-launcher-password="kLauncherPassword"
+		v-model:t-launcher-login-value="tLauncherLoginValue"
+		v-model:t-launcher-password="tLauncherPassword"
 		:ely-by-login-disabled="false"
 		ely-by-login-value=""
 		ely-by-password=""
 		ely-by-two-factor-code=""
 		:offline-login-disabled="offlineLoginDisabled"
 		:k-launcher-login-disabled="kLauncherLoginDisabled"
+		:t-launcher-login-disabled="tLauncherLoginDisabled"
 		@submit-offline="addOfflineProfile"
 		@submit-klauncher="addKLauncherProfile"
+		@submit-tlauncher="addTLauncherProfile"
 	/>
 </template>
 
@@ -174,7 +178,7 @@ import {
 	users,
 } from '@/helpers/auth'
 import { process_listener } from '@/helpers/events'
-import { fetchExternalJson } from '@/helpers/external-image.ts'
+import { fetchExternalImageObjectUrl, fetchExternalJson } from '@/helpers/external-image.ts'
 import { generatePlayerHeadBlob, getPlayerHeadUrl } from '@/helpers/rendering/batch-skin-renderer.ts'
 import type { Skin } from '@/helpers/skins'
 import { get_available_skins } from '@/helpers/skins'
@@ -212,6 +216,9 @@ const offlineLoginDisabled = ref(false)
 const kLauncherLoginValue = ref('')
 const kLauncherPassword = ref('')
 const kLauncherLoginDisabled = ref(false)
+const tLauncherLoginValue = ref('')
+const tLauncherPassword = ref('')
+const tLauncherLoginDisabled = ref(false)
 
 async function generateLocalSteveHead() {
 	try {
@@ -248,6 +255,29 @@ async function fetchAccountHead(account: MinecraftCredential) {
 			if (!skinUrl) {
 				skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
 			}
+		} else if (accountType === 'TLauncher') {
+			// TLauncher accounts: получаем URL скина с рабочего сервиса skins.tl.vg
+			try {
+				const json = await fetchExternalJson<{
+					SKIN?: { url?: string }
+					textures?: { SKIN?: { url?: string } }
+				}>(`http://skins.tl.vg/skin/profile/texture/login/${encodeURIComponent(name)}`)
+				const rawSkin = json?.SKIN?.url || json?.textures?.SKIN?.url
+				if (rawSkin) {
+					skinUrl = rawSkin
+						.replace('https://auth.tlauncher.org', 'http://skins.tl.vg')
+						.replace('http://auth.tlauncher.org', 'http://skins.tl.vg')
+						.replace('https://auth.tlauncher.ru', 'http://skins.tl.vg')
+						.replace('http://auth.tlauncher.ru', 'http://skins.tl.vg')
+				}
+			} catch (err) {
+				console.warn('TLauncher skin profile API error, trying direct file:', err)
+			}
+
+			// Fallback: прямое имя файла скина TLauncher
+			if (!skinUrl) {
+				skinUrl = `http://skins.tl.vg/skin/fileservice/skins/skin_${encodeURIComponent(name)}.png`
+			}
 		} else if (accountType === 'Microsoft') {
 			// Microsoft accounts: use mc-heads.net which resolves by UUID or username
 			skinUrl = `https://mc-heads.net/skin/${profileId}`
@@ -258,17 +288,22 @@ async function fetchAccountHead(account: MinecraftCredential) {
 
 		if (skinUrl) {
 			let headUrl: string | null = null
+			let tempBlobUrl: string | null = null
 			try {
-				const httpsUrl = skinUrl.replace('http://', 'https://')
-				const headBlob = await generatePlayerHeadBlob(httpsUrl, 64)
+				// Скачиваем скин через Tauri HTTP плагин, чтобы Canvas мог читать пиксели без CORS ошибок
+				tempBlobUrl = await fetchExternalImageObjectUrl(skinUrl)
+				const headBlob = await generatePlayerHeadBlob(tempBlobUrl, 64)
 				headUrl = URL.createObjectURL(headBlob)
-			} catch {
+			} catch (renderError) {
+				console.warn('Failed to render head from skin, trying mc-heads fallback:', renderError)
 				try {
-					const res = await fetch(`https://mc-heads.net/avatar/${encodeURIComponent(name)}/64`)
-					if (res.ok) {
-						headUrl = URL.createObjectURL(await res.blob())
-					}
+					const res = await fetchExternalImageObjectUrl(`https://mc-heads.net/avatar/${encodeURIComponent(name)}/64`)
+					headUrl = res
 				} catch {}
+			} finally {
+				if (tempBlobUrl) {
+					URL.revokeObjectURL(tempBlobUrl)
+				}
 			}
 			if (headUrl) {
 				accountHeadCache.value = new Map(accountHeadCache.value).set(profileId, headUrl)
@@ -286,12 +321,14 @@ async function fetchAccountHead(account: MinecraftCredential) {
 				return 0
 			case 'KLauncher':
 				return 1
-			case 'Ely.by':
+			case 'TLauncher':
 				return 2
-			case 'Офлайн':
+			case 'Ely.by':
 				return 3
-			default:
+			case 'Офлайн':
 				return 4
+			default:
+				return 5
 		}
 	}
 
@@ -353,6 +390,7 @@ defineExpose({
 	login,
 	addOfflineAccount,
 	addKLauncherAccount,
+	addTLauncherAccount,
 	accounts,
 })
 
@@ -472,6 +510,10 @@ const messages = defineMessages({
 		id: 'minecraft-account.sign-in-klauncher',
 		defaultMessage: 'Sign in with KLauncher',
 	},
+	signInWithTLauncher: {
+		id: 'minecraft-account.sign-in-tlauncher',
+		defaultMessage: 'Sign in with TLauncher',
+	},
 })
 
 function addOfflineAccount() {
@@ -533,6 +575,36 @@ async function addKLauncherProfile() {
 	}
 }
 
+function addTLauncherAccount() {
+	accountsInputModals.value?.showTLauncher()
+}
+
+async function addTLauncherProfile() {
+	if (!tLauncherLoginValue.value) return
+
+	const trimmedName = tLauncherLoginValue.value.trim()
+	if (trimmedName.length < 3 || trimmedName.length > 50) {
+		handleError('Логин должен быть от 3 до 50 символов.')
+		return
+	}
+	
+	try {
+		tLauncherLoginDisabled.value = true
+		accountsInputModals.value?.hideTLauncher()
+		const result = await import('@/helpers/auth').then(m => m.tlauncher_login(trimmedName, tLauncherPassword.value || null))
+		if (result) {
+			await setAccount(result)
+			await refreshValues()
+		}
+	} catch (error) {
+		handleError(error)
+	} finally {
+		tLauncherLoginDisabled.value = false
+		tLauncherLoginValue.value = ''
+		tLauncherPassword.value = ''
+	}
+}
+
 function getAccountTypeName(account: MinecraftCredential | null | undefined): string {
 	if (!account) return ''
 	const token = account.access_token || ''
@@ -541,6 +613,8 @@ function getAccountTypeName(account: MinecraftCredential | null | undefined): st
 	if (token === 'null' && refresh === 'null') return 'Офлайн'
 	// KLauncher аккаунты
 	if (refresh === 'kl_refresh' || token === 'kl' || token.startsWith('kl_')) return 'KLauncher'
+	// TLauncher аккаунты
+	if (refresh === 'tl_refresh' || token === 'tl' || token.startsWith('tl_')) return 'TLauncher'
 	// Ely.by
 	if (token.includes('elyby') || refresh.includes('elyby')) return 'Ely.by'
 	// Microsoft (OAuth)
@@ -553,6 +627,8 @@ function getAccountTypeBadgeClass(account: MinecraftCredential | null | undefine
 	switch (type) {
 		case 'KLauncher':
 			return 'bg-red-500/20 text-red-400 border border-red-500/30'
+		case 'TLauncher':
+			return 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
 		case 'Офлайн':
 			return 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
 		case 'Ely.by':

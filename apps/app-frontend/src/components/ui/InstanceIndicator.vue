@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { GameIcon, LeftArrowIcon } from '@modrinth/assets'
-import { Avatar, ButtonStyled, FormattedTag } from '@modrinth/ui'
-import { convertFileSrc } from '@tauri-apps/api/core'
+import { GameIcon, getLoaderIcon, LeftArrowIcon } from '@modrinth/assets'
+import { Avatar, ButtonLink, defineMessages, FormattedTag, useVIntl } from '@modrinth/ui'
 import { computed } from 'vue'
+
+import { getInstanceIconUrl } from '@/helpers/instance'
+
+const { formatMessage } = useVIntl()
+const messages = defineMessages({
+	backToInstance: {
+		id: 'app.instance.navigation.back-to-instance',
+		defaultMessage: 'Back to instance',
+	},
+})
 
 type Instance = {
 	game_version: string
@@ -32,25 +41,29 @@ const instanceLink = computed(() => {
 		<router-link :to="instanceLink" tabindex="-1" class="flex flex-col gap-4 text-primary">
 			<span class="flex items-center gap-2">
 				<Avatar
-					:src="instance.icon_path ? convertFileSrc(instance.icon_path) : undefined"
+					:src="getInstanceIconUrl(instance.icon_path)"
 					:alt="instance.name"
 					size="48px"
+					pad-transparent-corners
 				/>
 				<span class="flex flex-col gap-2">
 					<span class="font-extrabold bold text-contrast">
 						{{ instance.name }}
 					</span>
 					<span class="text-secondary flex items-center gap-2 font-semibold">
-						<GameIcon class="h-5 w-5 text-secondary" />
+						<component
+							:is="getLoaderIcon(instance.loader) || GameIcon"
+							class="h-5 w-5 text-secondary shrink-0"
+						/>
 						<FormattedTag :tag="instance.loader" enforce-type="loader" />
 						{{ instance.game_version }}
 					</span>
 				</span>
 			</span>
 		</router-link>
-		<ButtonStyled>
-			<router-link :to="instanceLink"> <LeftArrowIcon /> Back to instance </router-link>
-		</ButtonStyled>
+		<ButtonLink :to="instanceLink">
+			<LeftArrowIcon /> {{ formatMessage(messages.backToInstance) }}
+		</ButtonLink>
 	</div>
 </template>
 

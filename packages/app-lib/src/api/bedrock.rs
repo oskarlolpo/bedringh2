@@ -33,10 +33,9 @@ pub async fn fetch_bedrock_versions() -> crate::error::Result<Vec<BedrockVersion
     let mut versions: Vec<BedrockVersion> = Vec::new();
 
     let urls = [
-        "https://raw.githubusercontent.com/oskarlolpo000/bedrock-repacker/refs/heads/main/versions.json",
+        "https://raw.githubusercontent.com/oskarlolpo/bedrock-repacker/main/versions.json",
         "https://raw.githubusercontent.com/oskarlolpo/bedrock-repacker/refs/heads/main/versions.json",
         "https://raw.githubusercontent.com/oskarlolpo000/bedrock-repacker/main/versions.json",
-        "https://raw.githubusercontent.com/oskarlolpo/bedrock-repacker/main/versions.json",
     ];
 
     let process_entry = |ver: &String, is_preview: bool, entry: &GithubVersionEntry| -> Option<BedrockVersion> {
@@ -127,10 +126,15 @@ pub async fn fetch_bedrock_versions() -> crate::error::Result<Vec<BedrockVersion
     }
 
     versions.sort_by(|a, b| {
-        let parse = |s: &str| -> Vec<u32> {
-            s.split('-').next().unwrap_or(s).split('.').filter_map(|x| x.parse().ok()).collect()
-        };
-        parse(&b.version).cmp(&parse(&a.version))
+        match a.is_preview.cmp(&b.is_preview) {
+            std::cmp::Ordering::Equal => {
+                let parse = |s: &str| -> Vec<u32> {
+                    s.split('-').next().unwrap_or(s).split('.').filter_map(|x| x.parse().ok()).collect()
+                };
+                parse(&b.version).cmp(&parse(&a.version))
+            }
+            ord => ord,
+        }
     });
 
     Ok(versions)

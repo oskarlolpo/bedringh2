@@ -10,7 +10,7 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { computed, ref } from 'vue'
 import type { Router } from 'vue-router'
 
-import { install_job_listener } from '@/helpers/events'
+import { useAppSettings } from '@/composables/use-app-settings.ts'
 import {
 	install_job_dismiss,
 	install_job_list,
@@ -23,7 +23,8 @@ import {
 	type InstallProgress,
 } from '@/helpers/install'
 import { get_many as getInstances } from '@/helpers/instance'
-import { useTheming } from '@/store/state'
+import { install_job_listener } from '@/helpers/events'
+import { injectAppEvents } from '@/providers/app-events'
 
 const messages = defineMessages({
 	installs: {
@@ -234,8 +235,9 @@ export async function useInstallJobNotifications(opts: {
 	handleError: (err: unknown) => void
 	onChange: () => void
 }) {
+	const appEvents = injectAppEvents()
 	const { formatMessage } = useVIntl()
-	const themeStore = useTheming()
+	const appSettings = useAppSettings()
 	const jobs = ref<InstallJobSnapshot[]>([])
 	const iconUrls = ref<Record<string, string | null>>({})
 	const instanceNames = ref<Record<string, string>>({})
@@ -388,6 +390,10 @@ export async function useInstallJobNotifications(opts: {
 		) {
 			return 'bytes'
 		}
+		if (job.phase === 'extracting_overrides') {
+			const progress = getEffectiveProgress(job)
+			return progress && progress.total === 100 ? 'percentage' : 'bytes'
+		}
 		if (job.phase === 'running_loader_processors') {
 			return 'count'
 		}
@@ -403,8 +409,6 @@ export async function useInstallJobNotifications(opts: {
 	}
 
 	function getProgress(job: InstallJobSnapshot): number {
-		if (job.status === 'succeeded') return 1
-		if (job.status === 'failed' || job.status === 'interrupted') return 0
 		const progress = getEffectiveProgress(job)
 		if (!progress || progress.total <= 0) return 0
 		return Math.max(0, Math.min(1, progress.current / progress.total))
@@ -421,7 +425,7 @@ export async function useInstallJobNotifications(opts: {
 	}
 
 	function shouldShowCopyDetails(job: InstallJobSnapshot): boolean {
-		return isTerminalJob(job) || themeStore.getFeatureFlag('always_show_copy_details')
+		return isTerminalJob(job) || appSettings.getFeatureFlag('always_show_copy_details')
 	}
 
 	function isCopied(job: InstallJobSnapshot): boolean {
@@ -525,8 +529,12 @@ export async function useInstallJobNotifications(opts: {
 		)
 	}
 
+	const activeJobs = computed(() =>
+		jobs.value.filter((job) => job.status === 'queued' || job.status === 'running'),
+	)
+
 	const progressItems = computed<PopupNotificationProgressItem[]>(() =>
-		jobs.value.map((job) => {
+		activeJobs.value.map((job) => {
 			const progress = getEffectiveProgress(job)
 
 			return {
@@ -535,20 +543,26 @@ export async function useInstallJobNotifications(opts: {
 				text: getText(job),
 				iconUrl: iconUrls.value[job.job_id] ?? null,
 				progress: getProgress(job),
-				waiting: !job.progress && ['queued', 'running'].includes(job.status),
-				showProgress: !isTerminalJob(job),
-				wrapText: isTerminalJob(job),
-				progressType: isTerminalJob(job) ? undefined : getProgressType(job),
-				progressCurrent: isTerminalJob(job) ? undefined : progress?.current,
-				progressTotal: isTerminalJob(job) ? undefined : progress?.total,
+				waiting: !job.progress && job.status === 'running',
+				showProgress: job.status === 'running',
+				progressType: getProgressType(job),
+				progressCurrent: progress?.current,
+				progressTotal: progress?.total,
 				buttons: getButtons(job),
-				dismissible: isTerminalJob(job),
-				onDismiss: getDismissHandler(job),
 			}
 		}),
 	)
 
-	const buttons = computed<PopupNotificationButton[] | undefined>(() => undefined)
+	const terminalNotifications = computed(() =>
+		jobs.value.filter(isTerminalJob).map((job) => ({
+			id: job.job_id,
+			title: getTitle(job),
+			text: getText(job),
+			type: job.status === 'failed' ? ('error' as const) : ('warning' as const),
+			buttons: getButtons(job),
+			onDismiss: getDismissHandler(job),
+		})),
+	)
 
 	async function refreshMetadata(notify = true) {
 		const request = ++metadataRequest
@@ -626,20 +640,22 @@ export async function useInstallJobNotifications(opts: {
 		void refreshMetadata()
 	}
 
-	const unlisten = await install_job_listener((job: InstallJobSnapshot) => applyJobUpdate(job))
+	const unlistenAppEvents = appEvents.on('install_job', applyJobUpdate)
+	const unlistenTauri = await install_job_listener((job: InstallJobSnapshot) => applyJobUpdate(job)).catch(() => () => {})
 	await refresh(false)
 
 	return {
-		active: computed(() => jobs.value.length > 0),
+		active: computed(() => activeJobs.value.length > 0),
 		title: computed(() => formatMessage(messages.installs)),
 		progressItems,
-		buttons,
+		terminalNotifications,
 		refresh,
 		dispose: () => {
 			for (const timeout of copiedResetTimeouts.values()) {
 				window.clearTimeout(timeout)
 			}
-			unlisten()
+			unlistenAppEvents()
+			unlistenTauri()
 		},
 	}
 }

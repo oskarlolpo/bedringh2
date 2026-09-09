@@ -75,6 +75,8 @@ async fn open_app_db_pool(db_path: &Path) -> crate::Result<Pool<Sqlite>> {
 
     Ok(SqlitePoolOptions::new()
         .max_connections(100)
+        .idle_timeout(None)
+        .max_lifetime(None)
         .connect_with(conn_options)
         .await?)
 }

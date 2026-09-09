@@ -144,29 +144,33 @@ pub async fn download_single_file(
     let part_path = cache_dir.join(format!("{filename}.part"));
 
     // 1. Get Content-Length
-    let head_resp = client
-        .head(url)
-        .send()
-        .await
-        .map_err(|e| ErrorKind::FetchError(e))?;
+    let mut total_size = if let Ok(head_resp) = client.head(url).send().await {
+        let parsed_len = head_resp
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        parsed_len.or_else(|| head_resp.content_length()).unwrap_or(0)
+    } else {
+        0
+    };
 
-    let parsed_len = head_resp
-        .headers()
-        .get(reqwest::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
-
-    let total_size = parsed_len
-        .or_else(|| head_resp.content_length())
-        .ok_or_else(|| {
-            ErrorKind::OtherError(
-                "No content-length for Bedrock package".to_string(),
-            )
-        })?;
+    if total_size == 0 {
+        // Fallback: Range request for bytes=0-0 to extract total size from Content-Range header
+        if let Ok(range_resp) = client.get(url).header(RANGE, "bytes=0-0").send().await {
+            if let Some(cr) = range_resp.headers().get(reqwest::header::CONTENT_RANGE).and_then(|v| v.to_str().ok()) {
+                if let Some(slash_idx) = cr.rfind('/') {
+                    if let Ok(len) = cr[slash_idx + 1..].trim().parse::<u64>() {
+                        total_size = len;
+                    }
+                }
+            }
+        }
+    }
 
     if total_size == 0 {
         return Err(crate::Error::from(ErrorKind::OtherError(
-            "Content-Length is 0! The HEAD request failed to get the true file size.".to_string(),
+            "Content-Length is 0! The server failed to report the true file size.".to_string(),
         )));
     }
 
@@ -198,8 +202,21 @@ pub async fn download_single_file(
         file.set_len(total_size).await?;
     }
 
-    let _downloaded_bytes: u64 =
+    let initial_bytes: u64 =
         state.chunks_completed.len() as u64 * CHUNK_SIZE;
+    if let (Some(rep), Some(det)) = (reporter, phase_details) {
+        let _ = rep
+            .update(
+                crate::install::InstallPhaseId::DownloadingMinecraft,
+                Some(crate::install::InstallProgress {
+                    current: initial_bytes,
+                    total: total_size,
+                    secondary: None,
+                }),
+                det.clone(),
+            )
+            .await;
+    }
     // Don't emit accumulated progress to avoid jumping behavior when resuming, 
     // since emit_loading is increment-based and starts at 0.
 
@@ -363,6 +380,19 @@ pub async fn download_single_file(
     // The backend uses emit_loading directly to increment. If the total is reached, it will emit None internally.
     // However, to ensure it finishes gracefully even if bytes mismatch:
     let _ = emit_loading(&loading_bar, total_size as f64, Some("Установка..."));
+    if let (Some(rep), Some(det)) = (reporter, phase_details) {
+        let _ = rep
+            .update(
+                crate::install::InstallPhaseId::DownloadingMinecraft,
+                Some(crate::install::InstallProgress {
+                    current: total_size,
+                    total: total_size,
+                    secondary: None,
+                }),
+                det.clone(),
+            )
+            .await;
+    }
 
     fs::rename(&part_path, &target_path).await?;
     let _ = fs::remove_file(&state_path).await;

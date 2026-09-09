@@ -240,11 +240,46 @@ pub async fn get_addon_description(mod_id: i32) -> crate::Result<String> {
     Ok(resp.data)
 }
 
+pub async fn resolve_file_download_url(mod_id: i32, file_id: i32, file_name: &str) -> String {
+    let client = build_http_client();
+    let url = format!("{}/mods/{}/files/{}/download-url", CURSEFORGE_API_BASE, mod_id, file_id);
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(val) = resp.json::<serde_json::Value>().await {
+            if let Some(dl) = val.get("data").and_then(|d| d.as_str()) {
+                if !dl.trim().is_empty() {
+                    return dl.to_string();
+                }
+            }
+        }
+    }
+    let id_str = file_id.to_string();
+    if id_str.len() >= 4 {
+        let part1 = &id_str[..4];
+        let part2 = &id_str[4..];
+        format!("https://edge.forgecdn.net/files/{part1}/{part2}/{}", file_name)
+    } else {
+        format!("https://edge.forgecdn.net/files/{file_id}/{file_name}")
+    }
+}
+
 pub async fn get_addon_files(mod_id: i32) -> crate::Result<Vec<CurseForgeFile>> {
     let client = build_http_client();
     let url = format!("{}/mods/{}/files?pageSize=50", CURSEFORGE_API_BASE, mod_id);
     let resp = client.get(&url).send().await?.json::<GetModFilesResponse>().await?;
-    Ok(resp.data)
+    let mut files = resp.data;
+    for file in &mut files {
+        if file.download_url.is_none() || file.download_url.as_ref().map(|u| u.trim().is_empty()).unwrap_or(true) {
+            let id_str = file.id.to_string();
+            if id_str.len() >= 4 {
+                let part1 = &id_str[..4];
+                let part2 = &id_str[4..];
+                file.download_url = Some(format!("https://edge.forgecdn.net/files/{part1}/{part2}/{}", file.file_name));
+            } else {
+                file.download_url = Some(format!("https://edge.forgecdn.net/files/{}/{}", file.id, file.file_name));
+            }
+        }
+    }
+    Ok(files)
 }
 
 fn build_download_client() -> &'static Client {

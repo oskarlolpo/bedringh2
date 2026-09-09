@@ -12,6 +12,7 @@ export const loaderDisplayNames: Record<string, string> = {
 	spigot: 'Spigot',
 	purpur: 'Purpur',
 	bukkit: 'Bukkit',
+	bedrock: 'Bedrock',
 	vanilla: 'Vanilla',
 }
 

@@ -2,9 +2,11 @@
 
 use crate::state::instances::{
     ContentSet, ContentSetStatus, ContentSetSyncStatus, ContentSourceKind,
-    Instance, InstanceLaunchContext, InstanceLaunchOverrides,
-    InstanceLaunchOverridesData, InstanceLink, SharedInstanceAttachment,
-    SharedInstanceRole, playtime_to_storage,
+    Instance, InstanceIconBackground, InstanceIconConfig,
+    InstanceLaunchContext, InstanceLaunchOverrides,
+    InstanceLaunchOverridesData, InstanceLink, InstanceSyncedOption,
+    InstanceSyncedOptions, SharedInstanceAttachment, SharedInstanceRole,
+    playtime_to_storage,
 };
 use crate::state::{
     InstanceInstallStage, LauncherFeatureVersion, ModLoader, ReleaseChannel,
@@ -12,6 +14,7 @@ use crate::state::{
 use chrono::{DateTime, TimeZone, Utc};
 use serde::de::DeserializeOwned;
 use sqlx::{Executor, Sqlite, SqlitePool, Transaction};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -161,10 +164,12 @@ pub(crate) struct InstanceLaunchOverridesRow {
 #[derive(Debug)]
 pub(crate) struct InstanceMetadataRecord {
     pub instance: Instance,
+    pub icon_config: Option<InstanceIconConfig>,
     pub applied_content_set: ContentSet,
     pub link: InstanceLink,
     pub shared_instance: Option<SharedInstanceAttachment>,
-    pub groups: Vec<String>,
+    pub group_ids: Vec<String>,
+    pub synced_options: InstanceSyncedOptions,
     pub launch_overrides: InstanceLaunchOverrides,
 }
 
@@ -172,6 +177,13 @@ pub(crate) struct InstanceMetadataRecord {
 pub(crate) struct InstanceDisplayInfo {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub(crate) struct InstanceScreenshotSource {
+    pub id: String,
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -184,6 +196,8 @@ struct InstanceMetadataRow {
     update_channel: String,
     name: String,
     icon_path: Option<String>,
+    icon_config_background: Option<String>,
+    icon_config_symbol: Option<String>,
     created: i64,
     modified: i64,
     last_played: Option<i64>,
@@ -221,7 +235,7 @@ struct InstanceMetadataRow {
     imported_name: Option<String>,
     imported_version_number: Option<String>,
     imported_filename: Option<String>,
-    groups: String,
+    group_ids: String,
     launch_overrides: Option<String>,
 }
 
@@ -333,16 +347,32 @@ impl InstanceMetadataRow {
             self.shared_sync_applied_update_id,
             self.shared_sync_latest_available_update_id,
         )?;
-        let groups = parse_groups(self.groups)?;
+        let group_ids = parse_group_ids(self.group_ids)?;
         let launch_overrides =
             launch_overrides_from_json(instance_id, self.launch_overrides)?;
+        let icon_config =
+            match (self.icon_config_background, self.icon_config_symbol) {
+                (Some(background), Some(symbol)) => Some(InstanceIconConfig {
+                    background: deserialize_icon_background(background)?,
+                    symbol,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(crate::ErrorKind::InputError(
+                        "Instance icon config is incomplete".to_string(),
+                    )
+                    .into());
+                }
+            };
 
         Ok(InstanceMetadataRecord {
             instance,
+            icon_config,
             applied_content_set,
             link,
             shared_instance,
-            groups,
+            group_ids,
+            synced_options: InstanceSyncedOptions::default(),
             launch_overrides,
         })
     }
@@ -359,12 +389,37 @@ impl InstanceMetadataRow {
     }
 }
 
-pub(crate) async fn get_instance_by_id<'e, E>(
+pub(crate) fn simple_percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let h1 = chars.next();
+            let h2 = chars.next();
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                let hex_str = format!("{h1}{h2}");
+                if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
+                    result.push(byte as char);
+                    continue;
+                } else {
+                    result.push('%');
+                    result.push(h1);
+                    result.push(h2);
+                    continue;
+                }
+            }
+        }
+        result.push(c);
+    }
+    result
+}
+
+async fn get_instance_by_id_exact<'e, E>(
     id: &str,
     exec: E,
 ) -> crate::Result<Option<Instance>>
 where
-    E: Executor<'e, Database = Sqlite> + Copy,
+    E: Executor<'e, Database = Sqlite>,
 {
     let row = sqlx::query_as!(
         InstanceRow,
@@ -378,14 +433,10 @@ where
     .fetch_optional(exec)
     .await?;
 
-    if let Some(row) = row {
-        return row.try_into().map(Some);
-    }
-
-    get_instance_by_path(id, exec).await
+    row.map(TryInto::try_into).transpose()
 }
 
-pub(crate) async fn get_instance_by_path<'e, E>(
+async fn get_instance_by_path_exact<'e, E>(
     path: &str,
     exec: E,
 ) -> crate::Result<Option<Instance>>
@@ -407,6 +458,67 @@ where
     row.map(TryInto::try_into).transpose()
 }
 
+pub(crate) async fn get_instance_by_id<'e, E>(
+    id: &str,
+    exec: E,
+) -> crate::Result<Option<Instance>>
+where
+    E: Executor<'e, Database = Sqlite> + Copy,
+{
+    // 1. Try exact id
+    if let Some(inst) = get_instance_by_id_exact(id, exec).await? {
+        return Ok(Some(inst));
+    }
+
+    // 2. Try with local: prefix added or stripped
+    let alt_id = if let Some(stripped) = id.strip_prefix("local:") {
+        stripped.to_string()
+    } else {
+        format!("local:{}", id)
+    };
+    if let Some(inst) = get_instance_by_id_exact(&alt_id, exec).await? {
+        return Ok(Some(inst));
+    }
+
+    // 3. Try by path
+    if let Some(inst) = get_instance_by_path_exact(id, exec).await? {
+        return Ok(Some(inst));
+    }
+
+    // 4. Try percent-decoded
+    let decoded = simple_percent_decode(id);
+    if decoded != id {
+        if let Some(inst) = get_instance_by_path_exact(&decoded, exec).await? {
+            return Ok(Some(inst));
+        }
+
+        let dec_alt = if let Some(stripped) = decoded.strip_prefix("local:") {
+            stripped.to_string()
+        } else {
+            format!("local:{}", decoded)
+        };
+        if let Some(inst) = get_instance_by_id_exact(&dec_alt, exec).await? {
+            return Ok(Some(inst));
+        }
+    }
+
+    Ok(None)
+}
+
+pub(crate) async fn get_instance_by_path<'e, E>(
+    path: &str,
+    exec: E,
+) -> crate::Result<Option<Instance>>
+where
+    E: Executor<'e, Database = Sqlite> + Copy,
+{
+    if let Some(inst) = get_instance_by_path_exact(path, exec).await? {
+        return Ok(Some(inst));
+    }
+
+    get_instance_by_id(path, exec).await
+}
+
 pub(crate) async fn get_instance_path_by_id<'e, E>(
     id: &str,
     exec: E,
@@ -414,6 +526,7 @@ pub(crate) async fn get_instance_path_by_id<'e, E>(
 where
     E: Executor<'e, Database = Sqlite> + Copy,
 {
+    // 1. Try exact id
     let path = sqlx::query_scalar!(
         "
         SELECT path
@@ -429,8 +542,33 @@ where
         return Ok(path);
     }
 
-    let inst = get_instance_by_path(id, exec).await?;
-    Ok(inst.map(|i| i.path))
+    // 2. Try with local: prefix added or stripped
+    let alt_id = if let Some(stripped) = id.strip_prefix("local:") {
+        stripped.to_string()
+    } else {
+        format!("local:{}", id)
+    };
+    let path = sqlx::query_scalar!(
+        "
+        SELECT path
+        FROM instances
+        WHERE id = ?
+        ",
+        alt_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+
+    if path.is_some() {
+        return Ok(path);
+    }
+
+    // 3. Check if instance can be found by path or decoded
+    if let Some(inst) = get_instance_by_id(id, exec).await? {
+        return Ok(Some(inst.path));
+    }
+
+    Ok(None)
 }
 
 pub(crate) async fn get_instance_display_info<'e, E>(
@@ -438,7 +576,7 @@ pub(crate) async fn get_instance_display_info<'e, E>(
     exec: E,
 ) -> crate::Result<Option<InstanceDisplayInfo>>
 where
-    E: Executor<'e, Database = Sqlite> + Copy,
+    E: Executor<'e, Database = Sqlite>,
 {
     let row = sqlx::query_as!(
         InstanceDisplayInfo,
@@ -452,12 +590,104 @@ where
     .fetch_optional(exec)
     .await?;
 
-    if row.is_some() {
-        return Ok(row);
+    Ok(row)
+}
+
+pub(crate) async fn get_instance_screenshot_source(
+    instance_id: &str,
+    pool: &SqlitePool,
+) -> crate::Result<Option<InstanceScreenshotSource>> {
+    let source = sqlx::query_as::<_, InstanceScreenshotSource>(
+        "
+		SELECT id, name, path
+		FROM instances
+		WHERE id = ?
+		",
+    )
+    .bind(instance_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(source)
+}
+
+pub(crate) async fn list_screenshot_sources(
+    pool: &SqlitePool,
+) -> crate::Result<Vec<InstanceScreenshotSource>> {
+    let sources = sqlx::query_as::<_, InstanceScreenshotSource>(
+        "
+		SELECT id, name, path
+		FROM instances
+		ORDER BY name, id
+		",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(sources)
+}
+
+pub(crate) async fn get_instance_sync_preferences(
+    instance_id: &str,
+    pool: &SqlitePool,
+) -> crate::Result<InstanceSyncedOptions> {
+    let enabled_features = sqlx::query_scalar!(
+        "
+		SELECT feature
+		FROM instance_sync_preferences
+		WHERE instance_id = ? AND enabled = 1
+		",
+        instance_id,
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect::<HashSet<_>>();
+
+    Ok(InstanceSyncedOptions {
+        command_history: enabled_features.contains("command_history"),
+        multiplayer_servers: enabled_features.contains("multiplayer_servers"),
+        creative_hotbars: enabled_features.contains("creative_hotbars"),
+        screenshots: enabled_features.contains("screenshots"),
+    })
+}
+
+async fn attach_sync_preferences(
+    records: &mut [InstanceMetadataRecord],
+    pool: &SqlitePool,
+) -> crate::Result<()> {
+    let enabled_preferences = sqlx::query!(
+        "
+		SELECT instance_id, feature
+		FROM instance_sync_preferences
+		WHERE enabled = 1
+		",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for record in records {
+        for row in enabled_preferences
+            .iter()
+            .filter(|row| row.instance_id == record.instance.id)
+        {
+            match row.feature.as_str() {
+                "command_history" => {
+                    record.synced_options.command_history = true
+                }
+                "multiplayer_servers" => {
+                    record.synced_options.multiplayer_servers = true
+                }
+                "creative_hotbars" => {
+                    record.synced_options.creative_hotbars = true
+                }
+                "screenshots" => record.synced_options.screenshots = true,
+                _ => {}
+            }
+        }
     }
 
-    let inst = get_instance_by_path(id, exec).await?;
-    Ok(inst.map(|i| InstanceDisplayInfo { id: i.id, name: i.name }))
+    Ok(())
 }
 
 pub(crate) async fn is_instance_quarantined<'e, E>(
@@ -552,6 +782,8 @@ macro_rules! query_instance_metadata {
                     i.update_channel AS "update_channel!: String",
                     i.name AS "name!: String",
                     i.icon_path AS "icon_path?: String",
+                    config.background AS "icon_config_background?: String",
+                    config.symbol AS "icon_config_symbol?: String",
                     i.created AS "created!: i64",
                     i.modified AS "modified!: i64",
                     i.last_played AS "last_played?: i64",
@@ -590,14 +822,16 @@ macro_rules! query_instance_metadata {
                     link.imported_version_number AS "imported_version_number?: String",
                     link.imported_filename AS "imported_filename?: String",
                     COALESCE((
-                        SELECT json_group_array(group_name)
+                        SELECT json_group_array(id)
                         FROM (
-                            SELECT group_name
-                            FROM instance_groups
-                            WHERE instance_id = i.id
-                            ORDER BY group_name
+                            SELECT groups.id
+                            FROM instance_group_memberships memberships
+                            INNER JOIN instance_groups groups
+                                ON groups.id = memberships.group_id
+                            WHERE memberships.instance_id = i.id
+                            ORDER BY groups.name
                         )
-                    ), '[]') AS "groups!: String",
+                    ), '[]') AS "group_ids!: String",
                     json(overrides.overrides) AS "launch_overrides?: String"
                 "#
                 + $from
@@ -612,6 +846,8 @@ macro_rules! query_instance_metadata {
                     AND sync.provider = 'shared_instance'
                 LEFT JOIN instance_launch_overrides overrides
                     ON overrides.instance_id = i.id
+                LEFT JOIN instance_icon_configs config
+                    ON config.instance_id = i.id
                 "#
                 + $suffix,
             $arg,
@@ -619,24 +855,181 @@ macro_rules! query_instance_metadata {
     };
 }
 
+pub(crate) async fn update_instance_icon_config(
+    instance_id: &str,
+    config: Option<&InstanceIconConfig>,
+    tx: &mut Transaction<'_, Sqlite>,
+) -> crate::Result<()> {
+    if let Some(config) = config {
+        let background = serde_json::to_string(&config.background)?;
+        let symbol = &config.symbol;
+        sqlx::query(
+            "
+			INSERT INTO instance_icon_configs (instance_id, background, symbol)
+			VALUES (?, ?, ?)
+			ON CONFLICT (instance_id) DO UPDATE SET
+				background = excluded.background,
+				symbol = excluded.symbol
+			",
+        )
+        .bind(instance_id)
+        .bind(&background)
+        .bind(symbol)
+        .execute(&mut **tx)
+        .await?;
+
+        update_recent_instance_icon_config(config, tx).await?;
+    } else {
+        sqlx::query(
+            "
+			DELETE FROM instance_icon_configs
+			WHERE instance_id = ?
+			",
+        )
+        .bind(instance_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn update_instance_icon_if_empty(
+    instance_id: &str,
+    icon_path: &str,
+    config: &InstanceIconConfig,
+    pool: &SqlitePool,
+) -> crate::Result<bool> {
+    let modified = Utc::now().timestamp();
+    let mut tx = pool.begin().await?;
+    let result = sqlx::query(
+        "
+		UPDATE instances
+		SET icon_path = ?, modified = ?
+		WHERE id = ? AND (icon_path IS NULL OR icon_path = '')
+		",
+    )
+    .bind(icon_path)
+    .bind(modified)
+    .bind(instance_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+
+    update_instance_icon_config(instance_id, Some(config), &mut tx).await?;
+    tx.commit().await?;
+
+    Ok(true)
+}
+
+pub(crate) async fn update_recent_instance_icon_config(
+    config: &InstanceIconConfig,
+    tx: &mut Transaction<'_, Sqlite>,
+) -> crate::Result<()> {
+    let background = serde_json::to_string(&config.background)?;
+    let used_at = Utc::now().timestamp_millis();
+
+    sqlx::query(
+        "
+			INSERT INTO recent_instance_icon_configs (background, symbol, used_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT (background, symbol) DO UPDATE SET
+				used_at = excluded.used_at
+			",
+    )
+    .bind(&background)
+    .bind(&config.symbol)
+    .bind(used_at)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "
+			DELETE FROM recent_instance_icon_configs
+			WHERE rowid NOT IN (
+				SELECT rowid
+				FROM recent_instance_icon_configs
+				ORDER BY used_at DESC, background, symbol
+				LIMIT 16
+			)
+			",
+    )
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn get_recent_instance_icon_configs(
+    pool: &SqlitePool,
+) -> crate::Result<Vec<InstanceIconConfig>> {
+    let rows = sqlx::query_as::<_, InstanceIconConfigRow>(
+        "
+		SELECT background, symbol
+		FROM recent_instance_icon_configs
+		ORDER BY used_at DESC, background, symbol
+		LIMIT 16
+		",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(InstanceIconConfig {
+                background: deserialize_icon_background(row.background)?,
+                symbol: row.symbol,
+            })
+        })
+        .collect()
+}
+
+#[derive(sqlx::FromRow)]
+struct InstanceIconConfigRow {
+    background: String,
+    symbol: String,
+}
+
+fn deserialize_icon_background(
+    background: String,
+) -> crate::Result<InstanceIconBackground> {
+    match serde_json::from_str(&background) {
+        Ok(background) => Ok(background),
+        Err(_) if background.starts_with('#') => {
+            Ok(InstanceIconBackground::Color { value: background })
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 pub(crate) async fn get_instance_metadata_by_id(
     id: &str,
     pool: &SqlitePool,
 ) -> crate::Result<Option<InstanceMetadataRecord>> {
-    let row =
-        query_instance_metadata!("", "FROM instances i", "WHERE i.id = ?", id,)
-            .fetch_optional(pool)
-            .await?;
+    let row = query_instance_metadata!(
+        "",
+        "FROM instances i",
+        "WHERE i.id = ?",
+        id,
+    )
+    .fetch_optional(pool)
+    .await?;
 
-    if let Some(row) = row {
-        return row.into_record().map(Some);
+    if let Some(mut record) = row.map(InstanceMetadataRow::into_record).transpose()? {
+        record.synced_options =
+            get_instance_sync_preferences(&record.instance.id, pool).await?;
+        return Ok(Some(record));
     }
 
     let inst = if let Some(inst) = get_instance_by_id(id, pool).await? {
         Some(inst)
     } else {
         let all = list_instances(pool).await?;
-        all.into_iter().find(|i| i.name == id)
+        all.into_iter().find(|i| i.name == id || i.path == id)
     };
 
     if let Some(inst) = inst {
@@ -649,7 +1042,12 @@ pub(crate) async fn get_instance_metadata_by_id(
         .fetch_optional(pool)
         .await?;
 
-        return row.map(InstanceMetadataRow::into_record).transpose();
+        let mut record = row.map(InstanceMetadataRow::into_record).transpose()?;
+        if let Some(record) = record.as_mut() {
+            record.synced_options =
+                get_instance_sync_preferences(&record.instance.id, pool).await?;
+        }
+        return Ok(record);
     }
 
     Ok(None)
@@ -682,9 +1080,12 @@ pub(crate) async fn get_instance_metadata_many(
     .fetch_all(pool)
     .await?;
 
-    rows.into_iter()
+    let mut records = rows
+        .into_iter()
         .map(InstanceMetadataRow::into_record)
-        .collect()
+        .collect::<crate::Result<Vec<_>>>()?;
+    attach_sync_preferences(&mut records, pool).await?;
+    Ok(records)
 }
 
 pub(crate) async fn list_instance_metadata(
@@ -695,9 +1096,12 @@ pub(crate) async fn list_instance_metadata(
             .fetch_all(pool)
             .await?;
 
-    rows.into_iter()
+    let mut records = rows
+        .into_iter()
         .map(InstanceMetadataRow::into_record)
-        .collect()
+        .collect::<crate::Result<Vec<_>>>()?;
+    attach_sync_preferences(&mut records, pool).await?;
+    Ok(records)
 }
 
 pub(crate) async fn get_instance_launch_context(
@@ -721,7 +1125,7 @@ pub(crate) async fn get_instance_launch_context(
         Some(inst)
     } else {
         let all = list_instances(pool).await?;
-        all.into_iter().find(|i| i.name == instance_id)
+        all.into_iter().find(|i| i.name == instance_id || i.path == instance_id)
     };
 
     if let Some(inst) = inst {
@@ -807,10 +1211,12 @@ where
 {
     let rows = sqlx::query_scalar!(
         "
-		SELECT group_name
-		FROM instance_groups
-		WHERE instance_id = ?
-		ORDER BY group_name
+		SELECT groups.id
+		FROM instance_group_memberships memberships
+		INNER JOIN instance_groups groups
+			ON groups.id = memberships.group_id
+		WHERE memberships.instance_id = ?
+		ORDER BY groups.name
 		",
         instance_id,
     )
@@ -818,6 +1224,122 @@ where
     .await?;
 
     Ok(rows)
+}
+
+pub(crate) async fn list_instance_groups(
+    pool: &SqlitePool,
+) -> crate::Result<Vec<(String, String)>> {
+    let groups = sqlx::query_as::<_, (String, String)>(
+        "
+		SELECT id, name
+		FROM instance_groups
+		ORDER BY display_order, name, id
+		",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(groups)
+}
+
+pub(crate) async fn create_instance_group(
+    id: &str,
+    name: &str,
+    pool: &SqlitePool,
+) -> crate::Result<()> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        "
+		UPDATE instance_groups
+		SET display_order = display_order + 1
+		WHERE id != ?
+		",
+    )
+    .bind(crate::api::instance::FAVORITES_GROUP_ID)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "
+		INSERT INTO instance_groups (id, name, display_order)
+		VALUES (?, ?, 0)
+		",
+    )
+    .bind(id)
+    .bind(name)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+pub(crate) async fn set_instance_group_order(
+    group_ids: &[String],
+    pool: &SqlitePool,
+) -> crate::Result<()> {
+    let mut tx = pool.begin().await?;
+    let existing_group_ids = sqlx::query_scalar::<_, String>(
+        "
+		SELECT id
+		FROM instance_groups
+		WHERE id != ?
+		ORDER BY display_order, name, id
+		",
+    )
+    .bind(crate::api::instance::FAVORITES_GROUP_ID)
+    .fetch_all(&mut *tx)
+    .await?;
+    let existing_group_id_set = existing_group_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    let mut seen_group_ids = HashSet::new();
+    let mut ordered_group_ids = Vec::with_capacity(existing_group_ids.len());
+
+    for group_id in group_ids {
+        if !seen_group_ids.insert(group_id.as_str()) {
+            return Err(crate::ErrorKind::InputError(format!(
+                "Duplicate instance group {group_id} in group order"
+            ))
+            .into());
+        }
+
+        if !existing_group_id_set.contains(group_id.as_str()) {
+            return Err(crate::ErrorKind::InputError(format!(
+                "Unknown instance group {group_id}"
+            ))
+            .into());
+        }
+
+        ordered_group_ids.push(group_id.as_str());
+    }
+
+    for group_id in &existing_group_ids {
+        if seen_group_ids.insert(group_id.as_str()) {
+            ordered_group_ids.push(group_id.as_str());
+        }
+    }
+
+    for (display_order, group_id) in ordered_group_ids.into_iter().enumerate() {
+        sqlx::query(
+            "
+			UPDATE instance_groups
+			SET display_order = ?
+			WHERE id = ?
+			",
+        )
+        .bind(display_order as i64)
+        .bind(group_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(())
 }
 
 pub(crate) async fn get_instance_launch_overrides<'e, E>(
@@ -898,6 +1420,65 @@ pub(crate) async fn insert_instance(
         last_played,
         submitted_time_played,
         recent_time_played,
+    )
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn set_instance_sync_preference(
+    instance_id: &str,
+    option: InstanceSyncedOption,
+    enabled: bool,
+    pool: &SqlitePool,
+) -> crate::Result<()> {
+    let instance_exists = sqlx::query_scalar!(
+        r#"
+		SELECT EXISTS(SELECT 1 FROM instances WHERE id = ?)
+			AS "exists!: bool"
+		"#,
+        instance_id,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if !instance_exists {
+        return Err(crate::ErrorKind::InputError(
+            "Unknown instance".to_string(),
+        )
+        .into());
+    }
+
+    let option_name = option.as_str();
+    sqlx::query!(
+        "
+		INSERT INTO instance_sync_preferences (instance_id, feature, enabled)
+		VALUES (?, ?, ?)
+		ON CONFLICT (instance_id, feature) DO UPDATE SET
+			enabled = excluded.enabled
+		",
+        instance_id,
+        option_name,
+        enabled,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn insert_default_instance_sync_preferences(
+    instance_id: &str,
+    tx: &mut Transaction<'_, Sqlite>,
+) -> crate::Result<()> {
+    sqlx::query!(
+        "
+		INSERT INTO instance_sync_preferences (instance_id, feature, enabled)
+		SELECT ?, feature, new_instance_default
+		FROM sync_feature_settings
+		",
+        instance_id,
     )
     .execute(&mut **tx)
     .await?;
@@ -1093,12 +1674,12 @@ pub(crate) async fn set_shared_instance_attachment(
 
 pub(crate) async fn replace_instance_groups(
     instance_id: &str,
-    groups: &[String],
+    group_ids: &[String],
     tx: &mut Transaction<'_, Sqlite>,
 ) -> crate::Result<()> {
     sqlx::query!(
         "
-		DELETE FROM instance_groups
+		DELETE FROM instance_group_memberships
 		WHERE instance_id = ?
 		",
         instance_id,
@@ -1106,15 +1687,18 @@ pub(crate) async fn replace_instance_groups(
     .execute(&mut **tx)
     .await?;
 
-    for group in groups {
-        sqlx::query!(
+    for group_id in group_ids {
+        sqlx::query(
             "
-			INSERT OR IGNORE INTO instance_groups (instance_id, group_name)
+			INSERT OR IGNORE INTO instance_group_memberships (
+				instance_id,
+				group_id
+			)
 			VALUES (?, ?)
 			",
-            instance_id,
-            group,
         )
+        .bind(instance_id)
+        .bind(group_id)
         .execute(&mut **tx)
         .await?;
     }
@@ -1325,7 +1909,7 @@ fn required_i64(value: Option<i64>, column: &str) -> crate::Result<i64> {
     })
 }
 
-fn parse_groups(value: String) -> crate::Result<Vec<String>> {
+fn parse_group_ids(value: String) -> crate::Result<Vec<String>> {
     serde_json::from_str(&value).map_err(|err| {
         crate::ErrorKind::InputError(format!(
             "Invalid instance groups JSON: {err}"

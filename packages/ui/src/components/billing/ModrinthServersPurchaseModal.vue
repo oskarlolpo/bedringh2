@@ -12,12 +12,13 @@ import { useQueryClient } from '@tanstack/vue-query'
 import type Stripe from 'stripe'
 import { computed, nextTick, onBeforeUnmount, ref, toRef, useTemplateRef, watch } from 'vue'
 
+import { Button } from '#ui/components/base/buttons'
 import { injectNotificationManager } from '#ui/providers/web-notifications.ts'
 
+import { useDebugLogger } from '../../composables/debug-logger'
 import { defineMessage, type MessageDescriptor, useVIntl } from '../../composables/i18n'
 import { useStripe } from '../../composables/stripe'
 import { commonMessages } from '../../utils'
-import { ButtonStyled } from '../index'
 import ModalLoadingIndicator from '../modal/ModalLoadingIndicator.vue'
 import NewModal from '../modal/NewModal.vue'
 import PlanSelector from './ServersPurchase0Plan.vue'
@@ -28,6 +29,7 @@ import ConfirmPurchase from './ServersPurchase3Review.vue'
 const { formatMessage } = useVIntl()
 const { addNotification } = injectNotificationManager()
 const queryClient = useQueryClient()
+const debug = useDebugLogger('ModrinthServersPurchaseModal')
 
 export type RegionPing = {
 	region: string
@@ -246,7 +248,7 @@ const nextStep = computed(() => {
 const canProceed = computed(() => {
 	switch (currentStep.value) {
 		case 'plan':
-			console.log('Plan step:', {
+			debug('Plan step:', {
 				customServer: customServer.value,
 				selectedPlan: selectedPlan.value,
 				existingPlan: props.existingPlan,
@@ -555,51 +557,50 @@ function goToBreadcrumbStep(id: string) {
 			</div>
 		</div>
 		<div class="flex gap-2 justify-between mt-4">
-			<ButtonStyled>
-				<button v-if="previousStep" @click="previousStep && setStep(previousStep, true)">
-					<LeftArrowIcon /> {{ formatMessage(commonMessages.backButton) }}
-				</button>
-				<button v-else-if="currentStep !== 'plan'" @click="modal?.hide()">
-					<XIcon />
-					{{ formatMessage(commonMessages.cancelButton) }}
-				</button>
-			</ButtonStyled>
-			<ButtonStyled v-if="currentStep !== 'plan'" color="brand">
-				<button
-					v-tooltip="
-						currentStep === 'review' && !acceptedEula && !noPaymentRequired
-							? 'You must accept the Minecraft EULA to proceed.'
-							: undefined
-					"
-					:disabled="!canProceed"
-					@click="
-						noPaymentRequired && currentStep === 'review'
-							? (async () => {
-									if (props.onFinalizeNoPaymentChange) {
-										try {
-											await props.onFinalizeNoPaymentChange()
-										} catch (e) {
-											return
-										}
+			<Button v-if="previousStep" @click="previousStep && setStep(previousStep, true)">
+				<LeftArrowIcon /> {{ formatMessage(commonMessages.backButton) }}
+			</Button>
+			<Button v-else-if="currentStep !== 'plan'" @click="modal?.hide()">
+				<XIcon />
+				{{ formatMessage(commonMessages.cancelButton) }}
+			</Button>
+			<Button
+				v-if="currentStep !== 'plan'"
+				v-tooltip="
+					currentStep === 'review' && !acceptedEula && !noPaymentRequired
+						? 'You must accept the Minecraft EULA to proceed.'
+						: undefined
+				"
+				type="colored"
+				color="brand"
+				:disabled="!canProceed"
+				@click="
+					noPaymentRequired && currentStep === 'review'
+						? (async () => {
+								if (props.onFinalizeNoPaymentChange) {
+									try {
+										await props.onFinalizeNoPaymentChange()
+									} catch (e) {
+										return
 									}
-									modal?.hide()
-								})()
-							: setStep(nextStep)
-					"
-				>
-					<template v-if="currentStep === 'review'">
-						<template v-if="noPaymentRequired"><CheckCircleIcon /> Confirm Change</template>
-						<template v-else>
-							<SpinnerIcon v-if="completingPurchase" class="animate-spin" />
-							<CheckCircleIcon v-else />
-							Subscribe
-						</template>
-					</template>
+								}
+								modal?.hide()
+							})()
+						: setStep(nextStep)
+				"
+			>
+				<template v-if="currentStep === 'review'">
+					<template v-if="noPaymentRequired"><CheckCircleIcon /> Confirm Change</template>
 					<template v-else>
-						{{ formatMessage(commonMessages.nextButton) }} <RightArrowIcon />
+						<SpinnerIcon v-if="completingPurchase" class="animate-spin" />
+						<CheckCircleIcon v-else />
+						Subscribe
 					</template>
-				</button>
-			</ButtonStyled>
+				</template>
+				<template v-else>
+					{{ formatMessage(commonMessages.nextButton) }} <RightArrowIcon />
+				</template>
+			</Button>
 		</div>
 	</NewModal>
 </template>

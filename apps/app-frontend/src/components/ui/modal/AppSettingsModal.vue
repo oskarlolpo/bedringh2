@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import {
 	BoxIcon,
+	PlugIcon,
 	CoffeeIcon,
-	GameIcon,
 	GaugeIcon,
 	HeartHandshakeIcon,
 	LanguagesIcon,
 	ModrinthIcon,
 	PaintbrushIcon,
-	PlugIcon,
+	RefreshCwIcon,
 	Settings2Icon,
 	ShieldIcon,
 	ToggleRightIcon,
@@ -29,27 +29,27 @@ import { platform as getOsPlatform, version as getOsVersion } from '@tauri-apps/
 import { computed, provide, ref, watch } from 'vue'
 
 import PrivacySettings from '@/components/ui/settings/account/PrivacySettings.vue'
+import BedrockSettings from '@/components/ui/settings/BedrockSettings.vue'
+import KLauncherSettings from '@/components/ui/settings/KLauncherSettings.vue'
 import ProfileSettings from '@/components/ui/settings/account/ProfileSettings.vue'
 import SocialSettings from '@/components/ui/settings/account/SocialSettings.vue'
-import BedrockSettings from '@/components/ui/settings/BedrockSettings.vue'
 import AppearanceSettings from '@/components/ui/settings/display/AppearanceSettings.vue'
 import BehaviorSettings from '@/components/ui/settings/display/BehaviorSettings.vue'
 import FeatureFlagSettings from '@/components/ui/settings/display/FeatureFlagSettings.vue'
 import LanguageSettings from '@/components/ui/settings/display/LanguageSettings.vue'
-import DefaultInstanceSettings from '@/components/ui/settings/instances/DefaultInstanceSettings.vue'
+import InstancesSyncedSettings from '@/components/ui/settings/instances/InstancesSyncedSettings.vue'
 import JavaSettings from '@/components/ui/settings/instances/JavaSettings.vue'
 import ResourceManagementSettings from '@/components/ui/settings/instances/ResourceManagementSettings.vue'
-import KLauncherSettings from '@/components/ui/settings/KLauncherSettings.vue'
+import { useAppSettings } from '@/composables/use-app-settings.ts'
 import { get, set } from '@/helpers/settings.ts'
 import {
 	appSettingsModalContextKey,
 	type UnsavedChangesController,
 } from '@/providers/app-settings-modal'
 import { injectAppUpdateDownloadProgress } from '@/providers/download-progress.ts'
-import { useTheming } from '@/store/state'
 
 // TODO: Apply COMPONENT_STRUCTURE.md here and extract out common setting option components
-const themeStore = useTheming()
+const appSettings = useAppSettings()
 
 const { formatMessage } = useVIntl()
 
@@ -76,6 +76,10 @@ const tabCategories = defineMessages({
 	klauncher: {
 		id: 'settings.sidebar.label.klauncher',
 		defaultMessage: 'KLauncher',
+	},
+	_unused: {
+		id: 'app.settings.sidebar.label.instances',
+		defaultMessage: 'Instances',
 	},
 })
 
@@ -138,12 +142,12 @@ const tabs = [
 	},
 	{
 		name: defineMessage({
-			id: 'app.settings.tabs.default-instance-options',
-			defaultMessage: 'Default game options',
+			id: 'app.settings.tabs.synced-options',
+			defaultMessage: 'Synced settings',
 		}),
 		category: tabCategories.instances,
-		icon: GameIcon,
-		content: DefaultInstanceSettings,
+		icon: RefreshCwIcon,
+		content: InstancesSyncedSettings,
 	},
 	{
 		name: defineMessage({
@@ -165,15 +169,6 @@ const tabs = [
 	},
 	{
 		name: defineMessage({
-			id: 'app.settings.tabs.resource-management',
-			defaultMessage: 'Resource management',
-		}),
-		category: tabCategories.instances,
-		icon: GaugeIcon,
-		content: ResourceManagementSettings,
-	},
-	{
-		name: defineMessage({
 			id: 'klauncher.settings.title',
 			defaultMessage: 'KLauncher',
 		}),
@@ -181,9 +176,20 @@ const tabs = [
 		icon: PlugIcon,
 		content: KLauncherSettings,
 	},
+	{
+		name: defineMessage({
+			id: 'app.settings.tabs.resource-management',
+			defaultMessage: 'Resource management',
+		}),
+		category: tabCategories.instances,
+		icon: GaugeIcon,
+		content: ResourceManagementSettings,
+	},
 ]
 
-const availableTabs = computed(() => tabs.filter((tab) => !tab.developerOnly || themeStore.devMode))
+const availableTabs = computed(() =>
+	tabs.filter((tab) => !tab.developerOnly || appSettings.devMode),
+)
 
 const modal = ref<InstanceType<typeof TabbedModal> | null>(null)
 const unsavedChangesPopup = ref<{ nudge: () => void } | null>(null)
@@ -196,10 +202,19 @@ const modifiedUnsavedChangesState = computed(
 	() => unsavedChangesController.value?.getModified() ?? emptyUnsavedChangesState,
 )
 const savingUnsavedChanges = computed(() => unsavedChangesController.value?.isSaving() ?? false)
-const hasUnsavedChanges = computed(() => unsavedChangesController.value?.hasChanges() ?? false)
+const hasUnsavedChanges = computed(
+	() =>
+		(unsavedChangesController.value?.hasChanges() ?? false) ||
+		(unsavedChangesController.value?.isSaving() ?? false),
+)
 
 function canLeaveCurrentTab(): boolean {
-	if (!unsavedChangesController.value?.hasChanges()) return true
+	if (
+		!unsavedChangesController.value?.hasChanges() &&
+		!unsavedChangesController.value?.isSaving()
+	) {
+		return true
+	}
 	unsavedChangesPopup.value?.nudge()
 	return false
 }
@@ -237,7 +252,27 @@ function showProfile(): void {
 	modal.value?.show()
 }
 
-defineExpose({ show, showProfile })
+function showFeatureFlags(): void {
+	const featureFlagsTabIndex = availableTabs.value.findIndex(
+		(tab) => tab.content === FeatureFlagSettings,
+	)
+	if (featureFlagsTabIndex >= 0) {
+		modal.value?.setTab(featureFlagsTabIndex)
+	}
+	modal.value?.show()
+}
+
+function showSyncedOptions(): void {
+	const syncedOptionsTabIndex = availableTabs.value.findIndex(
+		(tab) => tab.content === InstancesSyncedSettings,
+	)
+	if (syncedOptionsTabIndex >= 0) {
+		modal.value?.setTab(syncedOptionsTabIndex)
+	}
+	modal.value?.show()
+}
+
+defineExpose({ show, showProfile, showFeatureFlags, showSyncedOptions })
 
 const { progress, version: downloadingVersion } = injectAppUpdateDownloadProgress()
 
@@ -259,8 +294,8 @@ function devModeCount() {
 	if (devModeCounter.value > 5) {
 		const selectedTab = modal.value ? availableTabs.value[modal.value.selectedTab] : undefined
 
-		themeStore.devMode = !themeStore.devMode
-		settings.value.developer_mode = !!themeStore.devMode
+		appSettings.devMode = !appSettings.devMode
+		settings.value.developer_mode = !!appSettings.devMode
 		devModeCounter.value = 0
 
 		if (modal.value) {
@@ -293,7 +328,7 @@ const messages = defineMessages({
 	<TabbedModal
 		ref="modal"
 		:tabs="availableTabs"
-		width="60rem"
+		:width="'min(928px, calc(95vw - 10rem))'"
 		:before-hide="canLeaveCurrentTab"
 		:before-tab-change="canLeaveCurrentTab"
 		:floating-action-bar-shown="hasUnsavedChanges"
@@ -324,7 +359,7 @@ const messages = defineMessages({
 						<ProgressBar :progress="progress" />
 					</template>
 				</div>
-				<p v-if="themeStore.devMode" class="text-brand font-semibold m-0 mb-2">
+				<p v-if="appSettings.devMode" class="text-brand font-semibold m-0 mb-2">
 					{{ formatMessage(developerModeEnabled) }}
 				</p>
 				<div class="flex items-center gap-3">
@@ -332,8 +367,8 @@ const messages = defineMessages({
 						:aria-label="formatMessage(messages.developerModeButtonLabel)"
 						class="p-0 m-0 bg-transparent border-none cursor-pointer button-animation"
 						:class="{
-							'text-brand': themeStore.devMode,
-							'text-secondary': !themeStore.devMode,
+							'text-brand': appSettings.devMode,
+							'text-secondary': !appSettings.devMode,
 						}"
 						@click="devModeCount"
 					>

@@ -161,6 +161,9 @@
   "button.enable": {
     "defaultMessage": "Aktiver"
   },
+  "button.extract": {
+    "defaultMessage": "Pak ud"
+  },
   "button.follow": {
     "defaultMessage": "Følg"
   },
@@ -272,11 +275,23 @@
   "changelog.product.hosting": {
     "defaultMessage": "Hosting"
   },
+  "changelog.product.web": {
+    "defaultMessage": "Platform"
+  },
   "collection-widget.loading-projects": {
     "defaultMessage": "Indlæser projekter..."
   },
+  "collection-widget.search-placeholder": {
+    "defaultMessage": "Søg efter projekter"
+  },
   "collections.label.private": {
     "defaultMessage": "Privat"
+  },
+  "content-type.content.lowercase": {
+    "defaultMessage": "indhold"
+  },
+  "content-type.item.lowercase": {
+    "defaultMessage": "{count, plural, one {genstand} other {genstande}}"
   },
   "content.card.select-project": {
     "defaultMessage": "Vælg {project}"
@@ -422,12 +437,6 @@
   "creation-flow.button.setup-server": {
     "defaultMessage": "Opsæt server"
   },
-  "creation-flow.modal.custom-setup.icon.remove": {
-    "defaultMessage": "Fjern ikon"
-  },
-  "creation-flow.modal.custom-setup.icon.select": {
-    "defaultMessage": "Vælg ikon"
-  },
   "creation-flow.modal.custom-setup.name.label": {
     "defaultMessage": "Navn"
   },
@@ -497,9 +506,6 @@
   "creation-flow.modal.modpack.search.placeholder": {
     "defaultMessage": "Søg efter modpack"
   },
-  "creation-flow.modal.setup-type.option.modpack-base.title": {
-    "defaultMessage": "Installer modpack"
-  },
   "external-files.permissions-card.add-files-to-group": {
     "defaultMessage": "Tilføj filer..."
   },
@@ -541,9 +547,6 @@
   },
   "files.editor.file-saved-title": {
     "defaultMessage": "Fil gemt"
-  },
-  "files.editor.find-close": {
-    "defaultMessage": "Luk"
   },
   "files.editor.find-in-file": {
     "defaultMessage": "Find"
@@ -785,17 +788,8 @@
   "instances.content-install.new-tab": {
     "defaultMessage": "Ny instans"
   },
-  "instances.content-install.remove-icon": {
-    "defaultMessage": "Fjern ikon"
-  },
   "instances.content-install.search-placeholder": {
     "defaultMessage": "Søg efter instanser"
-  },
-  "instances.content-install.select-icon": {
-    "defaultMessage": "Vælg ikon"
-  },
-  "instances.modpack-content-modal.external-content": {
-    "defaultMessage": "Ekstern"
   },
   "instances.updater-modal.badge.current": {
     "defaultMessage": "Nuværrende"
@@ -1958,14 +1952,8 @@
   "servers.installing-banner.error.header": {
     "defaultMessage": "Installering fejlede"
   },
-  "servers.installing-banner.ticker.configuring-server": {
-    "defaultMessage": "Konfigurer server..."
-  },
   "servers.list-empty.already-have-server-label": {
     "defaultMessage": "Har du allerede en server?"
-  },
-  "servers.list-empty.learn-more-link": {
-    "defaultMessage": "Lær mere om Modrinth Hosting"
   },
   "servers.list-empty.modrinth-hosting-label": {
     "defaultMessage": "Modrinth Hosting"
@@ -1976,9 +1964,6 @@
   "servers.list-empty.no-servers-description": {
     "defaultMessage": "Installer mods, inviter venner og spil alle sammen fra Modrinth Appen."
   },
-  "servers.list-empty.no-servers-title": {
-    "defaultMessage": "Ingen servere endnu"
-  },
   "servers.list-empty.one-click-mod-installs-description": {
     "defaultMessage": "Vælg dine favorit mods og vi håndtere resten."
   },
@@ -1987,9 +1972,6 @@
   },
   "servers.list-empty.play-with-friends-title": {
     "defaultMessage": "Spil med venner"
-  },
-  "servers.list-empty.sign-in-button": {
-    "defaultMessage": "Log ind"
   },
   "servers.list-empty.simple-setup-title": {
     "defaultMessage": "Simpel opsætning"
@@ -2092,9 +2074,6 @@
   },
   "settings.display.theme.dark": {
     "defaultMessage": "Mørk"
-  },
-  "settings.display.theme.description": {
-    "defaultMessage": "Vælg dit foretrukne farvetema til Modrinth på denne enhed."
   },
   "settings.display.theme.light": {
     "defaultMessage": "Lys"
@@ -2236,8 +2215,6 @@
   },
   "tag.loader.vanilla": {
     "defaultMessage": "Vanilla Shader"
-  },
-  "app.bedrock.category.skin-packs": {
-    "message": "Skin Packs"
   }
 }
+

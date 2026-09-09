@@ -36,6 +36,7 @@ use std::{
 use tokio::sync::OnceCell;
 
 const MINECRAFT_DOWNLOAD_PROGRESS_MIN_BYTES: u64 = 256 * 1024;
+const MINECRAFT_DOWNLOAD_CONCURRENCY: usize = 32;
 
 #[derive(Clone, Debug)]
 pub struct MinecraftDownloadProgress {
@@ -443,8 +444,8 @@ pub async fn download_minecraft(
         // Total loading sums to 90/60
         download_client(st, version, loading_bar, force, progress.clone()), // 9
         download_log_config(st, version, loading_bar, force, progress.clone()),
-        download_assets(st, version.assets == "legacy", &assets_index, loading_bar, amount, force, progress.clone()), // 40
-        download_libraries(st, version.libraries.as_slice(), &version.id, loading_bar, amount, java_arch, force, minecraft_updated, progress.clone()) // 40
+        Box::pin(download_assets(st, version.assets == "legacy", &assets_index, loading_bar, amount, force, progress.clone())), // 40
+        Box::pin(download_libraries(st, version.libraries.as_slice(), &version.id, loading_bar, amount, java_arch, force, minecraft_updated, progress.clone())) // 40
     }?;
 
     tracing::info!("Done downloading Minecraft!");
@@ -659,7 +660,7 @@ pub async fn download_assets(
         .map(Ok::<(&String, &Asset), crate::Error>);
 
     loading_try_for_each_concurrent(assets,
-            None,
+            Some(MINECRAFT_DOWNLOAD_CONCURRENCY),
             loading_bar,
             loading_amount,
             num_futs,
@@ -759,7 +760,7 @@ pub async fn download_libraries(
     let num_files = libraries.len();
     loading_try_for_each_concurrent(
         stream::iter(libraries.iter()).map(Ok::<&Library, crate::Error>),
-        None,
+        Some(MINECRAFT_DOWNLOAD_CONCURRENCY),
         loading_bar,
         loading_amount,
         num_files,

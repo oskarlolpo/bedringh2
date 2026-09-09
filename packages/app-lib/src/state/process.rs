@@ -1,7 +1,6 @@
 use crate::event::emit::{emit_instance, emit_process};
 use crate::event::{InstancePayloadType, ProcessPayloadType};
 #[cfg(feature = "tauri")]
-use crate::State;
 use crate::event::{LogEvent, LogPayload};
 use crate::util::io::IOError;
 use crate::util::rpc::RpcServer;
@@ -19,8 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::sync::LazyLock;
 use std::time::Instant;
-#[cfg(feature = "tauri")]
-use tauri::Emitter;
+use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use uuid::Uuid;
@@ -82,9 +80,6 @@ pub fn remove_log_buffer(instance_id: &str) {
     LOG_BUFFERS.remove(instance_id);
 }
 
-/// Emits a legacy (plain-text) log line for an instance: pushes it to the
-/// in-memory ring buffer and forwards it to the frontend via the `log` event.
-/// Used by the Bedrock launcher to report progress to the instance log.
 pub fn emit_legacy_log_pub(instance_id: &str, message: &str) {
     push_log_line(instance_id, message.to_string());
 
@@ -106,22 +101,82 @@ pub fn emit_legacy_log_pub(instance_id: &str, message: &str) {
 
     #[cfg(feature = "tauri")]
     {
-        if let Ok(event_state) = crate::EventState::get() {
-            let _ = event_state.app.emit(
-                "log",
-                LogPayload {
-                    instance_id: instance_id.to_string(),
-                    event: LogEvent::Legacy {
-                        message: message.to_string(),
-                    },
-                },
-            );
+        let event_state = crate::EventState::get();
+        let _ = event_state.send(crate::event::AppEvent::Log(crate::event::LogPayload {
+            instance_id: instance_id.to_string(),
+            event: crate::event::LogEvent::Legacy {
+                message: message.to_string(),
+            },
+        }));
+    }
+}
+
+async fn clear_persisted_process(
+    state: &crate::State,
+    process: Option<(i64, i64)>,
+) {
+    let Some((pid, start_time)) = process else {
+        return;
+    };
+    if let Err(error) = sqlx::query!(
+        "DELETE FROM processes WHERE pid = ? AND start_time = ?",
+        pid,
+        start_time,
+    )
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!("Failed to clear persisted process {pid}: {error}");
+    }
+}
+
+pub(crate) async fn instance_has_running_process(
+    instance_id: &str,
+    state: &crate::State,
+) -> crate::Result<bool> {
+    if state
+        .process_manager
+        .get_all()
+        .iter()
+        .any(|process| process.instance_id == instance_id)
+    {
+        return Ok(true);
+    }
+
+    let processes = sqlx::query!(
+        "
+		SELECT pid, start_time
+		FROM processes
+		WHERE instance_id = ?
+		",
+        instance_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    if processes.is_empty() {
+        return Ok(false);
+    }
+    let system = sysinfo::System::new_all();
+    let mut running = false;
+    for process in processes {
+        let process_is_running = u32::try_from(process.pid)
+            .ok()
+            .and_then(|pid| system.process(sysinfo::Pid::from_u32(pid)))
+            .is_some_and(|system_process| {
+                let started_at = system_process.start_time() as i64;
+                started_at.abs_diff(process.start_time) <= 2
+            });
+        if process_is_running {
+            running = true;
+        } else {
+            clear_persisted_process(
+                state,
+                Some((process.pid, process.start_time)),
+            )
+            .await;
         }
     }
-    #[cfg(not(feature = "tauri"))]
-    {
-        let _ = (instance_id, message);
-    }
+    Ok(running)
 }
 
 pub struct ProcessManager {
@@ -141,14 +196,113 @@ impl ProcessManager {
         }
     }
 
+    pub fn rotate_latest_log(logs_folder: &std::path::Path) {
+        let latest_log_path = logs_folder.join("latest.log");
+        if latest_log_path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&latest_log_path) {
+                if metadata.len() > 0 {
+                    let date_str = metadata
+                        .modified()
+                        .or_else(|_| metadata.created())
+                        .ok()
+                        .map(|st| {
+                            let dt: chrono::DateTime<chrono::Local> = st.into();
+                            dt.format("%Y-%m-%d").to_string()
+                        })
+                        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+
+                    let mut count = 1;
+                    loop {
+                        let filename = format!("{date_str}-{count}.log");
+                        let archived_path = logs_folder.join(&filename);
+                        if !archived_path.exists() {
+                            let _ = std::fs::rename(&latest_log_path, &archived_path);
+                            break;
+                        }
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_new_bedrock_process(
+        &self,
+        instance_id: &str,
+        instance_path: &str,
+        instance_name: &str,
+        command: Command,
+        post_exit_command: Option<String>,
+        logs_folder: PathBuf,
+        xml_logging: bool,
+        keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>>,
+        rpc_server: RpcServer,
+        post_process_init: impl AsyncFnOnce(
+            &ProcessMetadata,
+            &RpcServer,
+            Option<u32>,
+        ) -> crate::Result<()>,
+    ) -> crate::Result<ProcessMetadata> {
+        self.insert_new_process_inner(
+            instance_id,
+            instance_path,
+            instance_name,
+            command,
+            post_exit_command,
+            Vec::new(),
+            logs_folder,
+            xml_logging,
+            keep_alive,
+            rpc_server,
+            post_process_init,
+        )
+        .await
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_new_process(
         &self,
         instance_id: &str,
         instance_path: &str,
         instance_name: &str,
+        mc_command: Command,
+        post_exit_command: Option<String>,
+        post_exit_env_vars: Vec<(String, String)>,
+        logs_folder: PathBuf,
+        xml_logging: bool,
+        main_class_keep_alive: TempDir,
+        rpc_server: RpcServer,
+        post_process_init: impl AsyncFnOnce(
+            &ProcessMetadata,
+            &RpcServer,
+        ) -> crate::Result<()>,
+    ) -> crate::Result<ProcessMetadata> {
+        self.insert_new_process_inner(
+            instance_id,
+            instance_path,
+            instance_name,
+            mc_command,
+            post_exit_command,
+            post_exit_env_vars,
+            logs_folder,
+            xml_logging,
+            vec![Box::new(main_class_keep_alive)],
+            rpc_server,
+            async |metadata, rpc_server, _pid| post_process_init(metadata, rpc_server).await,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_new_process_inner(
+        &self,
+        instance_id: &str,
+        instance_path: &str,
+        instance_name: &str,
         mut mc_command: Command,
         post_exit_command: Option<String>,
+        post_exit_env_vars: Vec<(String, String)>,
         logs_folder: PathBuf,
         xml_logging: bool,
         keep_alive: Vec<Box<dyn std::any::Any + Send + Sync>>,
@@ -162,36 +316,11 @@ impl ProcessManager {
         mc_command.stdout(std::process::Stdio::piped());
         mc_command.stderr(std::process::Stdio::piped());
         mc_command.stdin(std::process::Stdio::piped());
-
-        let mut mc_proc = mc_command.spawn().map_err(IOError::from)?;
-
-        let stdout = mc_proc.stdout.take();
-        let stderr = mc_proc.stderr.take();
-        let pid = mc_proc.id();
-
-        let mut process = Process {
-            metadata: ProcessMetadata {
-                uuid: Uuid::new_v4(),
-                start_time: Utc::now(),
-                instance_id: instance_id.to_string(),
-                instance_path: instance_path.to_string(),
-                instance_name: instance_name.to_string(),
-            },
-            child: mc_proc,
-            extra_pids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            rpc_server,
-            _keep_alive: keep_alive,
-        };
-
-        if let Err(e) =
-            post_process_init(&process.metadata, &process.rpc_server, pid).await
-        {
-            tracing::error!("Failed to run post-process init: {e}");
-            let _ = process.child.kill().await;
-            return Err(e);
-        }
-
-        let metadata = process.metadata.clone();
+        let executable = mc_command
+            .as_std()
+            .get_program()
+            .to_string_lossy()
+            .into_owned();
 
         if !logs_folder.exists() {
             tokio::fs::create_dir_all(&logs_folder)
@@ -199,7 +328,6 @@ impl ProcessManager {
                 .map_err(|e| IOError::with_path(e, &logs_folder))?;
         }
 
-        // Rotate previous latest.log into an archived YYYY-MM-DD-N.log file
         Self::rotate_latest_log(&logs_folder);
 
         let log_path = logs_folder.join(LAUNCHER_LOG_PATH);
@@ -224,6 +352,77 @@ impl ProcessManager {
                 let _ = writeln!(log_file);
             }
         }
+
+        let mut mc_proc = mc_command.spawn().map_err(IOError::from)?;
+        let child_pid = mc_proc.id();
+
+        let stdout = mc_proc.stdout.take();
+        let stderr = mc_proc.stderr.take();
+
+        let mut process = Process {
+            metadata: ProcessMetadata {
+                uuid: Uuid::new_v4(),
+                start_time: Utc::now(),
+                instance_id: instance_id.to_string(),
+                instance_path: instance_path.to_string(),
+                instance_name: instance_name.to_string(),
+            },
+            child: mc_proc,
+            rpc_server,
+            extra_pids: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            _keep_alive: keep_alive,
+        };
+
+        let state = match crate::State::get().await {
+            Ok(state) => state,
+            Err(error) => {
+                let _ = process.child.kill().await;
+                return Err(error);
+            }
+        };
+        let persisted_process = child_pid.map(|pid| {
+            (i64::from(pid), process.metadata.start_time.timestamp())
+        });
+        if let Some((pid, start_time)) = persisted_process {
+            let post_exit_command = post_exit_command.as_deref();
+            if let Err(error) = sqlx::query!(
+                "
+				INSERT INTO processes
+					(pid, start_time, name, executable, instance_id,
+					 post_exit_command)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT(pid) DO UPDATE SET
+					start_time = excluded.start_time,
+					name = excluded.name,
+					executable = excluded.executable,
+					instance_id = excluded.instance_id,
+					post_exit_command = excluded.post_exit_command
+				",
+                pid,
+                start_time,
+                instance_name,
+                executable,
+                instance_id,
+                post_exit_command,
+            )
+            .execute(&state.pool)
+            .await
+            {
+                let _ = process.child.kill().await;
+                return Err(error.into());
+            }
+        }
+
+        if let Err(e) =
+            post_process_init(&process.metadata, &process.rpc_server, child_pid).await
+        {
+            tracing::error!("Failed to run post-process init: {e}");
+            clear_persisted_process(&state, persisted_process).await;
+            let _ = process.child.kill().await;
+            return Err(e);
+        }
+
+        let metadata = process.metadata.clone();
 
         if let Some(stdout) = stdout {
             let log_path_clone = log_path.clone();
@@ -259,14 +458,16 @@ impl ProcessManager {
             });
         }
 
+        self.processes.insert(process.metadata.uuid, process);
+
         tokio::spawn(Process::sequential_process_manager(
             instance_id.to_string(),
             instance_path.to_string(),
             post_exit_command,
+            post_exit_env_vars,
             metadata.uuid,
+            persisted_process,
         ));
-
-        self.processes.insert(process.metadata.uuid, process);
 
         emit_process(
             instance_id,
@@ -314,32 +515,16 @@ impl ProcessManager {
 
     pub async fn kill(&self, id: Uuid) -> crate::Result<()> {
         if let Some(mut process) = self.processes.get_mut(&id) {
-            #[cfg(target_os = "windows")]
+            #[cfg(windows)]
             {
-                use std::os::windows::process::CommandExt;
-                let extra_pids = {
-                    if let Ok(lock) = process.extra_pids.lock() {
-                        lock.clone()
-                    } else {
-                        Vec::new()
+                if let Ok(pids) = process.extra_pids.lock() {
+                    for pid in pids.iter() {
+                        crate::util::job::kill_process_by_pid(*pid);
                     }
-                };
-                for pid in extra_pids {
-                    let _ = std::process::Command::new("taskkill")
-                        .creation_flags(0x08000000)
-                        .args(&["/F", "/PID", &pid.to_string()])
-                        .output();
-                }
-
-                if let Some(child_pid) = process.child.id() {
-                    let _ = std::process::Command::new("taskkill")
-                        .creation_flags(0x08000000)
-                        .args(&["/F", "/T", "/PID", &child_pid.to_string()])
-                        .output();
                 }
             }
 
-            let _ = process.child.kill().await;
+            process.child.kill().await?;
         }
 
         Ok(())
@@ -347,36 +532,6 @@ impl ProcessManager {
 
     fn remove(&self, id: Uuid) {
         self.processes.remove(&id);
-    }
-
-    pub fn rotate_latest_log(logs_folder: &std::path::Path) {
-        let latest_log_path = logs_folder.join("latest.log");
-        if latest_log_path.exists() {
-            if let Ok(metadata) = std::fs::metadata(&latest_log_path) {
-                if metadata.len() > 0 {
-                    let date_str = metadata
-                        .modified()
-                        .or_else(|_| metadata.created())
-                        .ok()
-                        .map(|st| {
-                            let dt: chrono::DateTime<chrono::Local> = st.into();
-                            dt.format("%Y-%m-%d").to_string()
-                        })
-                        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
-
-                    let mut count = 1;
-                    loop {
-                        let filename = format!("{date_str}-{count}.log");
-                        let archived_path = logs_folder.join(&filename);
-                        if !archived_path.exists() {
-                            let _ = std::fs::rename(&latest_log_path, &archived_path);
-                            break;
-                        }
-                        count += 1;
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -389,7 +544,6 @@ pub struct ProcessMetadata {
     pub start_time: DateTime<Utc>,
 }
 
-#[derive(Debug)]
 struct Process {
     metadata: ProcessMetadata,
     child: Child,
@@ -398,7 +552,11 @@ struct Process {
     rpc_server: RpcServer,
 }
 
-#[derive(Debug, Default, Serialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+#[cfg_attr(
+    feature = "export-ts",
+    derive(ts_rs::TS, postcard_bindgen::PostcardBindings)
+)]
 pub struct Log4jEvent {
     pub timestamp_millis: Option<i64>,
     pub logger_name: Option<String>,
@@ -708,15 +866,11 @@ impl Process {
 
         #[cfg(feature = "tauri")]
         {
-            if let Ok(event_state) = crate::EventState::get() {
-                let _ = event_state.app.emit(
-                    "log",
-                    LogPayload {
-                        instance_id: instance_id.to_string(),
-                        event: LogEvent::Log4j(event.clone()),
-                    },
-                );
-            }
+            let event_state = crate::EventState::get();
+            let _ = event_state.send(crate::event::AppEvent::Log(LogPayload {
+                instance_id: instance_id.to_string(),
+                event: LogEvent::Log4j(event.clone()),
+            }));
         }
         #[cfg(not(feature = "tauri"))]
         {
@@ -753,17 +907,13 @@ impl Process {
 
         #[cfg(feature = "tauri")]
         {
-            if let Ok(event_state) = crate::EventState::get() {
-                let _ = event_state.app.emit(
-                    "log",
-                    LogPayload {
-                        instance_id: instance_id.to_string(),
-                        event: LogEvent::Legacy {
-                            message: message.to_string(),
-                        },
-                    },
-                );
-            }
+            let event_state = crate::EventState::get();
+            let _ = event_state.send(crate::event::AppEvent::Log(LogPayload {
+                instance_id: instance_id.to_string(),
+                event: LogEvent::Legacy {
+                    message: message.to_string(),
+                },
+            }));
         }
         #[cfg(not(feature = "tauri"))]
         {
@@ -861,7 +1011,7 @@ impl Process {
                     InstancePayloadType::ServerJoined {
                         host,
                         port,
-                        timestamp,
+                        timestamp: timestamp.to_rfc3339(),
                     },
                 )
                 .await;
@@ -878,7 +1028,9 @@ impl Process {
         instance_id: String,
         instance_path: String,
         post_exit_command: Option<String>,
+        post_exit_env_vars: Vec<(String, String)>,
         uuid: Uuid,
+        persisted_process: Option<(i64, i64)>,
     ) -> crate::Result<()> {
         async fn update_playtime(
             last_updated_playtime: &mut Instant,
@@ -943,6 +1095,7 @@ impl Process {
         }
 
         state.process_manager.remove(uuid);
+        clear_persisted_process(&state, persisted_process).await;
         emit_process(
             &instance_id,
             uuid,
@@ -953,6 +1106,20 @@ impl Process {
 
         // Now fully complete- update playtime one last time
         update_playtime(&mut last_updated_playtime, &instance_id, true).await;
+
+        let reconcile_instance_id = instance_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) =
+                crate::api::instance::reconcile_instance_synced_options(
+                    &reconcile_instance_id,
+                )
+                .await
+            {
+                tracing::warn!(
+                    "Failed to reconcile synced options after Minecraft exited for {reconcile_instance_id}: {error}"
+                );
+            }
+        });
 
         // Publish play time update
         // Allow failure, it will be stored locally and sent next time
@@ -1013,7 +1180,7 @@ impl Process {
 
                 if let Some(command) = cmd.next() {
                     let mut command = Command::new(command);
-                    command.args(cmd).current_dir(
+                    command.args(cmd).envs(post_exit_env_vars).current_dir(
                         state.directories.instances_dir().join(&instance_path),
                     );
                     command.spawn().map_err(IOError::from)?;

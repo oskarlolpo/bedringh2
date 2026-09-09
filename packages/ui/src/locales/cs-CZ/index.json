@@ -548,9 +548,6 @@
   "content.page-layout.share.project-names": {
     "defaultMessage": "Názvy projektů"
   },
-  "content.page-layout.sort.alphabetical": {
-    "defaultMessage": "Abecedně"
-  },
   "content.page-layout.sort.date-added-newest": {
     "defaultMessage": "Od nejnovějších"
   },
@@ -619,12 +616,6 @@
   },
   "creation-flow.modal.custom-setup.game-version.search-placeholder": {
     "defaultMessage": "Hledat verzi hry..."
-  },
-  "creation-flow.modal.custom-setup.icon.remove": {
-    "defaultMessage": "Odebrat ikonu"
-  },
-  "creation-flow.modal.custom-setup.icon.select": {
-    "defaultMessage": "Vybrat ikonu"
   },
   "creation-flow.modal.custom-setup.loader-version-type.latest": {
     "defaultMessage": "Nejnovější"
@@ -794,9 +785,6 @@
   "creation-flow.modal.modpack.search.placeholder": {
     "defaultMessage": "Hledat modpack"
   },
-  "creation-flow.modal.setup-type.instance.description": {
-    "defaultMessage": "Instance je nastavení Minecraftu s konkrétním loaderem, verzí a módy."
-  },
   "creation-flow.modal.setup-type.option.custom-setup.description": {
     "defaultMessage": "Začněte od začátku výběrem loaderu a verze hry."
   },
@@ -808,12 +796,6 @@
   },
   "creation-flow.modal.setup-type.option.import-instance.title": {
     "defaultMessage": "Importovat instanci"
-  },
-  "creation-flow.modal.setup-type.option.modpack-base.description": {
-    "defaultMessage": "Procházejte modpacky na Modrinthu nebo ho importujte ze souboru."
-  },
-  "creation-flow.modal.setup-type.option.modpack-base.title": {
-    "defaultMessage": "Nainstalovat modpack"
   },
   "creation-flow.modal.setup-type.option.vanilla-minecraft.description": {
     "defaultMessage": "Klasický Minecraft bez módů nebo pluginů."
@@ -829,9 +811,6 @@
   },
   "creation-flow.modal.setup-type.title.world": {
     "defaultMessage": "Vyber typ světa"
-  },
-  "creation-flow.title.choose-modpack": {
-    "defaultMessage": "Výběr modpacku"
   },
   "creation-flow.title.create-instance": {
     "defaultMessage": "Vytvoření instance"
@@ -1129,9 +1108,6 @@
   },
   "files.editor.file-saved-title": {
     "defaultMessage": "Soubor uložen"
-  },
-  "files.editor.find-close": {
-    "defaultMessage": "Zavřít"
   },
   "files.editor.find-in-file": {
     "defaultMessage": "Najít"
@@ -1826,26 +1802,8 @@
   "instances.content-install.no-instances": {
     "defaultMessage": "Nebyly nalezeny žádné kompatibilní instance"
   },
-  "instances.content-install.remove-icon": {
-    "defaultMessage": "Odebrat ikonu"
-  },
   "instances.content-install.search-placeholder": {
     "defaultMessage": "Hledat instance"
-  },
-  "instances.content-install.select-icon": {
-    "defaultMessage": "Vybrat ikonu"
-  },
-  "instances.modpack-content-modal.empty-title": {
-    "defaultMessage": "Nebyl nalezen obsah"
-  },
-  "instances.modpack-content-modal.header": {
-    "defaultMessage": "Obsah modpacku"
-  },
-  "instances.modpack-content-modal.loading": {
-    "defaultMessage": "Načítání obsahu..."
-  },
-  "instances.modpack-content-modal.no-results": {
-    "defaultMessage": "Žádné projekty neodpovídají tvému vyhledávání."
   },
   "instances.updater-modal.badge.current": {
     "defaultMessage": "Mometálně"
@@ -3686,41 +3644,8 @@
   "servers.grant-access-modal.target.searching": {
     "defaultMessage": "Vyhledávání..."
   },
-  "servers.installing-banner.error.unsupported-loader-version": {
-    "defaultMessage": "Modrinth Hosting tuto verzi Minecraftu nebo loaderu zatím nepodporuje."
-  },
-  "servers.installing-banner.phase.installing-addons": {
-    "defaultMessage": "Instalování addonů..."
-  },
-  "servers.installing-banner.phase.installing-modpack": {
-    "defaultMessage": "Instalování modpacku..."
-  },
-  "servers.installing-banner.phase.installing-platform": {
-    "defaultMessage": "Instalování platformy..."
-  },
-  "servers.installing-banner.preparing.header": {
-    "defaultMessage": "Připravujeme váš server"
-  },
-  "servers.installing-banner.ticker.adding-java": {
-    "defaultMessage": "Přidávání Javy..."
-  },
-  "servers.installing-banner.ticker.configuring-server": {
-    "defaultMessage": "Konfigurování serveru..."
-  },
-  "servers.installing-banner.ticker.downloading-mods": {
-    "defaultMessage": "Stahování módů..."
-  },
-  "servers.installing-banner.ticker.organizing-files": {
-    "defaultMessage": "Organizování souborů..."
-  },
-  "servers.installing-banner.ticker.setting-up-environment": {
-    "defaultMessage": "Nastavování prostředí..."
-  },
   "servers.list-empty.already-have-server-label": {
     "defaultMessage": "Už máte server?"
-  },
-  "servers.list-empty.learn-more-link": {
-    "defaultMessage": "Zjistěte víc o Modrinth hostingu"
   },
   "servers.list-empty.modrinth-hosting-label": {
     "defaultMessage": "Modrinth Hosting"
@@ -3731,23 +3656,14 @@
   "servers.list-empty.no-servers-description": {
     "defaultMessage": "Instalujte mody, zvěte přátele a hrajte společně, to vše z Modrinth App."
   },
-  "servers.list-empty.no-servers-title": {
-    "defaultMessage": "Zatím žádné servery"
-  },
   "servers.list-empty.one-click-mod-installs-description": {
     "defaultMessage": "Vyberte si své oblíbené mody a o zbytek se postaráme."
   },
   "servers.list-empty.one-click-mod-installs-title": {
     "defaultMessage": "Instalace módů jedním klikem"
   },
-  "servers.list-empty.play-with-friends-description": {
-    "defaultMessage": "Pozvěte přátele a nastavte jim vše přímo v Modrinth App."
-  },
   "servers.list-empty.play-with-friends-title": {
     "defaultMessage": "Hrajte s přáteli"
-  },
-  "servers.list-empty.sign-in-button": {
-    "defaultMessage": "Přihlásit se"
   },
   "servers.list-empty.simple-setup-description": {
     "defaultMessage": "Nastavte si server stejně jako svět pro jednoho hráče."
@@ -4021,9 +3937,6 @@
   },
   "settings.display.theme.dark": {
     "defaultMessage": "Tmavý"
-  },
-  "settings.display.theme.description": {
-    "defaultMessage": "Vyberte si preferovaný barevný motiv pro Modrinth na tomto zařízení."
   },
   "settings.display.theme.light": {
     "defaultMessage": "Světlý"
@@ -4555,8 +4468,6 @@
   },
   "version.supplementary-resources.type": {
     "defaultMessage": "Typ"
-  },
-  "app.bedrock.category.skin-packs": {
-    "message": "Skin Packs"
   }
 }
+

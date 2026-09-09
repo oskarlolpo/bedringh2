@@ -16,6 +16,9 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             get_bedrock_curseforge_addon_description,
             download_and_install_bedrock_curseforge_addon,
             get_curseforge_minecraft_versions,
+            get_bedrock_installed_content,
+            get_bedrock_installed_ids,
+            update_bedrock_addon,
         ])
         .build()
 }
@@ -102,8 +105,24 @@ pub async fn get_bedrock_curseforge_addon_files(mod_id: i32) -> Result<Vec<these
 #[tauri::command]
 pub async fn download_and_install_bedrock_curseforge_addon(profile_path: String, download_url: String, curseforge_mod_id: Option<i32>) -> Result<()> {
     let file_path = theseus::bedrock_curseforge::download_addon(&download_url).await?;
-    theseus::bedrock_addons::install_bedrock_addon_from_file(&profile_path, &file_path, curseforge_mod_id).await?;
-    // Cleanup downloaded file
-    let _ = tokio::fs::remove_file(file_path).await;
+    let res = theseus::bedrock_addons::install_bedrock_addon_from_file(&profile_path, &file_path, curseforge_mod_id).await;
+    // Cleanup downloaded file safely
+    let _ = tokio::fs::remove_file(&file_path).await;
+    res?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_bedrock_installed_content(profile_path: String) -> Result<Vec<theseus::bedrock_addons::BedrockInstalledContentRecord>> {
+    Ok(theseus::bedrock_addons::get_bedrock_installed_content(&profile_path).await?)
+}
+
+#[tauri::command]
+pub async fn get_bedrock_installed_ids(profile_path: String) -> Result<Vec<String>> {
+    Ok(theseus::bedrock_addons::get_bedrock_installed_ids(&profile_path).await?)
+}
+
+#[tauri::command]
+pub async fn update_bedrock_addon(profile_path: String, project_id: String, target_file_id: Option<i32>) -> Result<()> {
+    Ok(theseus::bedrock_addons::update_bedrock_addon(&profile_path, &project_id, target_file_id).await?)
 }

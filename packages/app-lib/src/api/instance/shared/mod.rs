@@ -15,7 +15,10 @@ use crate::state::{
     ContentSourceKind, EditInstance, ModLoader, ModrinthCredentials,
     ProjectType, SharedInstanceRole, State,
 };
-use crate::util::fetch::{INSECURE_REQWEST_CLIENT, REQWEST_CLIENT};
+use crate::util::fetch::{
+    INSECURE_NO_TIMEOUT_REQWEST_CLIENT, INSECURE_REQWEST_CLIENT,
+    NO_TIMEOUT_REQWEST_CLIENT, REQWEST_CLIENT,
+};
 use chrono::{DateTime, Utc};
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
@@ -31,7 +34,7 @@ pub(crate) const CONFIG_DIRECTORY: &str = "config";
 pub(crate) const MAX_CONFIG_BUNDLE_ENTRIES: usize = 4096;
 pub(crate) const MAX_CONFIG_BUNDLE_FILE_SIZE: u64 = 16 * 1024 * 1024;
 pub(crate) const MAX_CONFIG_BUNDLE_TOTAL_SIZE: u64 = 128 * 1024 * 1024;
-pub(crate) const CONFIG_FILE_EXTENSIONS: [&str; 13] = [
+pub(crate) const CONFIG_FILE_EXTENSIONS: [&str; 14] = [
     "json",
     "json5",
     "jsonc",
@@ -45,6 +48,7 @@ pub(crate) const CONFIG_FILE_EXTENSIONS: [&str; 13] = [
     "conf",
     "properties",
     "xml",
+    "nbt",
 ];
 
 pub(crate) fn read_bounded_config_bundle_entry(
