@@ -1,6 +1,7 @@
 {
   "name": "bedringh-auth-server",
   "version": "1.0.0",
+  "type": "module",
   "description": "Bedringh Launcher Authentication Service with Telegram Bot Integration",
   "main": "dist/index.js",
   "scripts": {

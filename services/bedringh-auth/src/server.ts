@@ -13,7 +13,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 export const app = Fastify({ logger: true });
 
-await app.register(cors, {
+app.register(cors, {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 });
