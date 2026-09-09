@@ -8,6 +8,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     tauri::plugin::Builder::<R>::new("auth")
         .invoke_handler(tauri::generate_handler![
             offline_login,
+            bedringh_login,
             klauncher_login,
             tlauncher_login,
             check_reachable,
@@ -24,6 +25,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 #[tauri::command]
 pub async fn offline_login(name: &str) -> Result<Credentials> {
     let credentials = minecraft_auth::offline_auth(name).await?;
+    Ok(credentials)
+}
+
+/// Authenticate with Bedringh ID account
+#[tauri::command]
+pub async fn bedringh_login(name: &str, token: Option<&str>) -> Result<Credentials> {
+    let credentials = minecraft_auth::bedringh_auth(name, token).await?;
     Ok(credentials)
 }
 

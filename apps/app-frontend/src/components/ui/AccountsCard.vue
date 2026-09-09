@@ -5,6 +5,12 @@
 	>
 		<span class="text-sm font-medium text-secondary">{{ formatMessage(messages.notSignedIn) }}</span>
 		<ButtonStyled color="brand">
+			<button color="primary" :disabled="loginDisabled" @click="openBedringhAuth()">
+				<LogInIcon />
+				Войти через Bedringh ID
+			</button>
+		</ButtonStyled>
+		<ButtonStyled color="brand" type="outlined">
 			<button color="primary" :disabled="loginDisabled" @click="login()">
 				<LogInIcon v-if="!loginDisabled" />
 				<SpinnerIcon v-else class="animate-spin" />
@@ -107,6 +113,12 @@
 				</div>
 			</template>
 			<div class="flex flex-col gap-2 px-2 pt-2">
+				<ButtonStyled class="w-full" color="brand">
+					<button :disabled="loginDisabled" @click="openBedringhAuth()">
+						<PlusIcon />
+						Добавить Bedringh ID
+					</button>
+				</ButtonStyled>
 				<ButtonStyled class="w-full" color="brand" type="outlined">
 					<button :disabled="loginDisabled" @click="login()">
 						<PlusIcon />
@@ -146,6 +158,7 @@
 		@submit-klauncher="addKLauncherProfile"
 		@submit-tlauncher="addTLauncherProfile"
 	/>
+	<BedringhAuthModal ref="bedringhAuthModal" @success="onBedringhAuthSuccess" />
 </template>
 
 <script setup lang="ts">
@@ -185,6 +198,7 @@ import { get_available_skins } from '@/helpers/skins'
 import { handleSevereError } from '@/store/error.js'
 
 import AccountsInputModals from './astralrinth/accounts/input/AccountsInputModals.vue'
+import BedringhAuthModal from './astralrinth/accounts/BedringhAuthModal.vue'
 
 const { formatMessage } = useVIntl()
 const { handleError } = injectNotificationManager()
@@ -211,6 +225,7 @@ const accountHeadCache = ref(new Map<string, string>())
 const localSteveHeadUrl = ref<string | null>(null)
 
 const accountsInputModals = ref<InstanceType<typeof AccountsInputModals> | null>(null)
+const bedringhAuthModal = ref<InstanceType<typeof BedringhAuthModal> | null>(null)
 const offlinePlayerName = ref('')
 const offlineLoginDisabled = ref(false)
 const kLauncherLoginValue = ref('')
@@ -281,6 +296,9 @@ async function fetchAccountHead(account: MinecraftCredential) {
 		} else if (accountType === 'Microsoft') {
 			// Microsoft accounts: use mc-heads.net which resolves by UUID or username
 			skinUrl = `https://mc-heads.net/skin/${profileId}`
+		} else if (accountType === 'Bedringh ID') {
+			// Bedringh ID accounts: mc-heads resolution by username
+			skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
 		} else {
 			// Offline / Ely.by / unknown: no reliable skin source
 			return
@@ -317,6 +335,8 @@ async function fetchAccountHead(account: MinecraftCredential) {
 	function getAccountTypeWeight(account: MinecraftCredential): number {
 		const type = getAccountTypeName(account)
 		switch (type) {
+			case 'Bedringh ID':
+				return -1
 			case 'Microsoft':
 				return 0
 			case 'KLauncher':
@@ -605,10 +625,23 @@ async function addTLauncherProfile() {
 	}
 }
 
+function openBedringhAuth() {
+	bedringhAuthModal.value?.show()
+}
+
+async function onBedringhAuthSuccess(account: any) {
+	if (account) {
+		await setAccount(account)
+		await refreshValues()
+	}
+}
+
 function getAccountTypeName(account: MinecraftCredential | null | undefined): string {
 	if (!account) return ''
 	const token = account.access_token || ''
 	const refresh = account.refresh_token || ''
+	// Bedringh ID аккаунты
+	if (refresh === 'bedringh_refresh' || token === 'bedringh' || token.startsWith('bedringh_')) return 'Bedringh ID'
 	// Офлайн аккаунты имеют токены "null" (строка)
 	if (token === 'null' && refresh === 'null') return 'Офлайн'
 	// KLauncher аккаунты
@@ -625,6 +658,8 @@ function getAccountTypeBadgeClass(account: MinecraftCredential | null | undefine
 	if (!account) return ''
 	const type = getAccountTypeName(account)
 	switch (type) {
+		case 'Bedringh ID':
+			return 'bg-purple-500/25 text-purple-300 border border-purple-500/40 font-bold'
 		case 'KLauncher':
 			return 'bg-red-500/20 text-red-400 border border-red-500/30'
 		case 'TLauncher':

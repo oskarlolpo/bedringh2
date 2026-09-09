@@ -226,6 +226,57 @@ pub async fn offline_auth(
 }
 
 #[tracing::instrument]
+pub async fn bedringh_auth(
+    name: &str,
+    token: Option<&str>,
+    exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
+) -> crate::Result<Credentials> {
+    let name_trimmed = name.trim();
+    let access_token = if let Some(t) = token {
+        format!("bedringh_{t}")
+    } else {
+        "bedringh".to_string()
+    };
+
+    let existing_uuid = Credentials::get_all(exec)
+        .await
+        .ok()
+        .and_then(|users| {
+            users
+                .iter()
+                .find(|entry| {
+                    let cred = entry.value();
+                    cred.offline_profile.name.eq_ignore_ascii_case(name_trimmed)
+                        && (cred.access_token == "bedringh"
+                            || cred.access_token.starts_with("bedringh_")
+                            || cred.refresh_token == "bedringh_refresh")
+                })
+                .map(|entry| *entry.key())
+        });
+
+    let uuid = existing_uuid.unwrap_or_else(Uuid::new_v4);
+    let refresh_token = "bedringh_refresh".to_string();
+
+    let mut credentials = Credentials {
+        offline_profile: MinecraftProfile::default(),
+        access_token,
+        refresh_token,
+        expires: Utc::now() + Duration::days(365 * 99),
+        active: true,
+    };
+
+    credentials.offline_profile = MinecraftProfile {
+        id: uuid,
+        name: name_trimmed.to_string(),
+        ..credentials.offline_profile
+    };
+
+    credentials.upsert(exec).await?;
+
+    Ok(credentials)
+}
+
+#[tracing::instrument]
 pub async fn klauncher_auth(
     name: &str,
     password: Option<&str>,

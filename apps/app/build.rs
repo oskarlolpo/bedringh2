@@ -15,6 +15,7 @@ fn main() {
                         "check_reachable",
                         "login",
                         "offline_login",
+                        "bedringh_login",
                         "klauncher_login",
                         "tlauncher_login",
                         "remove_user",

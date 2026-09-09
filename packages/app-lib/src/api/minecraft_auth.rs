@@ -54,6 +54,15 @@ pub async fn offline_auth(name: &str) -> crate::Result<Credentials> {
 }
 
 #[tracing::instrument]
+pub async fn bedringh_auth(
+    name: &str,
+    token: Option<&str>,
+) -> crate::Result<Credentials> {
+    let state = State::get().await?;
+    crate::state::bedringh_auth(name, token, &state.pool).await
+}
+
+#[tracing::instrument]
 pub async fn klauncher_auth(
     name: &str,
     password: Option<&str>,

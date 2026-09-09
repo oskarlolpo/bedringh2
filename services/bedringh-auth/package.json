@@ -1,0 +1,28 @@
+{
+  "name": "bedringh-auth-server",
+  "version": "1.0.0",
+  "description": "Bedringh Launcher Authentication Service with Telegram Bot Integration",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.13.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

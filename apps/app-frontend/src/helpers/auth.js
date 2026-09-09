@@ -91,3 +91,13 @@ export async function tlauncher_login(name, password) {
 	return await invoke('plugin:auth|tlauncher_login', { name, password: password || null })
 }
 
+/**
+ * Authenticates via Bedringh ID account
+ * @param {string} name
+ * @param {string} [token]
+ */
+export async function bedringh_login(name, token) {
+	return await invoke('plugin:auth|bedringh_login', { name, token: token || null })
+}
+
+
