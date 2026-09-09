@@ -2,15 +2,6 @@ name: Deploy frontend
 
 on:
   workflow_dispatch:
-    paths:
-      - 'apps/frontend/**/*'
-      - 'packages/ui/**/*'
-      - 'packages/utils/**/*'
-      - 'packages/assets/**/*'
-      - '**/wrangler.jsonc'
-      - '**/pnpm-*.yaml'
-      - '.github/workflows/frontend-deploy.yml'
-  workflow_dispatch:
   workflow_call:
     inputs:
       preview:

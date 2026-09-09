@@ -2,17 +2,6 @@ name: Crowdin (push)
 
 on:
   workflow_dispatch:
-    paths:
-      - '.github/workflows/i18n-push.yml'
-      - 'apps/*/src/locales/en-US/**'
-      - 'apps/*/locales/en-US/**'
-      - 'packages/*/src/locales/en-US/**'
-      - 'packages/*/locales/en-US/**'
-      - 'scripts/i18n-icu-contract.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'crowdin.yml'
-  workflow_dispatch:
 
 concurrency:
   group: i18n-management
