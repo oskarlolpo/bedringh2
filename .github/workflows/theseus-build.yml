@@ -131,6 +131,9 @@ jobs:
             dasel delete -f apps/app/tauri-release.conf.json 'bundle.createUpdaterArtifacts' || true
           fi
 
+      - name: Build frontend
+        run: pnpm turbo run build --filter=@modrinth/app-frontend
+
       - name: Build Windows app
         run: |
           $env:JAVA_HOME = "$env:JAVA_HOME_17_X64"
