@@ -58,7 +58,7 @@ apps/frontend/src/generated
 
 .turbo
 target
-generated
+!apps/app-frontend/src/generated/**
 .env
 
 # app testing dir
