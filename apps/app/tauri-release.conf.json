@@ -25,7 +25,7 @@
 	},
 	"app": {
 		"security": {
-			"capabilities": ["ads", "core", "plugins"]
+			"capabilities": ["ads", "core", "plugins", "updater"]
 		}
 	}
 }

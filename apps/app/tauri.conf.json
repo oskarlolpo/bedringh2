@@ -111,7 +111,8 @@
 			"capabilities": [
 				"ads",
 				"core",
-				"plugins"
+				"plugins",
+				"updater"
 			],
 			"csp": {
 				"default-src": "'self' customprotocol: asset:",
