@@ -77,6 +77,11 @@ if (!fs.existsSync(SKINS_DIR)) {
   fs.mkdirSync(SKINS_DIR, { recursive: true });
 }
 
+export const CAPES_DIR = process.env.CAPES_DIR || path.join(process.cwd(), 'textures', 'capes');
+if (!fs.existsSync(CAPES_DIR)) {
+  fs.mkdirSync(CAPES_DIR, { recursive: true });
+}
+
 export interface UserRow {
   id: string;
   username: string;

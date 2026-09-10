@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { db, UserRow, SessionRow, SKINS_DIR } from './db.js';
+import { db, UserRow, SessionRow, SKINS_DIR, CAPES_DIR } from './db.js';
 import { bot, sendPasswordResetCode } from './bot.js';
 
 
@@ -445,6 +445,43 @@ app.get<{
   } catch {}
 
   return reply.status(404).send({ error: 'Текстура скина не найдена' });
+});
+
+// Отдача текстуры плаща в формате PNG
+app.get<{
+  Params: { filename: string };
+}>('/textures/capes/:filename', async (request, reply) => {
+  let { filename } = request.params;
+  if (!filename.toLowerCase().endsWith('.png')) {
+    filename += '.png';
+  }
+  const filePath = path.join(CAPES_DIR, filename);
+
+  if (fs.existsSync(filePath)) {
+    const buffer = fs.readFileSync(filePath);
+    return reply
+      .header('Content-Type', 'image/png')
+      .header('Access-Control-Allow-Origin', '*')
+      .header('Cache-Control', 'public, max-age=86400')
+      .send(buffer);
+  }
+
+  // Fallback: подтягиваем с GitHub репозитория
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/Koteukin69/minecraft_cape_changer/main/textures/${filename}`);
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      fs.writeFileSync(filePath, buffer);
+      return reply
+        .header('Content-Type', 'image/png')
+        .header('Access-Control-Allow-Origin', '*')
+        .header('Cache-Control', 'public, max-age=86400')
+        .send(buffer);
+    }
+  } catch {}
+
+  return reply.status(404).send({ error: 'Плащ не найден' });
 });
 
 // Получение информации о скине и плаще пользователя

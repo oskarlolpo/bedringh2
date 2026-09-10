@@ -502,14 +502,41 @@ async function generateSkinPreviewsForGeneration(
 				}
 			}
 
+function resolveCapeTextureUrl(url?: string): string | undefined {
+	if (!url) return undefined
+	if (url.includes('/textures/capes/')) {
+		const parts = url.split('/textures/capes/')
+		return '/textures/capes/' + parts[1]
+	}
+	return url
+}
+
 			const modelUrl = getModelUrlForVariant(variant)
 			const cape: Cape | undefined = capes.find((_cape) => _cape.id === skin.cape_id)
-			const rawRenderResult = await renderer.renderSkin(
-				await get_normalized_skin_texture(skin),
-				modelUrl,
-				cape?.texture,
-				skin.texture,
-			)
+			const capeUrl = resolveCapeTextureUrl(cape?.texture)
+			let rawRenderResult: RawRenderResult
+
+			try {
+				rawRenderResult = await renderer.renderSkin(
+					await get_normalized_skin_texture(skin),
+					modelUrl,
+					capeUrl,
+					skin.texture,
+				)
+			} catch (renderError) {
+				console.warn(`Failed to render skin preview with cape for ${key}, retrying without cape:`, renderError)
+				try {
+					rawRenderResult = await renderer.renderSkin(
+						await get_normalized_skin_texture(skin),
+						modelUrl,
+						undefined,
+						skin.texture,
+					)
+				} catch (retryError) {
+					console.error(`Failed to render skin preview for ${key}:`, retryError)
+					continue
+				}
+			}
 
 			if (!isCurrentGeneration()) return
 

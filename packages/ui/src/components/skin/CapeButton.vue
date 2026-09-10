@@ -27,9 +27,14 @@ const props = withDefaults(
 	},
 )
 
-const effectiveTexture = computed(
-	() => props.animatedUrl || props.animatedTexture || props.texture,
-)
+const effectiveTexture = computed(() => {
+	const raw = props.animatedUrl || props.animatedTexture || props.texture
+	if (raw && raw.includes('/textures/capes/')) {
+		const parts = raw.split('/textures/capes/')
+		return '/textures/capes/' + parts[1]
+	}
+	return raw
+})
 const highlighted = computed(() => props.selected ?? props.isEquipped)
 
 type CapeButtonLayoutType = 'standard-2-1' | 'optifine-46-22' | 'square-1-1' | 'flat-preview'

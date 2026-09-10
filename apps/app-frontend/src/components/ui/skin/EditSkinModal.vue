@@ -287,7 +287,10 @@ watch(
 	() => [selectedCape.value?.animated_url, selectedCape.value?.texture] as const,
 	async ([animatedUrl, staticUrl]) => {
 		const resolveVersion = ++selectedCapeResolveVersion;
-		const rawUrl = animatedUrl ?? staticUrl;
+		let rawUrl = animatedUrl ?? staticUrl;
+		if (rawUrl && rawUrl.includes('/textures/capes/')) {
+			rawUrl = '/textures/capes/' + rawUrl.split('/textures/capes/')[1];
+		}
 
 		revokeSelectedCapeObjectUrl();
 		selectedCapeTexture.value = undefined;
