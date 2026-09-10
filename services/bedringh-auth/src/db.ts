@@ -71,6 +71,9 @@ try {
 try {
   db.exec("ALTER TABLE users ADD COLUMN cape_name TEXT;");
 } catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN launcher_settings TEXT;");
+} catch {}
 
 export const SKINS_DIR = path.join(DB_DIR, 'skins');
 if (!fs.existsSync(SKINS_DIR)) {
@@ -93,6 +96,7 @@ export interface UserRow {
   skin_texture?: string | null;
   cape_url?: string | null;
   cape_name?: string | null;
+  launcher_settings?: string | null;
   created_at: string;
 }
 

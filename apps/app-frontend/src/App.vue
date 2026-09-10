@@ -808,6 +808,14 @@ async function setupApp() {
 	appSettings.devMode = developer_mode
 	stateInitialized.value = true
 
+	// Проверяем облачные настройки Bedringh ID при старте
+	try {
+		const { syncOnStartup } = await import('@/services/bedringh-settings-sync')
+		void syncOnStartup()
+	} catch (e) {
+		console.warn('[Bedringh] Ошибка фоновой синхронизации при запуске:', e)
+	}
+
 	await getCurrentWindow().onResized(async () => {
 		isMaximized.value = await getCurrentWindow().isMaximized()
 		isFullscreen.value = await getCurrentWindow().isFullscreen()

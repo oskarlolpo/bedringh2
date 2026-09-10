@@ -27,5 +27,15 @@
 		"security": {
 			"capabilities": ["ads", "core", "plugins", "updater"]
 		}
+	},
+	"plugins": {
+		"updater": {
+			"endpoints": [
+				"https://github.com/oskarlolpo/bedringh2/releases/latest/download/updates.json"
+			],
+			"windows": {
+				"installMode": "quiet"
+			}
+		}
 	}
 }

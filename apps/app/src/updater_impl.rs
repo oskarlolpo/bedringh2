@@ -96,14 +96,79 @@ fn is_version_newer(remote: &str, current: &str) -> bool {
     remote_pre > current_pre
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct TauriUpdatePlatform {
+    pub signature: Option<String>,
+    pub url: Option<String>,
+    #[serde(default)]
+    pub install_urls: Vec<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct TauriUpdateManifest {
+    pub version: String,
+    pub notes: Option<String>,
+    pub pub_date: Option<String>,
+    #[serde(default)]
+    pub platforms: std::collections::HashMap<String, TauriUpdatePlatform>,
+}
+
 async fn fetch_latest_github_release() -> Result<GitHubRelease> {
     let client = reqwest::Client::builder()
         .user_agent(launcher_user_agent())
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
 
+    // 1. Приоритетный источник: прямой Fastly CDN манифест updates.json (не подвержен rate limit)
+    let updates_json_url = format!("https://github.com/{GITHUB_REPO}/releases/latest/download/updates.json");
+    tracing::info!("Checking for Bedringh updates via CDN manifest at {}", updates_json_url);
+
+    if let Ok(resp) = client.get(&updates_json_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(manifest) = resp.json::<TauriUpdateManifest>().await {
+                let clean_ver = manifest.version.trim().trim_start_matches('v').to_string();
+                let tag = format!("v{clean_ver}");
+
+                let mut download_url = None;
+                if let Some(plat) = manifest.platforms.get("windows-x86_64") {
+                    if let Some(first_install) = plat.install_urls.first() {
+                        download_url = Some(first_install.clone());
+                    } else if let Some(ref u) = plat.url {
+                        if u.ends_with(".exe") {
+                            download_url = Some(u.clone());
+                        }
+                    }
+                }
+
+                let asset_name = format!("Bedringh_{clean_ver}_x64-setup.exe");
+                let final_url = download_url.unwrap_or_else(|| {
+                    format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset_name}")
+                });
+
+                tracing::info!(
+                    "Fetched updates.json: version={}, url={}",
+                    clean_ver,
+                    final_url
+                );
+
+                return Ok(GitHubRelease {
+                    tag_name: tag,
+                    name: Some(format!("Bedringh {clean_ver}")),
+                    body: manifest.notes,
+                    published_at: manifest.pub_date,
+                    assets: vec![GitHubReleaseAsset {
+                        name: asset_name,
+                        size: 0,
+                        browser_download_url: final_url,
+                    }],
+                });
+            }
+        }
+    }
+
+    // 2. Fallback: GitHub REST API
     let api_url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
-    tracing::info!("Checking for Bedringh updates at {}", api_url);
+    tracing::info!("Checking for Bedringh updates via GitHub API at {}", api_url);
 
     let res = client
         .get(&api_url)
@@ -115,7 +180,7 @@ async fn fetch_latest_github_release() -> Result<GitHubRelease> {
         Ok(response) if response.status().is_success() => {
             let release: GitHubRelease = response.json().await?;
             tracing::info!(
-                "Fetched latest release from GitHub: tag={}, name={:?}",
+                "Fetched latest release from GitHub API: tag={}, name={:?}",
                 release.tag_name,
                 release.name
             );
@@ -134,7 +199,7 @@ async fn fetch_latest_github_release() -> Result<GitHubRelease> {
         }
     }
 
-    // Fallback: check redirect of https://github.com/{GITHUB_REPO}/releases/latest
+    // 3. Fallback: check redirect of https://github.com/{GITHUB_REPO}/releases/latest
     let redirect_client = reqwest::Client::builder()
         .user_agent(launcher_user_agent())
         .redirect(reqwest::redirect::Policy::none())

@@ -568,6 +568,94 @@ const handleYggdrasilProfile = async (request: any, reply: any) => {
   };
 };
 
+// Получение синхронизированных настроек пользователя
+app.get<{
+  Querystring: { username?: string };
+}>('/api/user/settings', async (request, reply) => {
+  const queryUsername = (request.query as any)?.username;
+  let username = queryUsername;
+
+  const authHeader = request.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded: any = jwt.verify(authHeader.substring(7), JWT_SECRET);
+      if (decoded?.username) {
+        username = decoded.username;
+      }
+    } catch {}
+  }
+
+  if (!username) {
+    return reply.status(400).send({ error: 'Имя пользователя не указано' });
+  }
+
+  const user = db.prepare('SELECT launcher_settings FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  let settings = null;
+  if (user.launcher_settings) {
+    try {
+      settings = JSON.parse(user.launcher_settings);
+    } catch {
+      settings = null;
+    }
+  }
+
+  return {
+    success: true,
+    username,
+    settings,
+  };
+});
+
+// Сохранение синхронизированных настроек пользователя
+app.post<{
+  Body: {
+    username?: string;
+    authToken?: string;
+    settings?: any;
+  };
+}>('/api/user/settings', async (request, reply) => {
+  const { username: bodyUsername, authToken, settings } = request.body || {};
+  let username = bodyUsername;
+
+  const authHeader = request.headers.authorization;
+  const token = authToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
+
+  if (token) {
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      if (decoded?.username) {
+        username = decoded.username;
+      }
+    } catch {}
+  }
+
+  if (!username) {
+    return reply.status(400).send({ error: 'Имя пользователя не указано' });
+  }
+
+  const user = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  if (settings === undefined || settings === null) {
+    return reply.status(400).send({ error: 'Настройки не переданы' });
+  }
+
+  const settingsJson = typeof settings === 'string' ? settings : JSON.stringify(settings);
+
+  db.prepare('UPDATE users SET launcher_settings = ? WHERE id = ?').run(settingsJson, user.id);
+
+  return {
+    success: true,
+    message: 'Настройки успешно синхронизированы в Bedringh ID',
+  };
+});
+
 app.get('/session/minecraft/profile/:uuid', handleYggdrasilProfile);
 app.get('/sessionserver/session/minecraft/profile/:uuid', handleYggdrasilProfile);
 

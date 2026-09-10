@@ -588,11 +588,20 @@ async function completeLogin(username: string, authToken: string) {
 	try {
 		const { bedringh_login } = await import('@/helpers/auth')
 		const result = await bedringh_login(username, authToken)
+
+		// Синхронизация настроек лаунчера с профилем Bedringh ID
+		try {
+			const { syncOnLogin } = await import('@/services/bedringh-settings-sync')
+			await syncOnLogin(username, authToken)
+		} catch (syncErr) {
+			console.warn('[Bedringh Auth] Ошибка синхронизации настроек:', syncErr)
+		}
+
 		hide()
 		addNotification({
 			type: 'success',
 			title: 'Вход выполнен',
-			text: `Добро пожаловать в Bedringh Launcher, ${username}!`,
+			text: `Добро пожаловать в Bedringh Launcher, ${username}! Настройки синхронизированы.`,
 		})
 		emit('success', result)
 	} catch (e: any) {
