@@ -288,18 +288,34 @@ const emit = defineEmits<{
 const modal = ref<InstanceType<typeof NewModal> | null>(null)
 const { addNotification, handleError } = injectNotificationManager()
 
-// Список URL для подключения с автовыбором рабочего (HTTPS домен, HTTP домен и прямой IP)
+// Список URL для подключения с приоритетом прямого рабочего IP VDS сервера
 const API_URL_CANDIDATES = [
+	'http://2.26.87.126:3100',
 	'https://oskarlolpo.play2go.cloud',
 	'http://oskarlolpo.play2go.cloud:3100',
-	'http://2.26.87.126:3100',
 ]
 
 let activeApiBase = API_URL_CANDIDATES[0]
 
+async function safeFetch(url: string, init: any) {
+	// 1. Пробуем нативный fetch (быстрый, не зависит от плагинов Tauri)
+	try {
+		return await window.fetch(url, init)
+	} catch (nativeErr) {
+		console.warn('[Bedringh Auth] Native fetch failed, trying tauriFetch fallback:', nativeErr)
+	}
+
+	// 2. Если нативный fetch заблокирован, пробуем tauriFetch
+	try {
+		return await tauriFetch(url, init)
+	} catch (tauriErr) {
+		console.error('[Bedringh Auth] Tauri fetch also failed:', tauriErr)
+		throw tauriErr
+	}
+}
+
 /**
- * Выполняет запрос через Tauri HTTP плагин (минуя любые CSP и CORS браузера)
- * с автоматическим поиском рабочего адреса сервера.
+ * Выполняет запрос к API авторизации с автоматическим перебором рабочих адресов
  */
 async function requestApi(endpoint: string, options: { method?: string; body?: any; headers?: Record<string, string> } = {}) {
 	const method = options.method || 'GET'
@@ -309,25 +325,27 @@ async function requestApi(endpoint: string, options: { method?: string; body?: a
 	}
 	const body = options.body ? JSON.stringify(options.body) : undefined
 
-	// Сначала пробуем последний успешный URL
+	// Сначала пробуем активный рабочий адрес
 	try {
-		const res = await tauriFetch(`${activeApiBase}${endpoint}`, { method, headers, body })
-		if (res.status !== 502 && res.status !== 503) {
+		const res = await safeFetch(`${activeApiBase}${endpoint}`, { method, headers, body })
+		if (res && res.status !== 502 && res.status !== 503) {
 			return res
 		}
 	} catch (e) {
-		// Ошибка соединения, пробуем остальные кандидаты
+		console.warn(`[Bedringh Auth] Failed to connect to ${activeApiBase}${endpoint}:`, e)
 	}
 
-	// Перебираем альтернативные адреса
+	// Перебираем остальные адреса при необходимости
 	for (const candidate of API_URL_CANDIDATES) {
 		if (candidate === activeApiBase) continue
 		try {
-			const res = await tauriFetch(`${candidate}${endpoint}`, { method, headers, body })
-			activeApiBase = candidate
-			return res
+			const res = await safeFetch(`${candidate}${endpoint}`, { method, headers, body })
+			if (res && res.status !== 502 && res.status !== 503) {
+				activeApiBase = candidate
+				return res
+			}
 		} catch (e) {
-			// пробуем следующий
+			console.warn(`[Bedringh Auth] Candidate ${candidate} failed:`, e)
 		}
 	}
 

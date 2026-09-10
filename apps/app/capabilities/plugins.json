@@ -83,6 +83,18 @@
 				},
 				{
 					"url": "https://*.githubusercontent.com/*"
+				},
+				{
+					"url": "http://2.26.87.126:3100/*"
+				},
+				{
+					"url": "http://2.26.87.126:*/*"
+				},
+				{
+					"url": "https://*.play2go.cloud/*"
+				},
+				{
+					"url": "http://*.play2go.cloud:*/*"
 				}
 			]
 		},
