@@ -330,13 +330,29 @@ app.post<{
 // Запуск сервера и бота
 export async function start() {
   try {
-    await bot.launch();
-    console.log('🤖 Telegram bot started successfully!');
-
+    console.log(`[Bedringh Auth] Запуск HTTP сервера на http://${HOST}:${PORT}...`);
     await app.listen({ port: PORT, host: HOST });
-    console.log(`🚀 Bedringh Auth Server listening on http://${HOST}:${PORT}`);
+    console.log(`[Bedringh Auth] HTTP сервер успешно запущен и слушает порт ${PORT}!`);
+
+    console.log('[Bedringh Auth] Подключение к Telegram API...');
+    bot.telegram.getMe()
+      .then((me) => {
+        console.log(`[Bedringh Auth] Бот подключен: @${me.username} (ID: ${me.id})`);
+        return bot.launch({ dropPendingUpdates: true });
+      })
+      .then(() => {
+        console.log('[Bedringh Auth] Telegram бот запущен и слушает входящие сообщения.');
+      })
+      .catch((err) => {
+        console.error('[Bedringh Auth] Ошибка подключения Telegram бота:', err);
+      });
+
+    // Graceful shutdown
+    process.once('SIGINT', () => bot.stop('SIGINT'));
+    process.once('SIGTERM', () => bot.stop('SIGTERM'));
   } catch (err) {
-    app.log.error(err);
+    console.error('[Bedringh Auth] Фатальная ошибка запуска сервера:', err);
     process.exit(1);
   }
 }
+

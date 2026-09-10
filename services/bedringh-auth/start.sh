@@ -11,9 +11,15 @@ npm run build
 
 nohup node dist/index.js > server.log 2>&1 &
 PID=$!
-
-echo "🚀 Сервер и Telegram-бот запущены в фоне! (PID: $PID)"
-echo "Ждем 2 секунды для проверки логов..."
+echo "[Bedringh Auth] Сервер запускается в фоне (PID: $PID)..."
 sleep 2
 
-tail -n 15 server.log
+if ps -p $PID > /dev/null; then
+  echo "[Bedringh Auth] Процесс активен (PID: $PID)!"
+else
+  echo "[Bedringh Auth] Внимание: процесс завершился с ошибкой! Проверьте логи ниже:"
+fi
+
+echo "--- Последние строки server.log ---"
+tail -n 20 server.log
+
