@@ -57,7 +57,6 @@ app.post<{
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const token = `reg_${randomBytes(12).toString('hex')}`;
   const expiresAt = Date.now() + 15 * 60 * 1000; // 15 минут
-  const enable2FA = Boolean((request.body as any)?.enable2FA);
 
   // Удаляем старые незавершенные сессии для этого ника
   db.prepare('DELETE FROM sessions WHERE username = ?').run(trimmedUsername);
@@ -65,14 +64,13 @@ app.post<{
   // Сохраняем сессию
   db.prepare(`
     INSERT INTO sessions (token, username, password_hash, code, enable_2fa, status, expires_at)
-    VALUES (?, ?, ?, ?, ?, 'pending', ?)
-  `).run(token, trimmedUsername, passwordHash, code, enable2FA ? 1 : 0, expiresAt);
+    VALUES (?, ?, ?, ?, 0, 'pending', ?)
+  `).run(token, trimmedUsername, passwordHash, code, expiresAt);
 
   return {
     success: true,
     token,
     code,
-    enable2FA,
     botUsername: BOT_USERNAME,
     botUrl: `https://t.me/${BOT_USERNAME}?start=${token}`,
   };

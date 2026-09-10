@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import { randomUUID } from 'crypto';
 import { db, UserRow, SessionRow } from './db.js';
 
@@ -6,22 +6,36 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8805865461:AAFB9RE7mrkQawTu
 
 export const bot = new Telegraf(BOT_TOKEN);
 
-function confirmSession(session: SessionRow, telegramId: number, telegramUsername?: string): { success: boolean; message: string } {
+function get2FAMessage(username: string, enabled: boolean) {
+  const statusText = enabled ? 'Включена' : 'Выключена';
+  const descText = enabled
+    ? 'При каждом входе в лаунчер вам будет приходить одноразовый 6-значный код в этот чат.'
+    : 'Вход в лаунчер выполняется сразу по логину и паролю.';
+  const buttonText = enabled ? 'Отключить 2FA' : 'Включить 2FA';
+  const actionData = enabled ? 'disable_2fa' : 'enable_2fa';
+
+  return {
+    text: `*Настройки безопасности аккаунта ${username}*\n\nДвухэтапная аутентификация (2FA): *${statusText}*\n${descText}`,
+    keyboard: Markup.inlineKeyboard([Markup.button.callback(buttonText, actionData)]),
+  };
+}
+
+function confirmSession(session: SessionRow, telegramId: number, telegramUsername?: string): { success: boolean; user?: UserRow; error?: string } {
   // Проверяем, не привязан ли уже этот Telegram к другому пользователю
   const existingTgUser = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId) as UserRow | undefined;
   if (existingTgUser) {
     db.prepare('UPDATE sessions SET status = ? WHERE token = ?').run('rejected', session.token);
     return {
       success: false,
-      message: `⚠️ К вашему Telegram-аккаунту уже привязан игровой никнейм *${existingTgUser.username}*!\n\nОдин Telegram-аккаунт может иметь только один профиль в Bedringh.`,
+      error: `К вашему Telegram-аккаунту уже привязан игровой никнейм ${existingTgUser.username}. Один Telegram-аккаунт может иметь только один профиль в Bedringh.`,
     };
   }
 
-  // Создаем пользователя в базе
+  // Создаем пользователя в базе (по умолчанию 2FA выключена, пользователь включает сам кнопкой)
   const userId = randomUUID();
   const insertUser = db.prepare(`
     INSERT INTO users (id, username, password_hash, telegram_id, telegram_username, two_factor_enabled)
-    VALUES (?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, 0)
   `);
 
   insertUser.run(
@@ -29,18 +43,17 @@ function confirmSession(session: SessionRow, telegramId: number, telegramUsernam
     session.username,
     session.password_hash,
     telegramId,
-    telegramUsername || null,
-    session.enable_2fa ? 1 : 0
+    telegramUsername || null
   );
 
   // Обновляем статус сессии на confirmed
   db.prepare('UPDATE sessions SET status = ?, telegram_id = ? WHERE token = ?').run('confirmed', telegramId, session.token);
 
-  const extra2faInfo = session.enable_2fa ? '\n🔒 *Двухэтапная аутентификация (2FA) включена!*' : '';
+  const createdUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow;
 
   return {
     success: true,
-    message: `🎉 *Аккаунт успешно подтверждён!*\n\nИгровой ник: *${session.username}*${extra2faInfo}\n\nВернитесь в лаунчер — вход выполнен автоматически! Приятной игры в Bedringh 🚀`,
+    user: createdUser,
   };
 }
 
@@ -54,34 +67,85 @@ bot.command('start', async (ctx) => {
     const session = db.prepare('SELECT * FROM sessions WHERE token = ?').get(payload) as SessionRow | undefined;
 
     if (!session) {
-      return ctx.reply('❌ Сессия подтверждения не найдена или была удалена. Попробуйте снова в лаунчере.');
+      return ctx.reply('Сессия подтверждения не найдена или была удалена. Попробуйте снова в лаунчере.');
     }
 
     if (session.status === 'confirmed') {
-      return ctx.reply(`✅ Аккаунт *${session.username}* уже был успешно подтверждён!`, { parse_mode: 'Markdown' });
+      return ctx.reply(`Аккаунт ${session.username} уже был успешно подтверждён!`);
     }
 
     if (session.expires_at < Date.now()) {
-      return ctx.reply('⏳ Время действия кода истекло. Пожалуйста, начните регистрацию в лаунчере заново.');
+      return ctx.reply('Время действия кода истекло. Пожалуйста, начните регистрацию в лаунчере заново.');
     }
 
     const result = confirmSession(session, telegramId, tgUsername);
-    return ctx.reply(result.message, { parse_mode: 'Markdown' });
+    if (!result.success) {
+      return ctx.reply(result.error || 'Ошибка при подтверждении.');
+    }
+
+    const info = get2FAMessage(session.username, false);
+    await ctx.reply(
+      `Аккаунт успешно подтверждён!\n\nИгровой никнейм: ${session.username}\n\nВернитесь в лаунчер — вход выполнен автоматически! Приятной игры в Bedringh.`
+    );
+    return ctx.reply(info.text, { parse_mode: 'Markdown', ...info.keyboard });
   }
 
   // Обычный старт
   const existing = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId) as UserRow | undefined;
   if (existing) {
-    return ctx.reply(
-      `👋 Привет, *${ctx.from.first_name}*!\n\nК вашему Telegram привязан аккаунт Bedringh: *${existing.username}*.\n\nЕсли вы забудете пароль в лаунчере, вы всегда сможете восстановить его здесь.`,
-      { parse_mode: 'Markdown' }
-    );
+    const info = get2FAMessage(existing.username, Boolean(existing.two_factor_enabled));
+    return ctx.reply(info.text, { parse_mode: 'Markdown', ...info.keyboard });
   }
 
   return ctx.reply(
-    `👋 *Привет! Я официальный бот Bedringh Launcher.*\n\nЯ помогаю мгновенно и безопасно подтверждать регистрацию аккаунтов прямо из лаунчера. Просто нажмите «Подтвердить через Telegram» в лаунчере, и вы сразу окажетесь в игре!`,
-    { parse_mode: 'Markdown' }
+    `Привет! Я официальный бот Bedringh Launcher.\n\nЯ помогаю подтверждать регистрацию аккаунтов прямо из лаунчера и защищать ваш аккаунт двухэтапной аутентификацией.`
   );
+});
+
+// Команда /2fa и /settings
+bot.command(['2fa', 'settings'], async (ctx) => {
+  const telegramId = ctx.from.id;
+  const existing = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId) as UserRow | undefined;
+
+  if (!existing) {
+    return ctx.reply('У вас пока нет привязанного аккаунта Bedringh. Зарегистрируйтесь в лаунчере!');
+  }
+
+  const info = get2FAMessage(existing.username, Boolean(existing.two_factor_enabled));
+  return ctx.reply(info.text, { parse_mode: 'Markdown', ...info.keyboard });
+});
+
+// Кнопка переключения 2FA
+bot.action('enable_2fa', async (ctx) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  const existing = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId) as UserRow | undefined;
+  if (!existing) {
+    return ctx.answerCbQuery('Аккаунт не найден');
+  }
+
+  db.prepare('UPDATE users SET two_factor_enabled = 1 WHERE id = ?').run(existing.id);
+  await ctx.answerCbQuery('2FA успешно включена!');
+
+  const info = get2FAMessage(existing.username, true);
+  return ctx.editMessageText(info.text, { parse_mode: 'Markdown', ...info.keyboard });
+});
+
+bot.action('disable_2fa', async (ctx) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  const existing = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId) as UserRow | undefined;
+  if (!existing) {
+    return ctx.answerCbQuery('Аккаунт не найден');
+  }
+
+  db.prepare('UPDATE users SET two_factor_enabled = 0 WHERE id = ?').run(existing.id);
+  await ctx.answerCbQuery('2FA отключена.');
+
+  const info = get2FAMessage(existing.username, false);
+  return ctx.editMessageText(info.text, { parse_mode: 'Markdown', ...info.keyboard });
 });
 
 // Обработка текстового сообщения (если игрок ввел 6-значный код вручную)
@@ -95,26 +159,33 @@ bot.on('text', async (ctx) => {
     const session = db.prepare('SELECT * FROM sessions WHERE code = ? AND status = "pending"').get(text) as SessionRow | undefined;
 
     if (!session) {
-      return ctx.reply('❌ Код не найден или уже использован. Проверьте правильность ввода кода из лаунчера.');
+      return ctx.reply('Код не найден или уже использован. Проверьте код из лаунчера.');
     }
 
     if (session.expires_at < Date.now()) {
-      return ctx.reply('⏳ Срок действия этого кода истек. Начните регистрацию в лаунчере заново.');
+      return ctx.reply('Срок действия этого кода истек. Начните регистрацию в лаунчере заново.');
     }
 
     const result = confirmSession(session, telegramId, tgUsername);
-    return ctx.reply(result.message, { parse_mode: 'Markdown' });
+    if (!result.success) {
+      return ctx.reply(result.error || 'Ошибка при подтверждении.');
+    }
+
+    const info = get2FAMessage(session.username, false);
+    await ctx.reply(
+      `Аккаунт успешно подтверждён!\n\nИгровой никнейм: ${session.username}\n\nВернитесь в лаунчер — вход выполнен автоматически!`
+    );
+    return ctx.reply(info.text, { parse_mode: 'Markdown', ...info.keyboard });
   }
 
-  return ctx.reply('Отправьте 6-значный код подтверждения из лаунчера или перейдите по ссылке из лаунчера.');
+  return ctx.reply('Отправьте 6-значный код подтверждения из лаунчера или используйте команду /2fa для управления двухэтапной аутентификацией.');
 });
 
 export async function sendPasswordResetCode(telegramId: number, code: string, username: string) {
   try {
     await bot.telegram.sendMessage(
       telegramId,
-      `🔐 *Запрос на сброс пароля в Bedringh Launcher*\n\nАккаунт: *${username}*\nВаш код подтверждения: \`${code}\`\n\nВведите этот код в лаунчере для установки нового пароля. Если вы не запрашивали сброс, просто проигнорируйте это сообщение.`,
-      { parse_mode: 'Markdown' }
+      `Запрос на сброс пароля в Bedringh Launcher\n\nАккаунт: ${username}\nВаш код подтверждения: ${code}\n\nВведите этот код в лаунчере для установки нового пароля.`
     );
     return true;
   } catch (e) {
@@ -127,8 +198,7 @@ export async function send2FACode(telegramId: number, code: string, username: st
   try {
     await bot.telegram.sendMessage(
       telegramId,
-      `🛡️ *Код двухэтапной аутентификации (2FA)*\n\nВход в аккаунт: *${username}*\nВаш код подтверждения: \`${code}\`\n\nВведите этот код в лаунчере для входа. Никому не сообщайте его!`,
-      { parse_mode: 'Markdown' }
+      `Код двухэтапной аутентификации (2FA)\n\nВход в аккаунт: ${username}\nВаш одноразовый код: ${code}\n\nВведите этот код в лаунчере для завершения входа.`
     );
     return true;
   } catch (e) {
@@ -136,4 +206,3 @@ export async function send2FACode(telegramId: number, code: string, username: st
     return false;
   }
 }
-

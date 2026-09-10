@@ -28,16 +28,16 @@
 				</button>
 			</div>
 
-			<!-- Сообщение об ошибке -->
-			<div v-if="errorMessage" class="p-3 bg-red-500/15 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-start gap-2">
-				<span class="shrink-0 font-bold">⚠️</span>
-				<span>{{ errorMessage }}</span>
+			<!-- Сообщение об ошибке (с нормальной SVG иконкой) -->
+			<div v-if="errorMessage" class="p-3 bg-red-500/15 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-start gap-2.5">
+				<TriangleAlertIcon class="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
+				<span class="leading-relaxed">{{ errorMessage }}</span>
 			</div>
 
-			<!-- Успешное сообщение -->
-			<div v-if="successMessage" class="p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm flex items-start gap-2">
-				<span class="shrink-0 font-bold">✅</span>
-				<span>{{ successMessage }}</span>
+			<!-- Успешное сообщение (с нормальной SVG иконкой) -->
+			<div v-if="successMessage" class="p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm flex items-start gap-2.5">
+				<CheckIcon class="w-5 h-5 shrink-0 text-emerald-400 mt-0.5" />
+				<span class="leading-relaxed">{{ successMessage }}</span>
 			</div>
 
 			<!-- 1. ФОРМА ВХОДА -->
@@ -86,8 +86,8 @@
 
 			<!-- 2. ВВОД 2FA КОДА ПРИ ВХОДЕ -->
 			<div v-else-if="mode === '2fa'" class="flex flex-col gap-4 items-center text-center">
-				<div class="w-14 h-14 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-2xl font-bold">
-					🛡️
+				<div class="w-14 h-14 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+					<ShieldIcon class="w-7 h-7 text-purple-400" />
 				</div>
 				<div class="flex flex-col gap-1">
 					<h3 class="m-0 text-lg font-bold text-contrast">Двухэтапная аутентификация</h3>
@@ -120,11 +120,11 @@
 					class="text-xs text-secondary hover:text-contrast bg-transparent border-0 cursor-pointer"
 					@click="switchMode('login')"
 				>
-					← Вернуться ко входу
+					Вернуться ко входу
 				</button>
 			</div>
 
-			<!-- 3. ФОРМА РЕГИСТРАЦИИ -->
+			<!-- 3. ФОРМА РЕГИСТРАЦИИ (Без лишнего 2FA чекбокса, 2FA включается в боте) -->
 			<form v-else-if="mode === 'register'" class="flex flex-col gap-4" @submit.prevent="handleRegisterIntent">
 				<div class="flex flex-col gap-1.5">
 					<label class="text-xs font-semibold text-secondary uppercase tracking-wider">Игровой никнейм</label>
@@ -160,15 +160,6 @@
 					/>
 				</div>
 
-				<!-- Чекбокс 2FA -->
-				<label class="flex items-center gap-2.5 p-3 rounded-xl bg-surface-3 border border-surface-5 cursor-pointer mt-1">
-					<input v-model="regEnable2FA" type="checkbox" class="w-4 h-4 rounded text-brand cursor-pointer" />
-					<div class="flex flex-col text-left">
-						<span class="text-xs font-bold text-contrast">Двухэтапная аутентификация (2FA)</span>
-						<span class="text-[11px] text-secondary">Запрашивать код из Telegram при каждом входе в лаунчер</span>
-					</div>
-				</label>
-
 				<ButtonStyled color="brand" class="w-full mt-2">
 					<button type="submit" class="w-full justify-center py-2.5 font-semibold" :disabled="loading">
 						<SpinnerIcon v-if="loading" class="animate-spin w-5 h-5 mr-2" />
@@ -180,18 +171,18 @@
 
 			<!-- 4. ОЖИДАНИЕ ПОДТВЕРЖДЕНИЯ В TELEGRAM -->
 			<div v-else-if="mode === 'waiting_tg'" class="flex flex-col gap-5 items-center text-center">
-				<div class="w-16 h-16 rounded-full bg-brand/15 text-brand flex items-center justify-center text-3xl">
-					✈️
+				<div class="w-16 h-16 rounded-full bg-brand/15 text-brand flex items-center justify-center">
+					<SendIcon class="w-8 h-8 text-brand" />
 				</div>
 
 				<div class="flex flex-col gap-1">
-					<h3 class="m-0 text-xl font-bold text-contrast">Подтвердите в Telegram</h3>
+					<h3 class="m-0 text-xl font-bold text-contrast">Подтверждение в Telegram</h3>
 					<p class="m-0 text-sm text-secondary">
-						Для завершения регистрации аккаунта <b>{{ regUsername }}</b> подтвердите его через нашего бота.
+						Для завершения регистрации аккаунта <b>{{ regUsername }}</b> подтвердите его через бота.
 					</p>
 				</div>
 
-				<!-- Большой 6-значный код -->
+				<!-- 6-значный код -->
 				<div class="w-full p-4 rounded-2xl bg-surface-3 border border-brand/30 flex flex-col items-center gap-1">
 					<span class="text-xs text-secondary font-medium">Ваш код подтверждения:</span>
 					<span class="text-3xl font-mono font-bold tracking-widest text-brand">{{ tgCode }}</span>
@@ -199,14 +190,15 @@
 
 				<!-- Кнопка быстрого перехода в Telegram -->
 				<ButtonStyled color="brand" class="w-full">
-					<button type="button" class="w-full justify-center py-3 text-base font-bold" @click="openTelegramBot">
-						🚀 Открыть @bedringh_bot в Telegram
+					<button type="button" class="w-full justify-center py-3 text-base font-bold flex items-center gap-2" @click="openTelegramBot">
+						<span>Открыть @bedringh_bot в Telegram</span>
+						<ExternalIcon class="w-4 h-4" />
 					</button>
 				</ButtonStyled>
 
 				<div class="flex items-center gap-2 text-xs text-secondary">
 					<SpinnerIcon class="animate-spin w-4 h-4 text-brand" />
-					<span>Ожидаем нажатия Start или ввода кода в боте...</span>
+					<span>Ожидаем подтверждения от Telegram-бота...</span>
 				</div>
 
 				<button
@@ -266,7 +258,7 @@
 					class="text-xs text-secondary hover:text-contrast bg-transparent border-0 cursor-pointer self-center"
 					@click="switchMode('login')"
 				>
-					← Вернуться ко входу
+					Вернуться ко входу
 				</button>
 			</div>
 		</div>
@@ -274,8 +266,18 @@
 </template>
 
 <script setup lang="ts">
-import { LogInIcon, PlusIcon, SpinnerIcon } from '@modrinth/assets'
+import {
+	CheckIcon,
+	ExternalIcon,
+	LogInIcon,
+	PlusIcon,
+	SendIcon,
+	ShieldIcon,
+	SpinnerIcon,
+	TriangleAlertIcon,
+} from '@modrinth/assets'
 import { ButtonStyled, NewModal, StyledInput, injectNotificationManager } from '@modrinth/ui'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { computed, onUnmounted, ref } from 'vue'
 
@@ -286,7 +288,51 @@ const emit = defineEmits<{
 const modal = ref<InstanceType<typeof NewModal> | null>(null)
 const { addNotification, handleError } = injectNotificationManager()
 
-const API_BASE_URL = 'https://oskarlolpo.play2go.cloud'
+// Список URL для подключения с автовыбором рабочего (HTTPS домен, HTTP домен и прямой IP)
+const API_URL_CANDIDATES = [
+	'https://oskarlolpo.play2go.cloud',
+	'http://oskarlolpo.play2go.cloud:3100',
+	'http://2.26.87.126:3100',
+]
+
+let activeApiBase = API_URL_CANDIDATES[0]
+
+/**
+ * Выполняет запрос через Tauri HTTP плагин (минуя любые CSP и CORS браузера)
+ * с автоматическим поиском рабочего адреса сервера.
+ */
+async function requestApi(endpoint: string, options: { method?: string; body?: any; headers?: Record<string, string> } = {}) {
+	const method = options.method || 'GET'
+	const headers = {
+		'Content-Type': 'application/json',
+		...(options.headers || {}),
+	}
+	const body = options.body ? JSON.stringify(options.body) : undefined
+
+	// Сначала пробуем последний успешный URL
+	try {
+		const res = await tauriFetch(`${activeApiBase}${endpoint}`, { method, headers, body })
+		if (res.status !== 502 && res.status !== 503) {
+			return res
+		}
+	} catch (e) {
+		// Ошибка соединения, пробуем остальные кандидаты
+	}
+
+	// Перебираем альтернативные адреса
+	for (const candidate of API_URL_CANDIDATES) {
+		if (candidate === activeApiBase) continue
+		try {
+			const res = await tauriFetch(`${candidate}${endpoint}`, { method, headers, body })
+			activeApiBase = candidate
+			return res
+		} catch (e) {
+			// пробуем следующий
+		}
+	}
+
+	throw new Error('Не удалось подключиться к серверу авторизации (проверьте интернет или статус сервера)')
+}
 
 type AuthMode = 'login' | 'register' | 'waiting_tg' | '2fa' | 'forgot'
 
@@ -307,7 +353,6 @@ const temp2FAToken = ref('')
 const regUsername = ref('')
 const regPassword = ref('')
 const regPasswordConfirm = ref('')
-const regEnable2FA = ref(false)
 
 // TG Waiting state
 const tgToken = ref('')
@@ -367,13 +412,12 @@ async function handleLogin() {
 	loading.value = true
 
 	try {
-		const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+		const response = await requestApi('/api/auth/login', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
+			body: {
 				username: loginUsername.value.trim(),
 				password: loginPassword.value,
-			}),
+			},
 		})
 
 		const data = await response.json()
@@ -407,14 +451,13 @@ async function handleVerify2FA() {
 	loading.value = true
 
 	try {
-		const response = await fetch(`${API_BASE_URL}/api/auth/verify-2fa`, {
+		const response = await requestApi('/api/auth/verify-2fa', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
+			body: {
 				username: loginUsername.value.trim(),
 				code: twoFactorCode.value.trim(),
 				tempToken: temp2FAToken.value,
-			}),
+			},
 		})
 
 		const data = await response.json()
@@ -449,14 +492,12 @@ async function handleRegisterIntent() {
 	loading.value = true
 
 	try {
-		const response = await fetch(`${API_BASE_URL}/api/auth/register-intent`, {
+		const response = await requestApi('/api/auth/register-intent', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
+			body: {
 				username: regUsername.value.trim(),
 				password: regPassword.value,
-				enable2FA: regEnable2FA.value,
-			}),
+			},
 		})
 
 		const data = await response.json()
@@ -489,7 +530,7 @@ function startPolling() {
 	stopPolling()
 	pollTimer = setInterval(async () => {
 		try {
-			const res = await fetch(`${API_BASE_URL}/api/auth/poll/${tgToken.value}`)
+			const res = await requestApi(`/api/auth/poll/${tgToken.value}`)
 			if (!res.ok) return
 
 			const data = await res.json()
@@ -507,7 +548,7 @@ function startPolling() {
 				mode.value = 'register'
 			}
 		} catch (e) {
-			console.warn('Polling error:', e)
+			// фоновая ошибка поллинга не ломает интерфейс
 		}
 	}, 2000)
 }
@@ -548,10 +589,9 @@ async function handleSendResetCode() {
 	loading.value = true
 
 	try {
-		const res = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+		const res = await requestApi('/api/auth/forgot-password', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ username: forgotUsername.value.trim() }),
+			body: { username: forgotUsername.value.trim() },
 		})
 
 		const data = await res.json()
@@ -575,14 +615,13 @@ async function handleResetPassword() {
 	loading.value = true
 
 	try {
-		const res = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+		const res = await requestApi('/api/auth/reset-password', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
+			body: {
 				username: forgotUsername.value.trim(),
 				code: forgotCode.value.trim(),
 				newPassword: forgotNewPassword.value,
-			}),
+			},
 		})
 
 		const data = await res.json()
