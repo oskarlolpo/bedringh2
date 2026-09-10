@@ -52,13 +52,30 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_users_tg ON users(telegram_id);
 `);
 
-// Миграция на случай существующей БД
+// Миграции на случай существующей БД
 try {
   db.exec("ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER DEFAULT 0;");
 } catch {}
 try {
   db.exec("ALTER TABLE sessions ADD COLUMN enable_2fa INTEGER DEFAULT 0;");
 } catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN skin_model TEXT DEFAULT 'classic';");
+} catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN skin_texture TEXT;");
+} catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN cape_url TEXT;");
+} catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN cape_name TEXT;");
+} catch {}
+
+export const SKINS_DIR = path.join(DB_DIR, 'skins');
+if (!fs.existsSync(SKINS_DIR)) {
+  fs.mkdirSync(SKINS_DIR, { recursive: true });
+}
 
 export interface UserRow {
   id: string;
@@ -67,6 +84,10 @@ export interface UserRow {
   telegram_id: number | null;
   telegram_username: string | null;
   two_factor_enabled: number;
+  skin_model?: 'classic' | 'slim';
+  skin_texture?: string | null;
+  cape_url?: string | null;
+  cape_name?: string | null;
   created_at: string;
 }
 
@@ -80,3 +101,4 @@ export interface SessionRow {
   telegram_id: number | null;
   expires_at: number;
 }
+

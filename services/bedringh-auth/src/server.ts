@@ -3,8 +3,11 @@ import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
-import { db, UserRow, SessionRow } from './db.js';
+import fs from 'fs';
+import path from 'path';
+import { db, UserRow, SessionRow, SKINS_DIR } from './db.js';
 import { bot, sendPasswordResetCode } from './bot.js';
+
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bedringh_super_secret_jwt_key_2026';
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bedringh_bot';
@@ -22,6 +25,24 @@ app.register(cors, {
 app.get('/api/health', async () => {
   return { status: 'ok', service: 'bedringh-auth', time: Date.now() };
 });
+
+// Yggdrasil Root Metadata (для authlib-injector)
+app.get('/', async () => {
+  return {
+    meta: {
+      serverName: 'Bedringh',
+      implementationName: 'bedringh-auth',
+      implementationVersion: '1.0.0',
+    },
+    skinDomains: [
+      '2.26.87.126',
+      'textures.minecraft.net',
+      'oskarlolpo.play2go.cloud',
+      'mc-heads.net',
+    ],
+  };
+});
+
 
 // Инициация регистрации
 app.post<{
@@ -326,6 +347,192 @@ app.post<{
 
   return { success: true, message: 'Пароль успешно изменён! Теперь вы можете войти.' };
 });
+
+// Установка/загрузка скина и выбор плаща
+app.post<{
+  Body: {
+    username?: string;
+    authToken?: string;
+    skinDataUrl?: string;
+    skinBytesBase64?: string;
+    model?: 'classic' | 'slim';
+    capeUrl?: string;
+    capeName?: string;
+  };
+}>('/api/skin/equip', async (request, reply) => {
+  const { username, skinDataUrl, skinBytesBase64, model, capeUrl, capeName } = request.body || {};
+  if (!username) {
+    return reply.status(400).send({ error: 'Имя пользователя не указано' });
+  }
+  const trimmed = username.trim();
+  const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(trimmed) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  const selectedModel = model === 'slim' ? 'slim' : 'classic';
+  const skinFileName = `${user.username.toLowerCase()}.png`;
+
+  const rawBase64 = skinBytesBase64 || (skinDataUrl?.includes(',') ? skinDataUrl.split(',')[1] : skinDataUrl);
+
+  if (rawBase64) {
+    try {
+      const buffer = Buffer.from(rawBase64, 'base64');
+      const filePath = path.join(SKINS_DIR, skinFileName);
+      fs.writeFileSync(filePath, buffer);
+    } catch (e: any) {
+      return reply.status(500).send({ error: `Ошибка сохранения текстуры скина: ${e.message}` });
+    }
+  }
+
+  db.prepare(`
+    UPDATE users
+    SET skin_model = ?,
+        cape_url = ?,
+        cape_name = ?,
+        skin_texture = ?
+    WHERE id = ?
+  `).run(
+    selectedModel,
+    capeUrl || null,
+    capeName || null,
+    skinFileName,
+    user.id
+  );
+
+  const host = request.headers.host || '2.26.87.126:3100';
+
+  return {
+    success: true,
+    message: 'Скин и плащ успешно обновлены',
+    skinUrl: `http://${host}/textures/skins/${skinFileName}`,
+    capeUrl: capeUrl || null,
+    model: selectedModel,
+  };
+});
+
+// Отдача текстуры скина в формате PNG
+app.get<{
+  Params: { filename: string };
+}>('/textures/skins/:filename', async (request, reply) => {
+  let { filename } = request.params;
+  if (!filename.toLowerCase().endsWith('.png')) {
+    filename += '.png';
+  }
+  const filePath = path.join(SKINS_DIR, filename.toLowerCase());
+
+  if (fs.existsSync(filePath)) {
+    const buffer = fs.readFileSync(filePath);
+    return reply
+      .header('Content-Type', 'image/png')
+      .header('Cache-Control', 'public, max-age=60')
+      .send(buffer);
+  }
+
+  // Fallback: подтягиваем скин по нику
+  const usernameWithoutExt = filename.replace(/\.png$/i, '');
+  try {
+    const res = await fetch(`https://mc-heads.net/skin/${usernameWithoutExt}`);
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      fs.writeFileSync(filePath, buffer);
+      return reply
+        .header('Content-Type', 'image/png')
+        .header('Cache-Control', 'public, max-age=60')
+        .send(buffer);
+    }
+  } catch {}
+
+  return reply.status(404).send({ error: 'Текстура скина не найдена' });
+});
+
+// Получение информации о скине и плаще пользователя
+app.get<{
+  Params: { username: string };
+}>('/api/user/:username/skin', async (request, reply) => {
+  const { username } = request.params;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  const host = request.headers.host || '2.26.87.126:3100';
+  const skinFileName = `${user.username.toLowerCase()}.png`;
+  const hasSkin = fs.existsSync(path.join(SKINS_DIR, skinFileName));
+
+  return {
+    username: user.username,
+    skinUrl: hasSkin ? `http://${host}/textures/skins/${skinFileName}` : `https://mc-heads.net/skin/${user.username}`,
+    model: user.skin_model || 'classic',
+    capeUrl: user.cape_url || null,
+    capeName: user.cape_name || null,
+  };
+});
+
+// Yggdrasil Session Profile API (для Minecraft клиента и authlib-injector)
+const handleYggdrasilProfile = async (request: any, reply: any) => {
+  const { uuid } = request.params;
+  const cleanUuid = uuid.replace(/-/g, '').toLowerCase();
+
+  // Ищем пользователя по UUID или по username
+  let user = db.prepare('SELECT * FROM users WHERE LOWER(REPLACE(id, "-", "")) = ?').get(cleanUuid) as UserRow | undefined;
+  if (!user) {
+    user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(uuid) as UserRow | undefined;
+  }
+
+  if (!user) {
+    return reply.status(204).send();
+  }
+
+  const host = request.headers.host || '2.26.87.126:3100';
+  const skinFileName = `${user.username.toLowerCase()}.png`;
+  const hasSkin = fs.existsSync(path.join(SKINS_DIR, skinFileName));
+
+  const textures: Record<string, any> = {};
+
+  if (hasSkin) {
+    textures.SKIN = {
+      url: `http://${host}/textures/skins/${skinFileName}`,
+    };
+    if (user.skin_model === 'slim') {
+      textures.SKIN.metadata = { model: 'slim' };
+    }
+  } else {
+    textures.SKIN = {
+      url: `https://mc-heads.net/skin/${user.username}`,
+    };
+  }
+
+  if (user.cape_url) {
+    textures.CAPE = {
+      url: user.cape_url,
+    };
+  }
+
+  const texturesJson = JSON.stringify({
+    timestamp: Date.now(),
+    profileId: cleanUuid,
+    profileName: user.username,
+    textures,
+  });
+
+  const base64Value = Buffer.from(texturesJson).toString('base64');
+
+  return {
+    id: cleanUuid,
+    name: user.username,
+    properties: [
+      {
+        name: 'textures',
+        value: base64Value,
+      },
+    ],
+  };
+};
+
+app.get('/session/minecraft/profile/:uuid', handleYggdrasilProfile);
+app.get('/sessionserver/session/minecraft/profile/:uuid', handleYggdrasilProfile);
 
 // Запуск сервера и бота
 export async function start() {

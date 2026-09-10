@@ -383,7 +383,10 @@ const skinNametag = computed(() => (themeStore.hideNametagSkinsPage ? undefined 
 const isSkinManagementReadOnly = computed(() => {
 	const isOfflineAccount =
 		currentUser.value?.access_token === 'null' || !currentUser.value?.access_token;
-	if (isOfflineAccount && currentUser.value) {
+	const isBedringhAccount =
+		currentUser.value?.access_token?.startsWith?.('bedringh') ||
+		currentUser.value?.refresh_token === 'bedringh_refresh';
+	if ((isOfflineAccount || isBedringhAccount) && currentUser.value) {
 		return false;
 	}
 	return offline.value || (authServerQuery.isError.value && !authServerQuery.isLoading.value);

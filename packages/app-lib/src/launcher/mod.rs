@@ -40,6 +40,7 @@ pub mod inject;
 pub mod job;
 pub mod klauncher;
 pub mod tlauncher;
+pub mod bedringh;
 pub mod pe;
 pub mod quick_play_version;
 
@@ -1218,7 +1219,15 @@ pub async fn launch_minecraft(
             &main_class_path,
             &version_jar,
             *memory,
-            Vec::from(java_args),
+            {
+                let mut extra_jvm_args = Vec::from(java_args);
+                if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
+                    if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
+                        extra_jvm_args.push(format!("-javaagent:{}=http://2.26.87.126:3100", injector_path.to_string_lossy()));
+                    }
+                }
+                extra_jvm_args
+            },
             &java_version.architecture,
             &quick_play_type,
             quick_play_version,

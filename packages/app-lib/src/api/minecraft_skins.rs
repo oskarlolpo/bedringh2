@@ -289,6 +289,32 @@ pub async fn get_available_capes() -> crate::Result<Vec<Cape>> {
         .await?
         .ok_or(ErrorKind::NoCredentialsError)?;
 
+    // Bedringh ID accounts have full access to all official Minecraft capes
+    if is_bedringh_user(&selected_credentials) {
+        let username = selected_credentials.offline_profile.name.clone();
+        let pending_skin_change = pending_effective_skin_change(selected_credentials.offline_profile.id).await;
+        let pending_cape_id = pending_skin_change
+            .as_ref()
+            .map(PendingEffectiveSkinChange::cape_id);
+
+        let current_cape_url = async {
+            let client = &*KL_CLIENT;
+            let res = client
+                .get(format!("http://2.26.87.126:3100/api/user/{}/skin", username))
+                .send()
+                .await
+                .ok()?;
+            let json = res.json::<serde_json::Value>().await.ok()?;
+            json.get("capeUrl").and_then(|u| u.as_str()).map(|s| s.to_string())
+        }
+        .await;
+
+        return Ok(get_official_minecraft_capes(
+            current_cape_url.as_deref(),
+            pending_cape_id,
+        ));
+    }
+
     // KLauncher accounts cannot query the Mojang profile endpoint; their
     // capes live on the KLauncher server instead.
     if let Some(kl_token) = klauncher_token(&selected_credentials) {
@@ -747,6 +773,66 @@ fn is_valid_skin_dimensions(width: u32, height: u32) -> bool {
 ///
 /// KLauncher access tokens are stored with a `kl_` prefix. The bare `"kl"`
 /// literal (used for passwordless/offline KLauncher accounts) carries no
+pub fn is_bedringh_user(credentials: &Credentials) -> bool {
+    credentials.access_token == "bedringh"
+        || credentials.access_token.starts_with("bedringh")
+        || credentials.refresh_token == "bedringh_refresh"
+}
+
+pub fn get_official_minecraft_capes(
+    current_cape_url: Option<&str>,
+    pending_cape_id: Option<Option<Uuid>>,
+) -> Vec<Cape> {
+    let official_capes: &[(&str, &str, &str)] = &[
+        ("15th Anniversary Cape", "https://textures.minecraft.net/texture/a3560738e4695b22b64a259c77e4e1a067a9e14a1e9564f2ff5ec55dcfeb4a", "5170d9a1-7c05-4f33-bfa4-39908cf4f447"),
+        ("Cherry Blossom Cape", "https://textures.minecraft.net/texture/4d41e73be9537f71789b724424bf168b4efcff3cf94a4c3e38719b4b62ebf6cf", "97b39869-aa57-41a4-b040-42cf431f4e19"),
+        ("Vanilla Cape", "https://textures.minecraft.net/texture/684ba5f54f76eb926a117b3f9ff76f082e057f9ed3c3065b26702baee7fa92", "4c94eaef-5883-4ee1-b0cf-5b72e01dfcf4"),
+        ("Migrator Cape", "https://textures.minecraft.net/texture/2340c0e03dd66c11d16dfe0acacab309e57b0521443b6ff8cf16134b4e2f5f7", "8f120319-c62e-4172-bb2d-74d3fb06461a"),
+        ("Twitch Cape", "https://textures.minecraft.net/texture/72be7fa29705f1f107f90c4d29d380e90956557878d46a67f08c3ecb2a472", "3b3f272c-8069-45e7-a902-ec328b9759be"),
+        ("TikTok Cape", "https://textures.minecraft.net/texture/792dd360773d7494a8c991ef28f0945cb5736be4ad2faecdb5351659a850125", "1c6f4996-ef33-4f99-9065-27a3c30a84e5"),
+        ("Experience Cape (2024)", "https://textures.minecraft.net/texture/6a287fa678d8a74e5ce6ea5fa2e6ff7eefb3b1c67674258c704f0fb453bf", "ea633b49-f4fc-4aa0-bb65-728b7e28328c"),
+        ("Minecon 2011", "https://textures.minecraft.net/texture/953cac5b77af5e14fb5f93d18287342947ad791b8644d6db2290765f6250f696", "fd04a6e4-4fa9-43c2-bf7c-88d44747ebdf"),
+        ("Minecon 2012", "https://textures.minecraft.net/texture/a2e8d97164047e3a5d22d05070e5c9038662202399b37d4ac264708e0da070", "0a2c510b-85c8-47fb-a704-58bc753bbce3"),
+        ("Minecon 2013", "https://textures.minecraft.net/texture/153b1a0cacdb361c4c76f226bf5ab2e5949d8a7f8b40be82b4de9b05b7f382", "56b1f22c-a2fd-4a1b-944a-ee8490a61201"),
+        ("Minecon 2015", "https://textures.minecraft.net/texture/b0cc08840700447340433a143db134f7742da7a4cfa0b38292d76f3cf817fb", "2a488e0c-99d8-4a94-81ee-5f9df266395b"),
+        ("Minecon 2016", "https://textures.minecraft.net/texture/e7dfea16dc83c973ced08aab7129d455f8e9c56f2d73859b765477788220707b", "4a58b68a-6ca6-4d13-a442-ae5b51b0f023"),
+        ("Founder's Cape", "https://textures.minecraft.net/texture/b056580f21fc5c9ba697ba9779be82cc649c76bfab30546491775be480bc70", "7b049d56-78ff-4536-a36c-2f928e469e38"),
+        ("Turtle Cape", "https://textures.minecraft.net/texture/984b5c7f8a70513d6a9a084c8a2b535d4ef2f9e4298150ec7e248b1d9bfcf", "d3d2cf59-9f79-450f-9092-231362e52cbe"),
+        ("Mojang Studios (Classic)", "https://textures.minecraft.net/texture/5f77eb4fb8cbd91e5229646b2b592186716a7fcf5b47a468d6ff0ec98236125b", "49a1f1b2-1327-4c07-b30f-9f73fa8ffec6"),
+        ("Mojang Studios (New)", "https://textures.minecraft.net/texture/45c613e55f05353eeae6f46cc7a7f45c9caaa0366b262f5f1ae9f9cf4f86d6", "58f44d18-3561-46bb-8933-28eb2ad34a41"),
+        ("Cobalt Cape", "https://textures.minecraft.net/texture/b68976b9f1d041a7741d42a4df834fb1fae5e6e6a17b07d67f5f9e2b864070", "855be634-118c-449e-8c33-3118d09aa158"),
+        ("Prismarine Cape", "https://textures.minecraft.net/texture/32386da44b67329ad0fa770c79e78dd63e18a9947fb72054ff843a91aa1a3", "7ea87c08-518a-40a2-b258-005183ca6498"),
+        ("Millionth Customer Cape", "https://textures.minecraft.net/texture/60f7e43697e6be9527f31c5f3e9b0c7fa82f42a1ef24a13240e4f20bfad3526", "29f8f260-8da1-4aa7-920f-07611ef420f1"),
+        ("Translator Cape", "https://textures.minecraft.net/texture/724b0fa03c14c5b36440f3408f62c040d6c05d045d658c3dbcb8ab6152a51f38", "3b306b38-e67c-4734-a1bf-4b95cb2e1e7e"),
+        ("Realms MapMaker Cape", "https://textures.minecraft.net/texture/5a0729eb24a919163e790d939634e34e5a953e92ad7c3905cf68bc86144e3", "5d1189c4-1a3b-4860-a2e6-728b9d033990"),
+    ];
+
+    official_capes
+        .iter()
+        .map(|(name, url_str, id_str)| {
+            let id = Uuid::parse_str(id_str).unwrap();
+            let url = Url::parse(url_str).unwrap();
+            let is_eq = pending_cape_id.map_or_else(
+                || current_cape_url.is_some_and(|cur| cur == *url_str),
+                |p_id| p_id == Some(id),
+            );
+            Cape {
+                id,
+                name: Arc::from(*name),
+                texture: Arc::new(url),
+                animated_url: None,
+                delay: None,
+                animation_delay: None,
+                is_equipped: is_eq,
+            }
+        })
+        .collect()
+}
+
+/// Extracts the real KLauncher API token from stored credentials.
+///
+/// KLauncher access tokens are stored with a `kl_` prefix. The bare `"kl"`
+/// literal (used for passwordless/offline KLauncher accounts) carries no
 /// token and therefore cannot call authenticated endpoints.
 fn klauncher_token(credentials: &Credentials) -> Option<&str> {
     credentials
@@ -1190,6 +1276,68 @@ async fn equip_skin_now(
     skin: &Skin,
 ) -> crate::Result<()> {
     let state = State::get().await?;
+
+    let is_bedringh = is_bedringh_user(selected_credentials);
+    if is_bedringh {
+        let username = &selected_credentials.offline_profile.name;
+        let client = &*KL_CLIENT;
+
+        let (cape_url, cape_name) = if let Some(cape_id) = skin.cape_id {
+            let capes = get_official_minecraft_capes(None, None);
+            if let Some(c) = capes.into_iter().find(|c| c.id == cape_id) {
+                (Some(c.texture.to_string()), Some(c.name.to_string()))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let texture_blob = png_util::url_to_data_stream(&skin.texture)
+            .await?
+            .try_fold(Vec::new(), |mut texture, chunk| async move {
+                texture.extend_from_slice(&chunk);
+                Ok(texture)
+            })
+            .await?;
+
+        use base64::Engine;
+        let base64_texture = base64::engine::general_purpose::STANDARD.encode(&texture_blob);
+        let model_str = if skin.variant == MinecraftSkinVariant::Slim { "slim" } else { "classic" };
+
+        let _ = client
+            .post("http://2.26.87.126:3100/api/skin/equip")
+            .json(&serde_json::json!({
+                "username": username,
+                "skinBytesBase64": base64_texture,
+                "model": model_str,
+                "capeUrl": cape_url,
+                "capeName": cape_name,
+            }))
+            .send()
+            .await;
+
+        let profile = Arc::new(MinecraftProfile {
+            id: selected_credentials.offline_profile.id,
+            name: selected_credentials.offline_profile.name.clone(),
+            skins: vec![crate::state::MinecraftSkin {
+                id: Uuid::nil(),
+                state: MinecraftCharacterExpressionState::Active,
+                url: Arc::clone(&skin.texture),
+                texture_key: Some(skin.texture_key.as_ref().into()),
+                variant: skin.variant,
+                name: skin.name.as_deref().map(str::to_owned),
+            }],
+            capes: vec![],
+            fetch_time: None,
+        });
+
+        if let Err(error) = persist_equipped_skin(&state, &profile, skin, &texture_blob).await {
+            tracing::error!("Failed to persist equipped Bedringh skin: {error}");
+        }
+
+        return Ok(());
+    }
 
     let is_klauncher = klauncher_token(selected_credentials).is_some();
 
