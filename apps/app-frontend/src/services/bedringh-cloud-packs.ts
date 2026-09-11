@@ -550,16 +550,39 @@ export async function publishInstanceAsCloudPack(
 }
 
 /**
- * Получить историю всех версий сборки
+ * Получить историю всех версий сборки (с отказоустойчивым фолбэком)
  */
 export async function fetchPackVersions(packId: string): Promise<CloudPackVersionsResponse> {
 	const cleanId = packId.trim().toUpperCase()
-	const res = await requestApi(`/api/packs/${encodeURIComponent(cleanId)}/versions`)
-	const data = await res.json()
-	if (!res.ok || !data.success) {
-		throw new Error(data.error || 'Не удалось загрузить историю версий')
+	try {
+		const res = await requestApi(`/api/packs/${encodeURIComponent(cleanId)}/versions`)
+		if (res && res.ok) {
+			const data = await res.json()
+			if (data?.success) {
+				return data as CloudPackVersionsResponse
+			}
+		}
+	} catch (e) {
+		console.warn('[Bedringh Cloud Packs] /versions endpoint not available, fallback to main pack info:', e)
 	}
-	return data as CloudPackVersionsResponse
+
+	// Фолбэк на базовую информацию сборки, если сервер еще не перезапущен
+	const basePack = await fetchCloudPack(cleanId)
+	return {
+		packId: basePack.id,
+		packName: basePack.name,
+		author: basePack.author,
+		currentVersion: basePack.version,
+		versions: [
+			{
+				version: basePack.version,
+				changelog: basePack.description || 'Текущая версия сборки',
+				createdAt: basePack.updatedAt,
+				modsCount: basePack.manifest?.projects?.length || 0,
+				isCurrent: true,
+			},
+		],
+	}
 }
 
 /**
@@ -570,23 +593,29 @@ export async function fetchPackHistoricalVersion(
 	versionNumber: number,
 ): Promise<CloudPackManifest> {
 	const cleanId = packId.trim().toUpperCase()
-	const res = await requestApi(`/api/packs/${encodeURIComponent(cleanId)}/version/${versionNumber}`)
-	const data = await res.json()
-	if (!res.ok || !data.success) {
-		throw new Error(data.error || `Не удалось загрузить версию v${versionNumber}`)
+	try {
+		const res = await requestApi(`/api/packs/${encodeURIComponent(cleanId)}/version/${versionNumber}`)
+		if (res && res.ok) {
+			const data = await res.json()
+			if (data?.success) {
+				return {
+					id: data.packId,
+					author: data.author,
+					name: data.name,
+					gameVersion: data.manifest?.gameVersion || '',
+					loader: data.manifest?.loader || '',
+					loaderVersion: data.manifest?.loaderVersion,
+					version: data.version,
+					updatedAt: data.createdAt,
+					manifest: data.manifest,
+				}
+			}
+		}
+	} catch (e) {
+		console.warn('[Bedringh Cloud Packs] /version/:num endpoint not available, fallback:', e)
 	}
 
-	return {
-		id: data.packId,
-		author: data.author,
-		name: data.name,
-		gameVersion: data.manifest?.gameVersion || '',
-		loader: data.manifest?.loader || '',
-		loaderVersion: data.manifest?.loaderVersion,
-		version: data.version,
-		updatedAt: data.createdAt,
-		manifest: data.manifest,
-	}
+	return await fetchCloudPack(cleanId)
 }
 
 /**

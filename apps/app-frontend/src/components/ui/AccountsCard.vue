@@ -179,7 +179,7 @@ import {
 	useVIntl,
 } from '@modrinth/ui'
 import type { Ref } from 'vue'
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 
 import steveHeadImage from '@/assets/skins/steve.png'
 import { trackEvent } from '@/helpers/analytics'

@@ -68,7 +68,7 @@ export async function loadInstanceContentData(
 	}
 
 	return {
-		path,
+		path: instanceIdOrPath,
 		contentItems: items,
 		modpack: normalizeLinkedModpackInfo(modpackInfo as LinkedModpackInfo | null | undefined),
 	}
