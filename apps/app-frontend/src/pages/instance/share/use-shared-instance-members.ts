@@ -49,7 +49,7 @@ export function useSharedInstanceMembers(options: {
 	onError: (error: unknown) => void
 }) {
 	const queryClient = useQueryClient()
-	const queryKey = computed(() => instanceKeys.sharedMembers(options.instance.value.id))
+	const queryKey = computed(() => instanceKeys.sharedMembers(options.instance.value?.id ?? ''))
 	const invitingUserIds = new Set<string>()
 	const removingUserIds = new Set<string>()
 	const exclusiveMutationPending = ref(false)
@@ -58,7 +58,7 @@ export function useSharedInstanceMembers(options: {
 		queryKey,
 		queryFn: ({ queryKey }) => fetchRows(queryKey),
 		enabled: () =>
-			options.isSignedIn.value && !!options.instance.value.id && !options.actionsLocked.value,
+			options.isSignedIn.value && !!options.instance.value?.id && !options.actionsLocked.value,
 		retry: false,
 		staleTime: Infinity,
 		refetchOnMount: 'always',

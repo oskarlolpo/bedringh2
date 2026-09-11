@@ -1,5 +1,5 @@
 <template>
-	<div v-if="!instance.quarantined" class="flex flex-col gap-4">
+	<div v-if="instance && !instance.quarantined" class="flex flex-col gap-4">
 		<ModrinthAccountRequiredModal ref="accountRequiredModal" :request-auth="requestAuth" />
 		<InvitePlayersModal
 			ref="invitePlayersModal"
@@ -365,6 +365,12 @@ import { SHARED_INSTANCE_USER_LIMIT, type ShareRow } from './shared-instance-sha
 import { useSharedInstanceInviteCandidates } from './use-shared-instance-invite-candidates'
 import { useSharedInstanceInviteLink } from './use-shared-instance-invite-link'
 import { useSharedInstanceMembers } from './use-shared-instance-members'
+import type { GameInstance } from '@/helpers/types'
+
+const props = defineProps<{
+	instance?: GameInstance
+	offline?: boolean
+}>()
 
 const instancePage = injectInstancePage()
 const auth = injectAuth()
@@ -376,16 +382,19 @@ const {
 	notifySharedInstanceUnavailable,
 } = useSharedInstanceErrors()
 const sharedInstanceState = injectSharedInstance()
-const instance = computed(() => instancePage.instance.value!)
-const offline = instancePage.offline
+const instance = computed(() => props.instance ?? instancePage.instance.value!)
+const offline = computed(() => props.offline ?? instancePage.offline.value)
 const actionsLocked = sharedInstanceState.shareActionsLocked
 const sharedInstanceActionsLocked = actionsLocked
 const currentUserId = computed(() => auth.user.value?.id ?? null)
 const isSignedIn = computed(() => !!auth.session_token.value)
 const exportModal = ref<InstanceType<typeof ExportModal>>()
 const { addNotification, handleError } = injectNotificationManager()
+const sharedInstancesApiUnavailable = ref(false)
 
-const cloudMeta = ref<CloudPackMeta | null>(getLocalInstancePackMeta(instance.value.path))
+const cloudMeta = ref<CloudPackMeta | null>(
+	instance.value?.path ? getLocalInstancePackMeta(instance.value.path) : null,
+)
 const isPublishing = ref(false)
 const isUpdating = ref(false)
 const isCheckingUpdates = ref(false)
@@ -396,8 +405,9 @@ const isAuthor = computed(() => cloudMeta.value?.role === 'author')
 const isSubscriber = computed(() => cloudMeta.value?.role === 'subscriber')
 
 watch(
-	() => instance.value.path,
+	() => instance.value?.path,
 	(newPath) => {
+		if (!newPath) return
 		cloudMeta.value = getLocalInstancePackMeta(newPath)
 		hasCloudUpdate.value = false
 		cloudUpdateDetails.value = null
@@ -581,7 +591,7 @@ const {
 	actionsLocked,
 })
 const inviteLink = useSharedInstanceInviteLink(
-	computed(() => instance.value.id),
+	computed(() => instance.value?.id ?? ''),
 	remainingUserSlots,
 	notifyOperationError,
 )
@@ -759,7 +769,7 @@ provideSharedInstanceManagement({
 	invitePending: inviteLink.pending,
 	pushUpdateDisabled: computed(
 		() =>
-			instance.value.install_stage !== 'installed' ||
+			instance.value?.install_stage !== 'installed' ||
 			publishState.value !== 'idle' ||
 			offline.value,
 	),
@@ -784,16 +794,10 @@ watch([eligibilityQuery.data, members.query.data], ([eligibility, memberRows]) =
 	}
 })
 watch(
-	() => instance.value.id,
+	() => instance.value?.id,
 	() => {
 		importedModpackUnlinked.value = false
 	},
 )
-watch(
-	[() => auth.isReady.value, isSignedIn, actionsLocked],
-	([ready, signedIn, locked]) => {
-		if (ready && !signedIn && !locked) signInToShare()
-	},
-	{ immediate: true, flush: 'post' },
-)
+// In Bedringh, sharing works via Bedringh ID / Cloud Modpacks or Export .mrpack, so do not force Modrinth auth popup on mount
 </script>
