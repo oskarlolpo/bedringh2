@@ -234,6 +234,7 @@ export interface CreationFlowContextValue {
 	setSetupType: (type: SetupType) => void
 	setImportMode: () => void
 	browseModpacks: () => void
+	installCloudPack: () => void
 	selectProject: (projectId: string, projectType: string) => Promise<void>
 	finish: () => void
 	buildProperties: () => Archon.Content.v1.PropertiesFields
@@ -281,6 +282,7 @@ export function createCreationFlowContext(
 	emit: {
 		browseModpacks: () => void
 		create: (config: CreationFlowContextValue) => void
+		installCloudPack?: () => void
 	},
 	options: CreationFlowOptions = {},
 ): CreationFlowContextValue {
@@ -549,6 +551,11 @@ export function createCreationFlowContext(
 		emit.browseModpacks()
 	}
 
+	function installCloudPack() {
+		modal.value?.hide()
+		emit.installCloudPack?.()
+	}
+
 	async function selectProject(projectId: string, projectType: string) {
 		if (!prepareProjectInstall) return
 
@@ -694,6 +701,7 @@ export function createCreationFlowContext(
 		setSetupType,
 		setImportMode,
 		browseModpacks,
+		installCloudPack,
 		selectProject,
 		finish,
 		buildProperties,

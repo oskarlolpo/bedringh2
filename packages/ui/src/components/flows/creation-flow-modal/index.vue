@@ -66,7 +66,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-	(e: 'hide' | 'browse-modpacks'): void
+	(e: 'hide' | 'browse-modpacks' | 'install-cloud-pack'): void
 	(e: 'create', config: CreationFlowContextValue): void
 }>()
 
@@ -78,6 +78,7 @@ const ctx = createCreationFlowContext(
 	{
 		browseModpacks: () => emit('browse-modpacks'),
 		create: (config) => emit('create', config),
+		installCloudPack: () => emit('install-cloud-pack'),
 	},
 	{
 		availableLoaders: props.availableLoaders,

@@ -1,29 +1,29 @@
 <template>
 	<NewModal
 		ref="modal"
-		header="Установка сборки Bedringh Cloud"
+		header="Установка сборки по коду"
 		max-width="540px"
 		width="100%"
 		no-padding
 		@hide="onHide"
 	>
 		<div class="flex flex-col gap-5 p-6">
-			<!-- Ввод кода / ссылки, если сборка еще не выбрана -->
+			<!-- Ввод кода, если сборка еще не выбрана -->
 			<div v-if="!selectedPack" class="flex flex-col gap-4">
 				<div class="flex items-center gap-3 p-3 bg-brand/10 text-brand rounded-xl">
 					<CloudIcon class="w-6 h-6 shrink-0" />
 					<div class="text-sm">
-						Введите код сборки вида <b>BP-XXXXXX</b> или вставьте полученную от друга ссылку.
+						Введите код сборки вида <b>BP-XXXXXX</b>, полученный от друга.
 					</div>
 				</div>
 
 				<div class="flex flex-col gap-1.5">
-					<label class="text-xs font-semibold text-secondary uppercase tracking-wider">Код или ссылка на сборку</label>
+					<label class="text-xs font-semibold text-secondary uppercase tracking-wider">Код сборки</label>
 					<div class="flex gap-2">
 						<StyledInput
 							v-model="packInput"
 							type="text"
-							placeholder="Например: BP-A1B2C3 или ссылка"
+							placeholder="Например: BP-DDEB63FE"
 							class="flex-1"
 							:disabled="loading"
 							@keydown.enter="handleFetchPack"

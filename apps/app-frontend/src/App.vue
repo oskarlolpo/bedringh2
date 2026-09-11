@@ -2135,6 +2135,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 			:customize-instance-icon="customizeCreationIcon"
 			@create="handleCreate"
 			@browse-modpacks="handleBrowseModpacks"
+			@install-cloud-pack="() => { installationModal?.hide(); cloudPackModal?.show() }"
 		/>
 		<IconEditorModal
 			ref="creationIconEditorModal"
@@ -2191,12 +2192,6 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 			<suspense>
 				<QuickInstanceSwitcher />
 			</suspense>
-			<NavButton
-				v-tooltip.right="'Установить живую сборку Bedringh'"
-				:to="() => cloudPackModal?.show()"
-			>
-				<CloudIcon />
-			</NavButton>
 			<NavButton
 				v-tooltip.right="formatMessage(messages.createNewInstance)"
 				:to="() => installationModal?.show()"

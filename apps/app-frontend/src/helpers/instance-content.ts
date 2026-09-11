@@ -21,14 +21,23 @@ export type InstanceContentModpackData = {
 }
 
 export async function loadInstanceContentData(
-	path: string,
+	instanceIdOrPath: string,
 	cacheBehaviour?: CacheBehaviour,
 	onError?: (error: Error) => unknown,
 ): Promise<InstanceContentData> {
+	// If a filesystem path was passed instead of instanceId, extract instance ID from the last path segment
+	let targetId = instanceIdOrPath
+	if (targetId.includes('/') || targetId.includes('\\')) {
+		const segments = targetId.replace(/\\/g, '/').split('/').filter(Boolean)
+		if (segments.length > 0) {
+			targetId = segments[segments.length - 1]
+		}
+	}
+
 	const [contentItems, modpackInfo, scannedMods] = await Promise.all([
-		get_content_items(path, cacheBehaviour).catch((error) => handleLoadError(error, onError)),
-		get_linked_modpack_info(path, cacheBehaviour).catch((error) => handleLoadError(error, onError)),
-		scan_instance_local_mods(path).catch(() => []),
+		get_content_items(targetId, cacheBehaviour).catch((error) => handleLoadError(error, onError)),
+		get_linked_modpack_info(targetId, cacheBehaviour).catch((error) => handleLoadError(error, onError)),
+		scan_instance_local_mods(targetId).catch(() => []),
 	])
 
 	const items = (contentItems as ContentItem[] | null | undefined) ?? null

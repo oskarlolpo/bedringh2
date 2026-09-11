@@ -97,6 +97,22 @@ export interface CloudPackMeta {
 	role: 'author' | 'subscriber'
 	author?: string
 	lastSyncAt?: number
+	modsHash?: string
+}
+
+export function computePackModsHash(
+	gameVersion: string,
+	loader: string,
+	projects: CloudPackProject[],
+): string {
+	const itemsKey = projects
+		.map(
+			(p) =>
+				`${p.projectId || p.title || p.fileName}:${p.versionId || p.versionNumber || ''}:${p.fileName}`,
+		)
+		.sort()
+		.join('|')
+	return `${gameVersion}:${loader}:${itemsKey}`
 }
 
 const STORAGE_KEY_PREFIX = 'bedringh_instance_pack_'
@@ -123,6 +139,34 @@ export function removeLocalInstancePackMeta(instancePath: string): void {
 }
 
 /**
+ * Проверить, есть ли у автора локальные изменения модов относительно опубликованной версии
+ */
+export async function checkAuthorHasChanges(instance: GameInstance): Promise<boolean> {
+	const existingMeta = getLocalInstancePackMeta(instance.path)
+	if (!existingMeta || existingMeta.role !== 'author') return true
+	if (!existingMeta.modsHash) return true
+
+	const content = await loadInstanceContentData(instance.id || instance.path)
+	const projects: CloudPackProject[] = []
+	if (content.contentItems) {
+		for (const item of content.contentItems) {
+			if (item.disabled) continue
+			projects.push({
+				projectId: item.project?.id,
+				title: item.project?.title || item.file_name,
+				versionId: item.version?.id,
+				versionNumber: item.version?.version_number,
+				fileName: item.file_name,
+				fileType: item.project_type || 'mod',
+				iconUrl: item.project?.icon_url,
+			})
+		}
+	}
+	const currentHash = computePackModsHash(instance.game_version, instance.loader, projects)
+	return currentHash !== existingMeta.modsHash
+}
+
+/**
  * Опубликовать или обновить облачную сборку для инстанса
  */
 export async function publishInstanceAsCloudPack(instance: GameInstance, description?: string): Promise<{
@@ -131,6 +175,7 @@ export async function publishInstanceAsCloudPack(instance: GameInstance, descrip
 	shareCode: string
 	shareUrl: string
 	deepLink: string
+	noChanges?: boolean
 }> {
 	let user = getActiveBedringhUser()
 	if (!user || !user.username) {
@@ -140,7 +185,7 @@ export async function publishInstanceAsCloudPack(instance: GameInstance, descrip
 		throw new Error('Для публикации сборки необходимо войти в Bedringh ID')
 	}
 
-	const content = await loadInstanceContentData(instance.path)
+	const content = await loadInstanceContentData(instance.id || instance.path)
 	const projects: CloudPackProject[] = []
 
 	if (content.contentItems) {
@@ -158,8 +203,21 @@ export async function publishInstanceAsCloudPack(instance: GameInstance, descrip
 		}
 	}
 
+	const currentHash = computePackModsHash(instance.game_version, instance.loader, projects)
 	const existingMeta = getLocalInstancePackMeta(instance.path)
 	const packId = existingMeta?.role === 'author' ? existingMeta.packId : undefined
+
+	// Защита от спама: если моды не изменились, не отправляем запрос на повышение версии
+	if (existingMeta?.role === 'author' && existingMeta.modsHash && existingMeta.modsHash === currentHash) {
+		return {
+			packId: existingMeta.packId,
+			version: existingMeta.version,
+			shareCode: existingMeta.packId,
+			shareUrl: `https://oskarlolpo.play2go.cloud/pack/${existingMeta.packId}`,
+			deepLink: `bedringh://pack/${existingMeta.packId}`,
+			noChanges: true,
+		}
+	}
 
 	const res = await requestApi('/api/packs/publish', {
 		method: 'POST',
@@ -184,13 +242,14 @@ export async function publishInstanceAsCloudPack(instance: GameInstance, descrip
 		throw new Error(data.error || 'Ошибка публикации сборки')
 	}
 
-	// Сохраняем привязку инстанса к сборке
+	// Сохраняем привязку инстанса к сборке вместе с хешем модов
 	saveLocalInstancePackMeta(instance.path, {
 		packId: data.packId,
 		version: data.version,
 		role: 'author',
 		author: user.username,
 		lastSyncAt: Date.now(),
+		modsHash: currentHash,
 	})
 
 	return {
@@ -199,6 +258,7 @@ export async function publishInstanceAsCloudPack(instance: GameInstance, descrip
 		shareCode: data.shareCode,
 		shareUrl: data.shareUrl,
 		deepLink: data.deepLink,
+		noChanges: false,
 	}
 }
 
