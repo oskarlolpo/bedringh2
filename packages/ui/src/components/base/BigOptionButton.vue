@@ -16,7 +16,15 @@
 			/>
 		</div>
 		<div class="flex flex-1 flex-col gap-1">
-			<span class="text-base font-semibold text-contrast">{{ title }}</span>
+			<div class="flex items-center gap-2">
+				<span class="text-base font-semibold text-contrast">{{ title }}</span>
+				<span
+					v-if="badge"
+					class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md bg-brand/20 text-brand border border-solid border-brand/30"
+				>
+					{{ badge }}
+				</span>
+			</div>
 			<span class="text-sm font-medium text-primary">{{ description }}</span>
 		</div>
 		<ChevronRightIcon
@@ -34,6 +42,7 @@ defineProps<{
 	title: string
 	description: string
 	selected?: boolean
+	badge?: string
 }>()
 
 defineEmits<{

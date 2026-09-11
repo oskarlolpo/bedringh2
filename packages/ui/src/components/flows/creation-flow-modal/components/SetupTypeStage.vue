@@ -51,12 +51,6 @@
 		<template v-if="ctx.flowType === 'instance'">
 			<div class="flex flex-col gap-3">
 				<BigOptionButton
-					:icon="CloudIcon"
-					title="Сборка Bedringh по коду"
-					description="Установить живую сборку друга по короткому коду (BP-XXXXXX)."
-					@click="ctx.installCloudPack()"
-				/>
-				<BigOptionButton
 					:icon="BoxesIcon"
 					:title="formatMessage(messages.customSetupTitle)"
 					:description="formatMessage(messages.customSetupDescription)"
@@ -79,6 +73,13 @@
 					:title="formatMessage(messages.importInstanceTitle)"
 					:description="formatMessage(messages.importInstanceDescription)"
 					@click="ctx.setImportMode()"
+				/>
+				<BigOptionButton
+					:icon="CloudIcon"
+					title="Сборка по коду Bedringh"
+					description="Установить живую сборку друга по короткому коду (BP-XXXXXX)."
+					badge="NEW"
+					@click="ctx.installCloudPack()"
 				/>
 			</div>
 		</template>
