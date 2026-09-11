@@ -83,7 +83,7 @@ mod assets {
 
 pub mod png_util;
 
-static KL_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+pub(crate) static KL_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(4))
@@ -1307,10 +1307,12 @@ async fn equip_skin_now(
         let base64_texture = base64::engine::general_purpose::STANDARD.encode(&texture_blob);
         let model_str = if skin.variant == MinecraftSkinVariant::Slim { "slim" } else { "classic" };
 
+        let user_uuid = selected_credentials.offline_profile.id.to_string();
         let _ = client
             .post("http://2.26.87.126:3100/api/skin/equip")
             .json(&serde_json::json!({
                 "username": username,
+                "uuid": user_uuid,
                 "skinBytesBase64": base64_texture,
                 "model": model_str,
                 "capeUrl": cape_url,

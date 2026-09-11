@@ -254,7 +254,32 @@ pub async fn bedringh_auth(
                 .map(|entry| *entry.key())
         });
 
-    let uuid = existing_uuid.unwrap_or_else(Uuid::new_v4);
+    let jwt_uuid = token.and_then(|raw| {
+        let t = raw.strip_prefix("bedringh_").unwrap_or(raw);
+        let parts: Vec<&str> = t.split('.').collect();
+        if parts.len() >= 2 {
+            use base64::Engine;
+            let payload_b64 = parts[1];
+            let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(payload_b64)
+                .or_else(|_| base64::engine::general_purpose::STANDARD.decode(payload_b64))
+                .ok()?;
+            let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+            let id_str = json.get("id")?.as_str()?;
+            Uuid::parse_str(id_str).ok()
+        } else {
+            None
+        }
+    });
+
+    let uuid = jwt_uuid.unwrap_or_else(|| existing_uuid.unwrap_or_else(Uuid::new_v4));
+
+    if let Some(old_uuid) = existing_uuid {
+        if old_uuid != uuid {
+            let _ = Credentials::remove(old_uuid, exec).await;
+        }
+    }
+
     let refresh_token = "bedringh_refresh".to_string();
 
     let mut credentials = Credentials {

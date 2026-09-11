@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { db, UserRow, SessionRow, CloudPackRow, CloudPackVersionRow, SKINS_DIR, CAPES_DIR, CUSTOM_FILES_DIR } from './db.js';
@@ -36,9 +36,12 @@ app.get('/', async () => {
     },
     skinDomains: [
       '2.26.87.126',
+      '.26.87.126',
       'textures.minecraft.net',
       'oskarlolpo.play2go.cloud',
       'mc-heads.net',
+      'localhost',
+      '127.0.0.1',
     ],
   };
 });
@@ -352,6 +355,7 @@ app.post<{
 app.post<{
   Body: {
     username?: string;
+    uuid?: string;
     authToken?: string;
     skinDataUrl?: string;
     skinBytesBase64?: string;
@@ -360,7 +364,7 @@ app.post<{
     capeName?: string;
   };
 }>('/api/skin/equip', async (request, reply) => {
-  const { username, skinDataUrl, skinBytesBase64, model, capeUrl, capeName } = request.body || {};
+  const { username, uuid, skinDataUrl, skinBytesBase64, model, capeUrl, capeName } = request.body || {};
   if (!username) {
     return reply.status(400).send({ error: 'Имя пользователя не указано' });
   }
@@ -400,6 +404,20 @@ app.post<{
     user.id
   );
 
+  if (uuid) {
+    try {
+      db.prepare(`
+        INSERT INTO active_sessions (uuid, username, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(uuid) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at
+      `).run(uuid.trim(), user.username, Date.now());
+
+      db.prepare(`
+        UPDATE users SET last_uuid = ? WHERE id = ?
+      `).run(uuid.trim(), user.id);
+    } catch {}
+  }
+
   const host = request.headers.host || '2.26.87.126:3100';
 
   return {
@@ -425,6 +443,7 @@ app.get<{
     const buffer = fs.readFileSync(filePath);
     return reply
       .header('Content-Type', 'image/png')
+      .header('Access-Control-Allow-Origin', '*')
       .header('Cache-Control', 'public, max-age=60')
       .send(buffer);
   }
@@ -439,6 +458,7 @@ app.get<{
       fs.writeFileSync(filePath, buffer);
       return reply
         .header('Content-Type', 'image/png')
+        .header('Access-Control-Allow-Origin', '*')
         .header('Cache-Control', 'public, max-age=60')
         .send(buffer);
     }
@@ -507,15 +527,52 @@ app.get<{
   };
 });
 
+function getOfflinePlayerUuid(username: string): string {
+  const md5 = createHash('md5').update(`OfflinePlayer:${username}`, 'utf8').digest();
+  md5[6] = (md5[6] & 0x0f) | 0x30;
+  md5[8] = (md5[8] & 0x3f) | 0x80;
+  return md5.toString('hex').toLowerCase();
+}
+
 // Yggdrasil Session Profile API (для Minecraft клиента и authlib-injector)
 const handleYggdrasilProfile = async (request: any, reply: any) => {
   const { uuid } = request.params;
-  const cleanUuid = uuid.replace(/-/g, '').toLowerCase();
+  const cleanUuid = String(uuid || '').replace(/-/g, '').toLowerCase();
 
-  // Ищем пользователя по UUID или по username
-  let user = db.prepare('SELECT * FROM users WHERE LOWER(REPLACE(id, "-", "")) = ?').get(cleanUuid) as UserRow | undefined;
+  // 1. Ищем пользователя по прямому ID
+  let user = db.prepare("SELECT * FROM users WHERE LOWER(REPLACE(id, '-', '')) = ?").get(cleanUuid) as UserRow | undefined;
+  
+  // 2. Если не найден, пробуем по имени
   if (!user) {
     user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(uuid) as UserRow | undefined;
+  }
+
+  // 3. Пробуем по сохраненному last_uuid
+  if (!user) {
+    user = db.prepare("SELECT * FROM users WHERE LOWER(REPLACE(last_uuid, '-', '')) = ?").get(cleanUuid) as UserRow | undefined;
+  }
+
+  // 4. Пробуем по активным игровым сессиям
+  if (!user) {
+    try {
+      const active = db.prepare("SELECT username FROM active_sessions WHERE LOWER(REPLACE(uuid, '-', '')) = ?").get(cleanUuid) as { username: string } | undefined;
+      if (active?.username) {
+        user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(active.username) as UserRow | undefined;
+      }
+    } catch {}
+  }
+
+  // 5. Пробуем по детерминированному оффлайн UUID v3 (как генерирует vanilla Minecraft)
+  if (!user) {
+    try {
+      const allUsers = db.prepare('SELECT * FROM users').all() as UserRow[];
+      for (const u of allUsers) {
+        if (getOfflinePlayerUuid(u.username) === cleanUuid) {
+          user = u;
+          break;
+        }
+      }
+    } catch {}
   }
 
   if (!user) {
@@ -547,17 +604,19 @@ const handleYggdrasilProfile = async (request: any, reply: any) => {
     };
   }
 
+  const profileId = cleanUuid.length === 32 ? cleanUuid : user.id.replace(/-/g, '').toLowerCase();
+
   const texturesJson = JSON.stringify({
     timestamp: Date.now(),
-    profileId: cleanUuid,
+    profileId,
     profileName: user.username,
     textures,
   });
 
   const base64Value = Buffer.from(texturesJson).toString('base64');
 
-  return {
-    id: cleanUuid,
+  return reply.send({
+    id: profileId,
     name: user.username,
     properties: [
       {
@@ -565,7 +624,7 @@ const handleYggdrasilProfile = async (request: any, reply: any) => {
         value: base64Value,
       },
     ],
-  };
+  });
 };
 
 // Получение синхронизированных настроек пользователя
@@ -1079,6 +1138,82 @@ app.get<{
 
 app.get('/session/minecraft/profile/:uuid', handleYggdrasilProfile);
 app.get('/sessionserver/session/minecraft/profile/:uuid', handleYggdrasilProfile);
+
+// Поиск по нику (GET /api/users/profiles/minecraft/:username)
+app.get<{
+  Params: { username: string };
+}>('/api/users/profiles/minecraft/:username', async (request, reply) => {
+  const { username } = request.params;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(204).send();
+  }
+  const cleanId = (user.last_uuid || user.id).replace(/-/g, '').toLowerCase();
+  return {
+    id: cleanId,
+    name: user.username,
+  };
+});
+
+// Поиск нескольких профилей (POST /api/profiles/minecraft)
+app.post<{
+  Body: string[];
+}>('/api/profiles/minecraft', async (request, reply) => {
+  const names = Array.isArray(request.body) ? request.body : [];
+  const results: any[] = [];
+  for (const name of names) {
+    const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(String(name).trim()) as UserRow | undefined;
+    if (user) {
+      results.push({
+        id: (user.last_uuid || user.id).replace(/-/g, '').toLowerCase(),
+        name: user.username,
+      });
+    }
+  }
+  return results;
+});
+
+// Регистрация активной сессии игрока из лаунчера
+app.post<{
+  Body: { username?: string; uuid?: string };
+}>('/api/session/register', async (request, reply) => {
+  const { username, uuid } = request.body || {};
+  if (!username || !uuid) {
+    return reply.status(400).send({ error: 'Параметры username и uuid обязательны' });
+  }
+  try {
+    db.prepare(`
+      INSERT INTO active_sessions (uuid, username, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(uuid) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at
+    `).run(uuid.trim(), username.trim(), Date.now());
+
+    db.prepare(`
+      UPDATE users SET last_uuid = ? WHERE username = ? COLLATE NOCASE
+    `).run(uuid.trim(), username.trim());
+  } catch {}
+  return { success: true };
+});
+
+// Раздача authlib-injector.jar
+app.get('/downloads/authlib-injector.jar', async (request, reply) => {
+  const filePath = path.join(process.cwd(), 'downloads', 'authlib-injector.jar');
+  if (fs.existsSync(filePath)) {
+    const buffer = fs.readFileSync(filePath);
+    return reply
+      .header('Content-Type', 'application/java-archive')
+      .header('Content-Disposition', 'attachment; filename="authlib-injector.jar"')
+      .header('Access-Control-Allow-Origin', '*')
+      .send(buffer);
+  }
+  return reply.status(404).send({ error: 'authlib-injector.jar не найден' });
+});
+
+// Client-server join stubs для authlib-injector
+app.post('/session/minecraft/join', async () => ({ success: true }));
+app.post('/sessionserver/session/minecraft/join', async () => ({ success: true }));
+app.get('/session/minecraft/hasJoined', async () => ({ id: '', name: '' }));
+app.get('/sessionserver/session/minecraft/hasJoined', async () => ({ id: '', name: '' }));
 
 // Запуск сервера и бота
 export async function start() {

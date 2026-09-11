@@ -1222,8 +1222,24 @@ pub async fn launch_minecraft(
             {
                 let mut extra_jvm_args = Vec::from(java_args);
                 if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
+                    let username = credentials.offline_profile.name.clone();
+                    let user_uuid = credentials.offline_profile.id.to_string();
+                    tokio::spawn(async move {
+                        let _ = crate::api::minecraft_skins::KL_CLIENT
+                            .post("http://2.26.87.126:3100/api/session/register")
+                            .json(&serde_json::json!({
+                                "username": username,
+                                "uuid": user_uuid,
+                            }))
+                            .send()
+                            .await;
+                    });
+
                     if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
+                        tracing::info!("Injecting Bedringh authlib-injector Java agent: {:?}", injector_path);
                         extra_jvm_args.push(format!("-javaagent:{}=http://2.26.87.126:3100", injector_path.to_string_lossy()));
+                    } else {
+                        tracing::warn!("Failed to prepare Bedringh authlib-injector Java agent!");
                     }
                 }
                 extra_jvm_args

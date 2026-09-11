@@ -47,9 +47,16 @@ db.exec(`
     expires_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS active_sessions (
+    uuid TEXT PRIMARY KEY,
+    username TEXT NOT NULL COLLATE NOCASE,
+    updated_at INTEGER NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sessions_code ON sessions(code);
   CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
   CREATE INDEX IF NOT EXISTS idx_users_tg ON users(telegram_id);
+  CREATE INDEX IF NOT EXISTS idx_active_sessions_uuid ON active_sessions(uuid);
 `);
 
 // Миграции на случай существующей БД
@@ -76,6 +83,9 @@ try {
 } catch {}
 try {
   db.exec("ALTER TABLE users ADD COLUMN servers TEXT;");
+} catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN last_uuid TEXT;");
 } catch {}
 
 db.exec(`
@@ -134,6 +144,7 @@ export interface UserRow {
   cape_name?: string | null;
   launcher_settings?: string | null;
   servers?: string | null;
+  last_uuid?: string | null;
   created_at: string;
 }
 
