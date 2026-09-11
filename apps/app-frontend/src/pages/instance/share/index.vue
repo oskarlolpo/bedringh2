@@ -1,6 +1,8 @@
 <template>
 	<div v-if="instance && !instance.quarantined" class="flex flex-col gap-5 max-w-4xl mx-auto w-full pb-8">
 		<ExportModal ref="exportModal" :instance="instance" />
+		<CloudPackPublishModal ref="cloudPublishModal" @published="onPackPublished" />
+		<CloudPackVersionsModal ref="versionsModal" @rolled-back="onPackRolledBack" />
 
 		<!-- 1. Главная карточка: Живая облачная сборка Bedringh -->
 		<div class="card-shadow rounded-2xl border border-solid border-surface-4 bg-bg-raised p-6 flex flex-col gap-5">
@@ -46,36 +48,43 @@
 					</div>
 				</div>
 
-				<div class="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+				<div class="flex items-center gap-2.5 shrink-0 w-full md:w-auto flex-wrap md:flex-nowrap">
 					<!-- Кнопка первой публикации -->
 					<Button
 						v-if="!cloudMeta"
 						type="colored"
 						color="brand"
 						size="md"
-						:disabled="isPublishing"
 						class="w-full md:w-auto font-bold"
-						@click="handlePublishPack"
+						@click="openPublishModal"
 					>
-						<SpinnerIcon v-if="isPublishing" class="animate-spin size-4" aria-hidden="true" />
-						<ShareIcon v-else class="size-4" aria-hidden="true" />
+						<ShareIcon class="size-4" aria-hidden="true" />
 						Поделиться сборкой
 					</Button>
 
 					<!-- Кнопки для автора -->
 					<template v-else-if="isAuthor">
+						<!-- Кнопка истории версий и отката -->
+						<Button
+							type="outlined"
+							size="md"
+							class="w-full md:w-auto font-medium"
+							@click="openVersionsModal"
+						>
+							<HistoryIcon class="size-4" aria-hidden="true" />
+							История версий
+						</Button>
+
 						<!-- Если есть изменения -->
 						<Button
 							v-if="hasChangesToPublish"
 							type="colored"
 							color="brand"
 							size="md"
-							:disabled="isPublishing"
 							class="w-full md:w-auto font-bold"
-							@click="handlePublishPack"
+							@click="openPublishModal"
 						>
-							<SpinnerIcon v-if="isPublishing" class="animate-spin size-4" aria-hidden="true" />
-							<RotateClockwiseIcon v-else class="size-4" aria-hidden="true" />
+							<RotateClockwiseIcon class="size-4" aria-hidden="true" />
 							Опубликовать обновление (v{{ cloudMeta.version + 1 }})
 						</Button>
 
@@ -84,9 +93,8 @@
 							v-else
 							type="outlined"
 							size="md"
-							:disabled="isPublishing"
 							class="w-full md:w-auto font-medium"
-							@click="handlePublishPack"
+							@click="openPublishModal"
 						>
 							<CheckIcon class="size-4 text-brand" aria-hidden="true" />
 							Сборка актуальна (v{{ cloudMeta.version }})
@@ -95,6 +103,16 @@
 
 					<!-- Кнопки для подписчика -->
 					<template v-else-if="isSubscriber">
+						<Button
+							type="outlined"
+							size="md"
+							class="w-full md:w-auto font-medium"
+							@click="openVersionsModal"
+						>
+							<HistoryIcon class="size-4" aria-hidden="true" />
+							История
+						</Button>
+
 						<Button
 							v-if="hasCloudUpdate"
 							type="colored"
@@ -202,6 +220,7 @@ import {
 	CopyIcon,
 	DownloadIcon,
 	FolderOpenIcon,
+	HistoryIcon,
 	LogInIcon,
 	RotateClockwiseIcon,
 	ShareIcon,
@@ -224,6 +243,8 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import ExportModal from '@/components/ui/ExportModal.vue'
+import CloudPackPublishModal from '@/components/ui/astralrinth/packs/CloudPackPublishModal.vue'
+import CloudPackVersionsModal from '@/components/ui/astralrinth/packs/CloudPackVersionsModal.vue'
 import ModrinthAccountRequiredModal from '@/components/ui/modal/ModrinthAccountRequiredModal.vue'
 import SharedInstancePublishModal from '@/components/ui/shared-instances/SharedInstancePublishModal.vue'
 import {
@@ -282,6 +303,8 @@ const sharedInstanceActionsLocked = actionsLocked
 const currentUserId = computed(() => auth.user.value?.id ?? null)
 const isSignedIn = computed(() => !!auth.session_token.value)
 const exportModal = ref<InstanceType<typeof ExportModal>>()
+const cloudPublishModal = ref<InstanceType<typeof CloudPackPublishModal>>()
+const versionsModal = ref<InstanceType<typeof CloudPackVersionsModal>>()
 const { addNotification, handleError } = injectNotificationManager()
 const sharedInstancesApiUnavailable = ref(false)
 
@@ -343,7 +366,7 @@ async function copyText(text: string, title: string) {
 	}
 }
 
-async function handlePublishPack() {
+async function openPublishModal() {
 	let user = activeBedringhUser.value ?? getActiveBedringhUser()
 	if (!user?.username) {
 		user = await resolveActiveBedringhUser()
@@ -361,35 +384,43 @@ async function handlePublishPack() {
 		return
 	}
 
-	try {
-		isPublishing.value = true
-		const result = await publishInstanceAsCloudPack(instance.value)
-		cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
-		await refreshAuthorChangesStatus()
-
-		await copyText(result.shareCode, 'Код сборки скопирован')
-		if (result.noChanges) {
-			addNotification({
-				type: 'info',
-				title: 'Сборка актуальна',
-				text: `Состав модов не менялся. Текущая версия: v${result.version}. Код: ${result.shareCode}`,
-			})
-		} else {
-			addNotification({
-				type: 'success',
-				title: isAuthor.value ? 'Сборка обновлена в облаке!' : 'Сборка успешно опубликована!',
-				text: `Код сборки: ${result.shareCode}. Отправьте его друзьям для установки!`,
-			})
-		}
-	} catch (err: any) {
-		addNotification({
-			type: 'error',
-			title: 'Ошибка публикации сборки',
-			text: err?.message || 'Не удалось опубликовать сборку',
-		})
-	} finally {
-		isPublishing.value = false
+	if (instance.value) {
+		cloudPublishModal.value?.show(instance.value)
 	}
+}
+
+function openVersionsModal() {
+	if (instance.value && cloudMeta.value?.packId) {
+		versionsModal.value?.show(instance.value, cloudMeta.value.packId)
+	}
+}
+
+async function onPackPublished(payload: { packId: string; version: number; shareCode: string; noChanges?: boolean }) {
+	if (!instance.value) return
+	cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
+	await refreshAuthorChangesStatus()
+	await copyText(payload.shareCode, 'Код сборки скопирован')
+
+	if (payload.noChanges) {
+		addNotification({
+			type: 'info',
+			title: 'Сборка актуальна',
+			text: `Состав модов не менялся. Текущая версия: v${payload.version}. Код: ${payload.shareCode}`,
+		})
+	} else {
+		addNotification({
+			type: 'success',
+			title: 'Сборка обновлена в облаке!',
+			text: `Версия v${payload.version} успешно опубликована! Код сборки: ${payload.shareCode}.`,
+		})
+	}
+}
+
+async function onPackRolledBack(targetVersion: number) {
+	if (!instance.value) return
+	cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
+	await refreshAuthorChangesStatus()
+	queryClient.invalidateQueries()
 }
 
 async function handleCheckUpdate(notifyIfUpToDate = false) {

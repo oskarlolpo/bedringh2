@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { db, UserRow, SessionRow, CloudPackRow, SKINS_DIR, CAPES_DIR } from './db.js';
+import { db, UserRow, SessionRow, CloudPackRow, CloudPackVersionRow, SKINS_DIR, CAPES_DIR, CUSTOM_FILES_DIR } from './db.js';
 import { bot, sendPasswordResetCode } from './bot.js';
 
 
@@ -14,7 +14,7 @@ const BOT_USERNAME = process.env.BOT_USERNAME || 'bedringh_bot';
 const PORT = parseInt(process.env.PORT || '3100', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
-export const app = Fastify({ logger: true });
+export const app = Fastify({ logger: true, bodyLimit: 100 * 1024 * 1024 });
 
 app.register(cors, {
   origin: true,
@@ -755,9 +755,10 @@ app.post<{
     loader: string;
     loaderVersion?: string;
     manifest: any;
+    changelog?: string;
   };
 }>('/api/packs/publish', async (request, reply) => {
-  const { packId, username: bodyUsername, authToken, name, description, gameVersion, loader, loaderVersion, manifest } = request.body || {};
+  const { packId, username: bodyUsername, authToken, name, description, gameVersion, loader, loaderVersion, manifest, changelog } = request.body || {};
   let username = bodyUsername;
 
   const authHeader = request.headers.authorization;
@@ -805,6 +806,16 @@ app.post<{
       WHERE id = ?
     `).run(name, description || null, gameVersion, loader, loaderVersion || null, newVersion, manifestStr, packId);
 
+    // Сохраняем снимок версии в историю
+    try {
+      db.prepare(`
+        INSERT INTO cloud_pack_versions (pack_id, version_number, changelog, manifest)
+        VALUES (?, ?, ?, ?)
+      `).run(packId, newVersion, changelog || `Обновление v${newVersion}`, manifestStr);
+    } catch (e) {
+      console.error('Failed to save pack version history:', e);
+    }
+
     const shareUrl = `https://oskarlolpo.play2go.cloud/pack/${packId}`;
     return {
       success: true,
@@ -822,6 +833,16 @@ app.post<{
       INSERT INTO cloud_packs (id, author_username, name, description, game_version, loader, loader_version, version_number, manifest)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
     `).run(newId, user.username, name, description || null, gameVersion, loader, loaderVersion || null, manifestStr);
+
+    // Сохраняем версию v1 в историю
+    try {
+      db.prepare(`
+        INSERT INTO cloud_pack_versions (pack_id, version_number, changelog, manifest)
+        VALUES (?, 1, ?, ?)
+      `).run(newId, changelog || 'Первая публикация сборки', manifestStr);
+    } catch (e) {
+      console.error('Failed to save pack v1 history:', e);
+    }
 
     const shareUrl = `https://oskarlolpo.play2go.cloud/pack/${newId}`;
     return {
@@ -866,6 +887,168 @@ app.get<{
       manifest: parsedManifest,
     },
   };
+});
+
+// Получение истории всех версий сборки (Changelog & Timeline)
+app.get<{
+  Params: { packId: string };
+}>('/api/packs/:packId/versions', async (request, reply) => {
+  const { packId } = request.params;
+  const cleanId = packId.trim();
+  const pack = db.prepare('SELECT id, author_username, name, version_number FROM cloud_packs WHERE id = ? COLLATE NOCASE').get(cleanId) as CloudPackRow | undefined;
+  if (!pack) {
+    return reply.status(404).send({ error: 'Сборка не найдена' });
+  }
+
+  let rows = db.prepare(`
+    SELECT id, pack_id, version_number, changelog, manifest, created_at
+    FROM cloud_pack_versions
+    WHERE pack_id = ? COLLATE NOCASE
+    ORDER BY version_number DESC
+  `).all(cleanId) as CloudPackVersionRow[];
+
+  // Если таблица версий была пуста (сборка создана до появления истории), добавляем текущую версию
+  if (rows.length === 0) {
+    const fullPack = db.prepare('SELECT * FROM cloud_packs WHERE id = ? COLLATE NOCASE').get(cleanId) as CloudPackRow | undefined;
+    if (fullPack) {
+      try {
+        db.prepare(`
+          INSERT OR IGNORE INTO cloud_pack_versions (pack_id, version_number, changelog, manifest)
+          VALUES (?, ?, ?, ?)
+        `).run(fullPack.id, fullPack.version_number, 'Начальная версия сборки', fullPack.manifest);
+        rows = [
+          {
+            id: 1,
+            pack_id: fullPack.id,
+            version_number: fullPack.version_number,
+            changelog: 'Начальная версия сборки',
+            manifest: fullPack.manifest,
+            created_at: fullPack.created_at,
+          },
+        ];
+      } catch {}
+    }
+  }
+
+  const versions = rows.map((r) => {
+    let modsCount = 0;
+    try {
+      const parsed = JSON.parse(r.manifest);
+      modsCount = Array.isArray(parsed?.projects) ? parsed.projects.length : 0;
+    } catch {}
+
+    return {
+      version: r.version_number,
+      changelog: r.changelog,
+      createdAt: r.created_at,
+      modsCount,
+      isCurrent: r.version_number === pack.version_number,
+    };
+  });
+
+  return {
+    success: true,
+    packId: pack.id,
+    packName: pack.name,
+    author: pack.author_username,
+    currentVersion: pack.version_number,
+    versions,
+  };
+});
+
+// Получение конкретной исторической версии манифеста для отката (Rollback)
+app.get<{
+  Params: { packId: string; versionNumber: string };
+}>('/api/packs/:packId/version/:versionNumber', async (request, reply) => {
+  const { packId, versionNumber } = request.params;
+  const vNum = parseInt(versionNumber, 10);
+  if (isNaN(vNum)) {
+    return reply.status(400).send({ error: 'Неверный номер версии' });
+  }
+
+  const row = db.prepare(`
+    SELECT * FROM cloud_pack_versions
+    WHERE pack_id = ? COLLATE NOCASE AND version_number = ?
+  `).get(packId.trim(), vNum) as CloudPackVersionRow | undefined;
+
+  if (!row) {
+    return reply.status(404).send({ error: `Версия v${vNum} сборки ${packId} не найдена` });
+  }
+
+  const pack = db.prepare('SELECT id, author_username, name, game_version, loader, loader_version FROM cloud_packs WHERE id = ? COLLATE NOCASE').get(packId.trim()) as CloudPackRow | undefined;
+
+  let parsedManifest: any = {};
+  try {
+    parsedManifest = JSON.parse(row.manifest);
+  } catch {}
+
+  return {
+    success: true,
+    packId: row.pack_id,
+    name: pack?.name || row.pack_id,
+    author: pack?.author_username || 'Bedringh',
+    version: row.version_number,
+    changelog: row.changelog,
+    createdAt: row.created_at,
+    manifest: parsedManifest,
+  };
+});
+
+// Загрузка кастомного неизвестного мода или файла конфига по SHA1 (дедупликация на сервере)
+app.post<{
+  Body: {
+    sha1: string;
+    fileName: string;
+    dataBase64: string;
+  };
+}>('/api/packs/custom-file', async (request, reply) => {
+  const { sha1, fileName, dataBase64 } = request.body || {};
+  if (!sha1 || !fileName || !dataBase64) {
+    return reply.status(400).send({ error: 'Отсутствуют обязательные параметры (sha1, fileName, dataBase64)' });
+  }
+
+  const cleanHash = sha1.toLowerCase().replace(/[^a-f0-9]/g, '');
+  if (cleanHash.length !== 40) {
+    return reply.status(400).send({ error: 'Неверный формат SHA-1 хэша' });
+  }
+
+  const filePath = path.join(CUSTOM_FILES_DIR, `${cleanHash}.bin`);
+  if (!fs.existsSync(filePath)) {
+    const buffer = Buffer.from(dataBase64, 'base64');
+    fs.writeFileSync(filePath, buffer);
+  }
+
+  const safeFileName = path.basename(fileName);
+  return {
+    success: true,
+    sha1: cleanHash,
+    fileName: safeFileName,
+    downloadUrl: `/api/packs/custom-file/${cleanHash}?fileName=${encodeURIComponent(safeFileName)}`,
+  };
+});
+
+// Раздача кастомного мода по SHA-1
+app.get<{
+  Params: { hash: string };
+  Querystring: { fileName?: string };
+}>('/api/packs/custom-file/:hash', async (request, reply) => {
+  const { hash } = request.params;
+  const { fileName } = (request.query as any) || {};
+
+  const cleanHash = hash.toLowerCase().replace(/[^a-f0-9]/g, '');
+  const filePath = path.join(CUSTOM_FILES_DIR, `${cleanHash}.bin`);
+
+  if (!fs.existsSync(filePath)) {
+    return reply.status(404).send({ error: 'Файл не найден на сервере' });
+  }
+
+  const safeName = fileName ? path.basename(fileName) : `${cleanHash}.jar`;
+  reply.header('Content-Type', 'application/java-archive');
+  reply.header('Content-Disposition', `attachment; filename="${safeName}"`);
+  reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+
+  const stream = fs.createReadStream(filePath);
+  return reply.send(stream);
 });
 
 // Проверка наличия обновления для установленной сборки

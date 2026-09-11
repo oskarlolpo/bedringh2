@@ -93,7 +93,23 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_cloud_packs_author ON cloud_packs(author_username);
+
+  CREATE TABLE IF NOT EXISTS cloud_pack_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pack_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    changelog TEXT,
+    manifest TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(pack_id, version_number)
+  );
+  CREATE INDEX IF NOT EXISTS idx_pack_versions_pack ON cloud_pack_versions(pack_id);
 `);
+
+export const CUSTOM_FILES_DIR = path.join(DB_DIR, 'custom_files');
+if (!fs.existsSync(CUSTOM_FILES_DIR)) {
+  fs.mkdirSync(CUSTOM_FILES_DIR, { recursive: true });
+}
 
 export const SKINS_DIR = path.join(DB_DIR, 'skins');
 if (!fs.existsSync(SKINS_DIR)) {
@@ -133,6 +149,15 @@ export interface CloudPackRow {
   manifest: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CloudPackVersionRow {
+  id: number;
+  pack_id: string;
+  version_number: number;
+  changelog: string | null;
+  manifest: string;
+  created_at: string;
 }
 
 export interface SessionRow {
