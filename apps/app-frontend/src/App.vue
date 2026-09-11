@@ -108,6 +108,7 @@ import WindowControls from '@/components/ui/WindowControls.vue'
 import { useCheckDisableMouseover } from '@/composables/macCssFix.js'
 import { useAppEvent } from '@/composables/use-app-event'
 import { useAppSettings } from '@/composables/use-app-settings.ts'
+import { useTheming } from '@/store/theme'
 import { useError } from '@/composables/use-error.js'
 import { useInstanceMetadataRefresh } from '@/composables/use-instance-metadata-refresh'
 import { isDarkTheme, useTheme } from '@/composables/use-theme.ts'
@@ -196,6 +197,7 @@ import {
 
 const appSettings = useAppSettings()
 const appTheme = useTheme()
+const themeStore = useTheming()
 const router = useRouter()
 const route = useRoute()
 const error = useError()
@@ -2411,7 +2413,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 							{{ formatMessage(messages.playingAs) }}
 						</h3>
 						<suspense>
-							<AccountsCard ref="accounts" />
+							<AccountsCard ref="accounts" @change="refreshChibiSkin" />
 						</suspense>
 					</div>
 					<div
@@ -2434,6 +2436,21 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 				</div>
 			</div>
 			<!-- Ads removed in Bedringh -->
+			<div
+				v-if="themeStore.chibiEnabled && currentChibiSkinUrl"
+				class="chibi-sidebar-container absolute bottom-0 right-0 pointer-events-none z-10 bg-transparent border-0 outline-none shadow-none"
+				style="background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important;"
+			>
+				<ChibiAvatar
+					:skin-url="currentChibiSkinUrl"
+					:width="160"
+					:height="160"
+					pose="sitting"
+					facing="34-left"
+					:mirror="true"
+					:enable-hurt-on-click="false"
+				/>
+			</div>
 		</div>
 	</div>
 	<I18nDebugPanel />

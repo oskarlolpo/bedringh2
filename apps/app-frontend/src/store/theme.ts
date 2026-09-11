@@ -42,7 +42,7 @@ export const DEFAULT_THEME_STORE: ThemeStore = {
 	advancedRendering: true,
 	hideNametagSkinsPage: false,
 	toggleSidebar: false,
-	chibiEnabled: true,
+	chibiEnabled: typeof localStorage !== 'undefined' ? localStorage.getItem('bedringh_chibi_enabled') !== 'false' : true,
 
 	devMode: false,
 	featureFlags: DEFAULT_FEATURE_FLAGS,
@@ -83,6 +83,12 @@ export const useTheming = defineStore('themeStore', {
 		},
 		getThemeOptions() {
 			return THEME_OPTIONS
+		},
+		setChibiEnabled(enabled: boolean) {
+			this.chibiEnabled = enabled
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('bedringh_chibi_enabled', enabled ? 'true' : 'false')
+			}
 		},
 	},
 })

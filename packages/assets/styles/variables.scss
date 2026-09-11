@@ -518,3 +518,80 @@ html.theme-orange, :root.theme-orange {
 html.dark.theme-orange, html.dark-mode.theme-orange, html.oled-mode.theme-orange, :root[data-theme='dark'].theme-orange {
 	--brand-h: 30; --brand-s: 99%; --brand-l: 55%;
 }
+
+html.theme-cyan, :root.theme-cyan {
+	--brand-h: 188; --brand-s: 95%; --brand-l: 40%;
+}
+html.dark.theme-cyan, html.dark-mode.theme-cyan, html.oled-mode.theme-cyan, :root[data-theme='dark'].theme-cyan {
+	--brand-h: 186; --brand-s: 96%; --brand-l: 50%;
+}
+
+html.theme-teal, :root.theme-teal {
+	--brand-h: 173; --brand-s: 80%; --brand-l: 38%;
+}
+html.dark.theme-teal, html.dark-mode.theme-teal, html.oled-mode.theme-teal, :root[data-theme='dark'].theme-teal {
+	--brand-h: 171; --brand-s: 82%; --brand-l: 48%;
+}
+
+html.theme-pink, :root.theme-pink {
+	--brand-h: 330; --brand-s: 85%; --brand-l: 52%;
+}
+html.dark.theme-pink, html.dark-mode.theme-pink, html.oled-mode.theme-pink, :root[data-theme='dark'].theme-pink {
+	--brand-h: 330; --brand-s: 92%; --brand-l: 63%;
+}
+
+html.theme-yellow, :root.theme-yellow {
+	--brand-h: 45; --brand-s: 100%; --brand-l: 42%;
+}
+html.dark.theme-yellow, html.dark-mode.theme-yellow, html.oled-mode.theme-yellow, :root[data-theme='dark'].theme-yellow {
+	--brand-h: 47; --brand-s: 98%; --brand-l: 52%;
+}
+
+html.theme-amber, :root.theme-amber {
+	--brand-h: 38; --brand-s: 92%; --brand-l: 45%;
+}
+html.dark.theme-amber, html.dark-mode.theme-amber, html.oled-mode.theme-amber, :root[data-theme='dark'].theme-amber {
+	--brand-h: 38; --brand-s: 95%; --brand-l: 54%;
+}
+
+html.theme-lime, :root.theme-lime {
+	--brand-h: 84; --brand-s: 81%; --brand-l: 40%;
+}
+html.dark.theme-lime, html.dark-mode.theme-lime, html.oled-mode.theme-lime, :root[data-theme='dark'].theme-lime {
+	--brand-h: 84; --brand-s: 85%; --brand-l: 52%;
+}
+
+html.theme-indigo, :root.theme-indigo {
+	--brand-h: 239; --brand-s: 84%; --brand-l: 58%;
+}
+html.dark.theme-indigo, html.dark-mode.theme-indigo, html.oled-mode.theme-indigo, :root[data-theme='dark'].theme-indigo {
+	--brand-h: 239; --brand-s: 88%; --brand-l: 65%;
+}
+
+html.theme-rose, :root.theme-rose {
+	--brand-h: 350; --brand-s: 89%; --brand-l: 54%;
+}
+html.dark.theme-rose, html.dark-mode.theme-rose, html.oled-mode.theme-rose, :root[data-theme='dark'].theme-rose {
+	--brand-h: 350; --brand-s: 95%; --brand-l: 64%;
+}
+
+html.theme-sky, :root.theme-sky {
+	--brand-h: 199; --brand-s: 89%; --brand-l: 44%;
+}
+html.dark.theme-sky, html.dark-mode.theme-sky, html.oled-mode.theme-sky, :root[data-theme='dark'].theme-sky {
+	--brand-h: 199; --brand-s: 95%; --brand-l: 56%;
+}
+
+html.theme-violet, :root.theme-violet {
+	--brand-h: 258; --brand-s: 90%; --brand-l: 58%;
+}
+html.dark.theme-violet, html.dark-mode.theme-violet, html.oled-mode.theme-violet, :root[data-theme='dark'].theme-violet {
+	--brand-h: 258; --brand-s: 95%; --brand-l: 67%;
+}
+
+html.theme-fuchsia, :root.theme-fuchsia {
+	--brand-h: 292; --brand-s: 84%; --brand-l: 52%;
+}
+html.dark.theme-fuchsia, html.dark-mode.theme-fuchsia, html.oled-mode.theme-fuchsia, :root[data-theme='dark'].theme-fuchsia {
+	--brand-h: 292; --brand-s: 91%; --brand-l: 64%;
+}
