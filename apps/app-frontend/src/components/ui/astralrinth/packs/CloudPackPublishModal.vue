@@ -17,9 +17,9 @@
 			<template v-else>
 				<!-- Заголовок и сводка диффа в стиле GitHub -->
 				<div class="flex flex-col gap-3">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="m-0 text-base font-bold text-contrast">
+					<div class="flex items-start sm:items-center justify-between gap-3 flex-wrap">
+						<div class="min-w-0">
+							<h3 class="m-0 text-base font-bold text-contrast truncate">
 								{{ instance?.name }}
 							</h3>
 							<p class="m-0 text-xs text-secondary mt-0.5">
@@ -174,7 +174,7 @@
 
 				<!-- Поле Changelog -->
 				<div class="flex flex-col gap-2">
-					<div class="flex items-center justify-between">
+					<div class="flex items-center justify-between flex-wrap gap-1.5">
 						<label class="text-xs font-semibold text-secondary uppercase tracking-wider">
 							Описание изменений (Changelog)
 						</label>

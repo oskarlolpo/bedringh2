@@ -25,7 +25,7 @@
 
 			<template v-else>
 				<!-- Шапка со сборкой -->
-				<div class="flex items-center justify-between p-3.5 rounded-xl bg-surface-2 border border-solid border-surface-4">
+				<div class="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-surface-2 border border-solid border-surface-4 flex-wrap">
 					<div class="flex items-center gap-3 min-w-0">
 						<div class="size-10 rounded-xl bg-brand/15 text-brand flex items-center justify-center shrink-0">
 							<HistoryIcon class="size-5" />
@@ -53,7 +53,7 @@
 						class="flex flex-col gap-2.5 p-4 rounded-xl border border-solid transition"
 						:class="ver.isCurrent ? 'bg-brand/10 border-brand/40' : 'bg-surface-2 border-surface-4 hover:border-surface-5'"
 					>
-						<div class="flex items-center justify-between gap-3">
+						<div class="flex items-center justify-between gap-3 flex-wrap">
 							<div class="flex items-center gap-2">
 								<span
 									class="px-2.5 py-0.5 text-xs font-bold rounded-md"
