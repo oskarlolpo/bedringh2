@@ -74,6 +74,26 @@ try {
 try {
   db.exec("ALTER TABLE users ADD COLUMN launcher_settings TEXT;");
 } catch {}
+try {
+  db.exec("ALTER TABLE users ADD COLUMN servers TEXT;");
+} catch {}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cloud_packs (
+    id TEXT PRIMARY KEY,
+    author_username TEXT NOT NULL COLLATE NOCASE,
+    name TEXT NOT NULL,
+    description TEXT,
+    game_version TEXT NOT NULL,
+    loader TEXT NOT NULL,
+    loader_version TEXT,
+    version_number INTEGER DEFAULT 1,
+    manifest TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_cloud_packs_author ON cloud_packs(author_username);
+`);
 
 export const SKINS_DIR = path.join(DB_DIR, 'skins');
 if (!fs.existsSync(SKINS_DIR)) {
@@ -97,7 +117,22 @@ export interface UserRow {
   cape_url?: string | null;
   cape_name?: string | null;
   launcher_settings?: string | null;
+  servers?: string | null;
   created_at: string;
+}
+
+export interface CloudPackRow {
+  id: string;
+  author_username: string;
+  name: string;
+  description: string | null;
+  game_version: string;
+  loader: string;
+  loader_version: string | null;
+  version_number: number;
+  manifest: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SessionRow {

@@ -597,6 +597,14 @@ async function completeLogin(username: string, authToken: string) {
 			console.warn('[Bedringh Auth] Ошибка синхронизации настроек:', syncErr)
 		}
 
+		// Синхронизация списка серверов с профилем Bedringh ID
+		try {
+			const { syncServersOnLogin } = await import('@/services/bedringh-servers-sync')
+			await syncServersOnLogin(username, authToken)
+		} catch (srvErr) {
+			console.warn('[Bedringh Auth] Ошибка синхронизации серверов:', srvErr)
+		}
+
 		hide()
 		addNotification({
 			type: 'success',

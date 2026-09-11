@@ -13,6 +13,7 @@ import {
 	ArrowLeftRightIcon,
 	ChevronLeftIcon,
 	ChevronRightIcon,
+	CloudIcon,
 	CompassIcon,
 	ImagesIcon,
 	LogInIcon,
@@ -77,6 +78,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import SteveSkin from '@/assets/skins/steve.png'
 import ChibiAvatar from '@/components/ui/chibi/ChibiAvatar.vue'
 import AccountsCard from '@/components/ui/AccountsCard.vue'
+import BedringhCloudPackModal from '@/components/ui/astralrinth/packs/BedringhCloudPackModal.vue'
 import AppActionBar from '@/components/ui/AppActionBar.vue'
 import Breadcrumbs from '@/components/ui/Breadcrumbs.vue'
 import ErrorModal from '@/components/ui/ErrorModal.vue'
@@ -808,10 +810,12 @@ async function setupApp() {
 	appSettings.devMode = developer_mode
 	stateInitialized.value = true
 
-	// Проверяем облачные настройки Bedringh ID при старте
+	// Проверяем облачные настройки и список серверов Bedringh ID при старте
 	try {
 		const { syncOnStartup } = await import('@/services/bedringh-settings-sync')
 		void syncOnStartup()
+		const { syncServersOnStartup } = await import('@/services/bedringh-servers-sync')
+		void syncServersOnStartup()
 	} catch (e) {
 		console.warn('[Bedringh] Ошибка фоновой синхронизации при запуске:', e)
 	}
@@ -1096,6 +1100,11 @@ const updateToPlayModal = ref()
 
 const modrinthLoginModal = ref()
 const appSettingsModal = ref()
+const cloudPackModal = ref()
+provide('openBedringhCloudPackModal', (code) => cloudPackModal.value?.show(code))
+window.addEventListener('open-bedringh-cloud-pack', (e) => {
+	cloudPackModal.value?.show(e.detail?.code)
+})
 provide(appSettingsModalOpenProfileKey, () => appSettingsModal.value?.showProfile())
 provide(appSettingsModalOpenSyncedOptionsKey, () => appSettingsModal.value?.showSyncedOptions())
 
@@ -1613,6 +1622,17 @@ function clearLiveNotifications() {
 async function handleCommand(e) {
 	if (!e) return
 
+	if (typeof e === 'string' && (e.startsWith('bedringh://pack/') || e.startsWith('BP-'))) {
+		const code = e.replace('bedringh://pack/', '')
+		cloudPackModal.value?.show(code)
+		return
+	}
+	if (e?.event === 'InstallBedringhPack' || (typeof e?.id === 'string' && e.id.startsWith('BP-'))) {
+		const code = e.pack_id || e.id
+		cloudPackModal.value?.show(code)
+		return
+	}
+
 	if (e.event === 'RunMRPack') {
 		// RunMRPack should directly install a local mrpack given a path
 		if (e.path.endsWith('.mrpack')) {
@@ -2098,6 +2118,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 		<Suspense>
 			<ModrinthAccountRequiredModal ref="modrinthLoginModal" :request-auth="requestModrinthAuth" />
 		</Suspense>
+		<BedringhCloudPackModal ref="cloudPackModal" />
 		<CreationFlowModal
 			ref="installationModal"
 			type="instance"
@@ -2168,6 +2189,12 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 			<suspense>
 				<QuickInstanceSwitcher />
 			</suspense>
+			<NavButton
+				v-tooltip.right="'Установить живую сборку Bedringh'"
+				:to="() => cloudPackModal?.show()"
+			>
+				<CloudIcon />
+			</NavButton>
 			<NavButton
 				v-tooltip.right="formatMessage(messages.createNewInstance)"
 				:to="() => installationModal?.show()"

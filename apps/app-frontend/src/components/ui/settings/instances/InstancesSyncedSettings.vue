@@ -516,6 +516,11 @@ async function saveSyncedServer() {
 		serverData.value[server.address] = { refreshing: true }
 		await refreshServerData(serverData.value[server.address], null, server.address)
 		await queryClient.invalidateQueries({ queryKey: ['worlds'] })
+
+		try {
+			const { pushRemoteServersDebounced } = await import('@/services/bedringh-servers-sync')
+			pushRemoteServersDebounced(syncedServers.value)
+		} catch {}
 	} catch (error) {
 		handleError(error)
 	}
@@ -531,6 +536,11 @@ async function removeSyncedServer(serverId: string) {
 		await remove_synced_server(serverId)
 		syncedServers.value = syncedServers.value.filter((server) => server.id !== serverId)
 		await queryClient.invalidateQueries({ queryKey: ['worlds'] })
+
+		try {
+			const { pushRemoteServersDebounced } = await import('@/services/bedringh-servers-sync')
+			pushRemoteServersDebounced(syncedServers.value)
+		} catch {}
 	} catch (error) {
 		handleError(error)
 	}

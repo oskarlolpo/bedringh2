@@ -48,6 +48,158 @@
 		/>
 		<ExportModal ref="exportModal" :instance="instance" />
 
+		<!-- Bedringh Live Cloud Modpack Hub -->
+		<div class="rounded-2xl border border-border/40 bg-surface p-5 shadow-sm flex flex-col gap-4">
+			<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+				<div class="flex items-center gap-4">
+					<div class="p-3 bg-brand/10 text-brand rounded-xl flex items-center justify-center">
+						<CloudIcon class="w-6 h-6 text-brand" />
+					</div>
+					<div>
+						<div class="flex items-center gap-2">
+							<h3 class="text-base font-bold text-foreground">Живая облачная сборка Bedringh</h3>
+							<span
+								v-if="cloudMeta"
+								class="px-2 py-0.5 text-xs font-bold rounded-full bg-brand/20 text-brand"
+							>
+								v{{ cloudMeta.version }}
+							</span>
+							<span
+								v-if="cloudMeta"
+								class="px-2 py-0.5 text-xs rounded-full font-medium"
+								:class="isAuthor ? 'bg-brand/10 text-brand' : 'bg-surface-3 text-secondary'"
+							>
+								{{ isAuthor ? 'Вы автор' : `Подписка (${cloudMeta.author ?? 'автор'})` }}
+							</span>
+						</div>
+						<p class="text-sm text-secondary mt-0.5">
+							{{
+								isAuthor
+									? 'Поделитесь кодом или ссылкой. Когда вы измените моды и нажмете «Обновить для подписчиков», сборка обновится у всех друзей.'
+									: isSubscriber
+									? 'Вы подписаны на эту сборку. Если автор добавит или обновит моды, вы сможете синхронизировать их в 1 клик.'
+									: 'Поделитесь сборкой через облако Bedringh: друзья получают прямую ссылку и автоматически синхронизируют обновления.'
+							}}
+						</p>
+					</div>
+				</div>
+
+				<div class="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0">
+					<!-- Кнопка первой публикации -->
+					<Button
+						v-if="!cloudMeta"
+						type="colored"
+						color="brand"
+						:disabled="isPublishing"
+						@click="handlePublishPack"
+					>
+						<SpinnerIcon v-if="isPublishing" class="animate-spin" aria-hidden="true" />
+						<ShareIcon v-else aria-hidden="true" />
+						Поделиться живой ссылкой
+					</Button>
+
+					<!-- Кнопки для автора -->
+					<template v-else-if="isAuthor">
+						<Button
+							type="colored"
+							color="brand"
+							:disabled="isPublishing"
+							@click="handlePublishPack"
+						>
+							<SpinnerIcon v-if="isPublishing" class="animate-spin" aria-hidden="true" />
+							<RotateClockwiseIcon v-else aria-hidden="true" />
+							Опубликовать обновление (v{{ cloudMeta.version + 1 }})
+						</Button>
+					</template>
+
+					<!-- Кнопки для подписчика -->
+					<template v-else-if="isSubscriber">
+						<Button
+							v-if="hasCloudUpdate"
+							type="colored"
+							color="brand"
+							:disabled="isUpdating"
+							@click="handleSyncPack"
+						>
+							<SpinnerIcon v-if="isUpdating" class="animate-spin" aria-hidden="true" />
+							<DownloadIcon v-else aria-hidden="true" />
+							Обновить моды до v{{ cloudUpdateDetails?.latestVersion }}
+						</Button>
+						<Button
+							v-else
+							type="outlined"
+							:disabled="isCheckingUpdates"
+							@click="handleCheckUpdate(true)"
+						>
+							<SpinnerIcon v-if="isCheckingUpdates" class="animate-spin" aria-hidden="true" />
+							<RotateClockwiseIcon v-else aria-hidden="true" />
+							Проверить обновления
+						</Button>
+					</template>
+				</div>
+			</div>
+
+			<!-- Блок информации о ссылке и коде (если сборка опубликована или подписана) -->
+			<div
+				v-if="cloudMeta"
+				class="mt-2 pt-4 border-t border-border/40 grid grid-cols-1 md:grid-cols-3 gap-3"
+			>
+				<div class="flex items-center justify-between p-3 rounded-xl bg-surface-2 border border-border/30">
+					<div class="flex flex-col min-w-0">
+						<span class="text-xs text-secondary font-medium">Код сборки:</span>
+						<span class="text-sm font-bold font-mono text-brand truncate">{{ cloudMeta.packId }}</span>
+					</div>
+					<Button type="quiet" size="sm" @click="copyText(cloudMeta.packId, 'Код сборки скопирован')">
+						<CopyIcon class="w-4 h-4" />
+					</Button>
+				</div>
+
+				<div class="flex items-center justify-between p-3 rounded-xl bg-surface-2 border border-border/30">
+					<div class="flex flex-col min-w-0">
+						<span class="text-xs text-secondary font-medium">Ссылка для друга:</span>
+						<span class="text-sm font-medium text-foreground truncate">https://oskarlolpo.play2go.cloud/pack/{{ cloudMeta.packId }}</span>
+					</div>
+					<Button
+						type="quiet"
+						size="sm"
+						@click="copyText(`https://oskarlolpo.play2go.cloud/pack/${cloudMeta.packId}`, 'Ссылка скопирована')"
+					>
+						<CopyIcon class="w-4 h-4" />
+					</Button>
+				</div>
+
+				<div class="flex items-center justify-between p-3 rounded-xl bg-surface-2 border border-border/30">
+					<div class="flex flex-col min-w-0">
+						<span class="text-xs text-secondary font-medium">Deep-link (в лаунчере):</span>
+						<span class="text-sm font-medium text-foreground truncate">bedringh://pack/{{ cloudMeta.packId }}</span>
+					</div>
+					<Button
+						type="quiet"
+						size="sm"
+						@click="copyText(`bedringh://pack/${cloudMeta.packId}`, 'Deep-link скопирован')"
+					>
+						<CopyIcon class="w-4 h-4" />
+					</Button>
+				</div>
+			</div>
+
+			<!-- Баннер если вышло обновление для подписчика -->
+			<div
+				v-if="isSubscriber && hasCloudUpdate"
+				class="p-3 bg-brand/10 border border-brand/30 rounded-xl flex items-center justify-between gap-3 text-sm text-foreground"
+			>
+				<div class="flex items-center gap-2">
+					<span class="font-bold text-brand">Доступна новая версия: v{{ cloudUpdateDetails?.latestVersion }}!</span>
+					<span class="text-secondary">Автор обновил список модов сборки.</span>
+				</div>
+				<Button type="colored" color="brand" size="sm" :disabled="isUpdating" @click="handleSyncPack">
+					<SpinnerIcon v-if="isUpdating" class="animate-spin" aria-hidden="true" />
+					<DownloadIcon v-else aria-hidden="true" />
+					Синхронизировать
+				</Button>
+			</div>
+		</div>
+
 		<!-- Offline & Quick Export Hub -->
 		<div class="rounded-2xl border border-border/40 bg-surface p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
 			<div class="flex items-center gap-4">
@@ -154,10 +306,13 @@
 
 <script setup lang="ts">
 import {
+	CloudIcon,
 	CopyIcon,
 	DownloadIcon,
 	FolderOpenIcon,
 	LogInIcon,
+	RotateClockwiseIcon,
+	ShareIcon,
 	SpinnerIcon,
 	UserPlusIcon,
 } from '@modrinth/assets'
@@ -191,6 +346,14 @@ import {
 	useSharedInstanceErrors,
 } from '@/helpers/shared-instance-errors'
 import { loadInstanceContentData } from '@/helpers/instance-content'
+import {
+	checkInstanceCloudPackUpdate,
+	getLocalInstancePackMeta,
+	publishInstanceAsCloudPack,
+	syncSubscriberPackUpdate,
+	type CloudPackMeta,
+} from '@/services/bedringh-cloud-packs'
+import { getActiveBedringhUser } from '@/services/bedringh-settings-sync'
 
 import { injectInstancePage } from '../instance-context'
 import { injectSharedInstance } from '../shared-instance-context'
@@ -222,10 +385,134 @@ const isSignedIn = computed(() => !!auth.session_token.value)
 const exportModal = ref<InstanceType<typeof ExportModal>>()
 const { addNotification, handleError } = injectNotificationManager()
 
+const cloudMeta = ref<CloudPackMeta | null>(getLocalInstancePackMeta(instance.value.path))
+const isPublishing = ref(false)
+const isUpdating = ref(false)
+const isCheckingUpdates = ref(false)
+const hasCloudUpdate = ref(false)
+const cloudUpdateDetails = ref<{ latestVersion?: number; currentVersion?: number; author?: string } | null>(null)
+
+const isAuthor = computed(() => cloudMeta.value?.role === 'author')
+const isSubscriber = computed(() => cloudMeta.value?.role === 'subscriber')
+
+watch(
+	() => instance.value.path,
+	(newPath) => {
+		cloudMeta.value = getLocalInstancePackMeta(newPath)
+		hasCloudUpdate.value = false
+		cloudUpdateDetails.value = null
+		if (cloudMeta.value?.role === 'subscriber') {
+			void handleCheckUpdate(false)
+		}
+	},
+	{ immediate: true },
+)
+
+async function copyText(text: string, title: string) {
+	try {
+		await navigator.clipboard.writeText(text)
+		addNotification({
+			type: 'success',
+			title,
+			text: text,
+		})
+	} catch (e) {
+		handleError(e as Error)
+	}
+}
+
+async function handlePublishPack() {
+	const user = getActiveBedringhUser()
+	if (!user) {
+		addNotification({
+			type: 'warning',
+			title: 'Требуется Bedringh ID',
+			text: 'Чтобы делиться живыми сборками через облако, войдите в аккаунт Bedringh ID в настройках лаунчера.',
+		})
+		return
+	}
+
+	try {
+		isPublishing.value = true
+		const result = await publishInstanceAsCloudPack(instance.value)
+		cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
+
+		await copyText(result.shareUrl, 'Ссылка скопирована в буфер')
+		addNotification({
+			type: 'success',
+			title: isAuthor.value ? 'Сборка обновлена в облаке!' : 'Сборка успешно опубликована!',
+			text: `Код сборки: ${result.shareCode}. Ссылка скопирована, отправьте её друзьям!`,
+		})
+	} catch (err: any) {
+		addNotification({
+			type: 'error',
+			title: 'Ошибка публикации сборки',
+			text: err?.message || 'Не удалось опубликовать сборку',
+		})
+	} finally {
+		isPublishing.value = false
+	}
+}
+
+async function handleCheckUpdate(notifyIfUpToDate = false) {
+	if (!cloudMeta.value?.packId) return
+	try {
+		isCheckingUpdates.value = true
+		const update = await checkInstanceCloudPackUpdate(instance.value.path)
+		if (update?.hasUpdate) {
+			hasCloudUpdate.value = true
+			cloudUpdateDetails.value = update
+			addNotification({
+				type: 'info',
+				title: 'Доступно обновление сборки!',
+				text: `Автор выпустил версию v${update.latestVersion}. Вы можете обновить её прямо сейчас.`,
+			})
+		} else {
+			hasCloudUpdate.value = false
+			if (notifyIfUpToDate) {
+				addNotification({
+					type: 'success',
+					title: 'Сборка актуальна',
+					text: `У вас установлена последняя версия (v${cloudMeta.value.version}).`,
+				})
+			}
+		}
+	} catch (err) {
+		console.warn('Failed to check cloud pack update:', err)
+	} finally {
+		isCheckingUpdates.value = false
+	}
+}
+
+async function handleSyncPack() {
+	try {
+		isUpdating.value = true
+		await syncSubscriberPackUpdate(instance.value, (text) => {
+			console.log('[SyncPack]', text)
+		})
+		cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
+		hasCloudUpdate.value = false
+		cloudUpdateDetails.value = null
+		addNotification({
+			type: 'success',
+			title: 'Сборка обновлена!',
+			text: `Моды синхронизированы с версией автора (v${cloudMeta.value?.version}).`,
+		})
+	} catch (err: any) {
+		addNotification({
+			type: 'error',
+			title: 'Ошибка обновления сборки',
+			text: err?.message || 'Не удалось синхронизировать сборку',
+		})
+	} finally {
+		isUpdating.value = false
+	}
+}
+
 async function copyModList() {
 	try {
-		const contentData = await loadInstanceContentData(instance.value.id)
-		const mods = (contentData as any)?.mods ?? []
+		const contentData = await loadInstanceContentData(instance.value.path)
+		const mods = contentData.contentItems ?? []
 		if (mods.length === 0) {
 			addNotification({
 				type: 'info',
@@ -235,7 +522,7 @@ async function copyModList() {
 			return
 		}
 		const lines = mods.map(
-			(m: any, i: number) => `${i + 1}. ${m.name ?? m.filename}${m.version ? ` (${m.version})` : ''}`,
+			(m, i) => `${i + 1}. ${m.project?.title ?? m.file_name}${m.version?.version_number ? ` (${m.version.version_number})` : ''}`,
 		)
 		const text = `Сборка: ${instance.value.name}\nВсего модов: ${mods.length}\n\n${lines.join('\n')}`
 		await navigator.clipboard.writeText(text)

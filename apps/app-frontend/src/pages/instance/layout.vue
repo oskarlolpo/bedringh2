@@ -68,6 +68,41 @@
 				@published="refreshInstance"
 				@delete="requestInstanceDeletion"
 			/>
+			<!-- Баннер обновления облачной сборки Bedringh -->
+			<div
+				v-if="cloudPackUpdate?.hasUpdate"
+				class="mt-4 p-4 rounded-2xl bg-brand/10 border border-brand/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm"
+			>
+				<div class="flex items-center gap-3.5">
+					<div class="p-2.5 bg-brand/20 text-brand rounded-xl shrink-0 flex items-center justify-center">
+						<CloudIcon class="w-6 h-6" />
+					</div>
+					<div class="flex flex-col">
+						<div class="flex items-center gap-2">
+							<h4 class="font-bold text-foreground text-sm m-0">Доступно обновление живой сборки Bedringh!</h4>
+							<span class="px-2 py-0.5 text-xs font-bold rounded-full bg-brand/20 text-brand">
+								v{{ cloudPackUpdate.latestVersion }}
+							</span>
+						</div>
+						<p class="text-xs text-secondary mt-0.5 m-0">
+							Автор {{ cloudPackUpdate.author ? `(${cloudPackUpdate.author})` : '' }} опубликовал новую версию. Нажмите «Синхронизировать», чтобы обновить моды в один клик.
+						</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+					<Button
+						type="colored"
+						color="brand"
+						size="sm"
+						:disabled="isSyncingCloudPack"
+						@click="handleSyncCloudPack"
+					>
+						<SpinnerIcon v-if="isSyncingCloudPack" class="animate-spin" aria-hidden="true" />
+						<DownloadIcon v-else aria-hidden="true" />
+						Синхронизировать
+					</Button>
+				</div>
+			</div>
 		</div>
 		<div :class="['p-6 pt-4', { 'min-h-0 flex-1 overflow-y-auto': isFixedRender }]">
 			<RouterView v-slot="{ Component }">
@@ -89,17 +124,21 @@
 import {
 	BoxesIcon,
 	ClipboardCopyIcon,
+	CloudIcon,
+	DownloadIcon,
 	EditIcon,
 	FolderOpenIcon,
 	GlobeIcon,
 	ImagesIcon,
 	PlayIcon,
 	PlusIcon,
+	SpinnerIcon,
 	StopCircleIcon,
 	TerminalSquareIcon,
 	UserPlusIcon,
 } from '@modrinth/assets'
 import {
+	Button,
 	commonMessages,
 	ContextMenu,
 	defineMessages,
@@ -154,6 +193,11 @@ import type { ServerStatus } from '@/helpers/worlds'
 import { useRootBreadcrumb } from '@/providers/breadcrumbs'
 import { provideInstanceBackup } from '@/providers/instance-backup'
 import { injectServerInstall } from '@/providers/server-install'
+import {
+	checkInstanceCloudPackUpdate,
+	getLocalInstancePackMeta,
+	syncSubscriberPackUpdate,
+} from '@/services/bedringh-cloud-packs'
 
 import InstanceAdmonitions from './components/admonitions/index.vue'
 import InstancePageHeader from './components/page-header/index.vue'
@@ -237,6 +281,66 @@ const globalSyncedOptionsQuery = useQuery({
 	queryKey: ['global-synced-options'],
 	queryFn: get_global_synced_options,
 })
+
+const cloudPackUpdate = ref<{
+	hasUpdate: boolean
+	latestVersion?: number
+	currentVersion?: number
+	author?: string
+	packName?: string
+} | null>(null)
+const isSyncingCloudPack = ref(false)
+
+async function checkForCloudPackUpdate() {
+	if (!instance.value?.path) return
+	const meta = getLocalInstancePackMeta(instance.value.path)
+	if (meta?.role === 'subscriber' && meta.packId) {
+		try {
+			const update = await checkInstanceCloudPackUpdate(instance.value.path)
+			if (update?.hasUpdate) {
+				cloudPackUpdate.value = update
+			} else {
+				cloudPackUpdate.value = null
+			}
+		} catch {
+			cloudPackUpdate.value = null
+		}
+	} else {
+		cloudPackUpdate.value = null
+	}
+}
+
+async function handleSyncCloudPack() {
+	if (!instance.value) return
+	try {
+		isSyncingCloudPack.value = true
+		await syncSubscriberPackUpdate(instance.value)
+		cloudPackUpdate.value = null
+		await queryClient.invalidateQueries({ queryKey: instanceKeys.detail(instance.value.id) })
+		await queryClient.invalidateQueries({ queryKey: instanceKeys.content(instance.value.path) })
+		addNotification({
+			type: 'success',
+			title: 'Сборка успешно обновлена!',
+			text: 'Моды синхронизированы со свежей версией автора.',
+		})
+	} catch (err: any) {
+		addNotification({
+			type: 'error',
+			title: 'Ошибка обновления сборки',
+			text: err?.message || 'Не удалось синхронизировать сборку',
+		})
+	} finally {
+		isSyncingCloudPack.value = false
+	}
+}
+
+watch(
+	() => instance.value?.path,
+	() => {
+		void checkForCloudPackUpdate()
+	},
+	{ immediate: true },
+)
 useQuery(
 	computed(() => ({
 		queryKey: instanceKeys.contentUpdateCheck(instanceId.value),

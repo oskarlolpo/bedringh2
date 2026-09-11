@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LibraryIcon, PlusIcon } from '@modrinth/assets'
+import { CloudIcon, LibraryIcon, PlusIcon } from '@modrinth/assets'
 import { ButtonStyled, injectNotificationManager, NavTabs } from '@modrinth/ui'
 import { inject, onUnmounted, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
@@ -10,7 +10,8 @@ import { list } from '@/helpers/instance'
 import { useRootBreadcrumb } from '@/providers/breadcrumbs'
 
 const { handleError } = injectNotificationManager()
-const showCreationModal = inject('showCreationModal')
+const showCreationModal = inject<() => void>('showCreationModal')
+const openBedringhCloudPackModal = inject<(code?: string) => void>('openBedringhCloudPackModal')
 const route = useRoute()
 
 useRootBreadcrumb({
@@ -53,12 +54,20 @@ onUnmounted(() => {
 					{ label: 'Saved', href: `/library/saved`, shown: false },
 				]"
 			/>
-			<ButtonStyled color="brand">
-				<button :disabled="offline" @click="showCreationModal?.()">
-					<PlusIcon />
-					New instance
-				</button>
-			</ButtonStyled>
+			<div class="flex items-center gap-2">
+				<ButtonStyled color="quiet">
+					<button :disabled="offline" @click="openBedringhCloudPackModal?.()">
+						<CloudIcon />
+						Сборка по коду
+					</button>
+				</ButtonStyled>
+				<ButtonStyled color="brand">
+					<button :disabled="offline" @click="showCreationModal?.()">
+						<PlusIcon />
+						New instance
+					</button>
+				</ButtonStyled>
+			</div>
 		</div>
 		<template v-if="instances && instances.length > 0">
 			<RouterView v-if="route.path.startsWith('/library')" :instances="instances" />
@@ -68,12 +77,20 @@ onUnmounted(() => {
 				<NewInstanceImage />
 			</div>
 			<h3>No instances found</h3>
-			<ButtonStyled color="brand">
-				<button :disabled="offline" @click="showCreationModal?.()">
-					<PlusIcon />
-					Create new instance
-				</button>
-			</ButtonStyled>
+			<div class="flex items-center gap-2">
+				<ButtonStyled color="quiet">
+					<button :disabled="offline" @click="openBedringhCloudPackModal?.()">
+						<CloudIcon />
+						Установить сборку по коду
+					</button>
+				</ButtonStyled>
+				<ButtonStyled color="brand">
+					<button :disabled="offline" @click="showCreationModal?.()">
+						<PlusIcon />
+						Create new instance
+					</button>
+				</ButtonStyled>
+			</div>
 		</div>
 	</div>
 </template>

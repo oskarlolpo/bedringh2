@@ -6,6 +6,10 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8805865461:AAFB9RE7mrkQawTu
 
 export const bot = new Telegraf(BOT_TOKEN);
 
+bot.catch((err, ctx) => {
+  console.error(`[Telegraf] Error in bot update ${ctx.updateType}:`, err);
+});
+
 function get2FAMessage(username: string, enabled: boolean) {
   const statusText = enabled ? 'Включена' : 'Выключена';
   const descText = enabled

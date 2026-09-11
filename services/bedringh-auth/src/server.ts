@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { db, UserRow, SessionRow, SKINS_DIR, CAPES_DIR } from './db.js';
+import { db, UserRow, SessionRow, CloudPackRow, SKINS_DIR, CAPES_DIR } from './db.js';
 import { bot, sendPasswordResetCode } from './bot.js';
 
 
@@ -653,6 +653,244 @@ app.post<{
   return {
     success: true,
     message: 'Настройки успешно синхронизированы в Bedringh ID',
+  };
+});
+
+// Получение синхронизированных серверов пользователя
+app.get<{
+  Querystring: { username?: string };
+}>('/api/user/servers', async (request, reply) => {
+  const queryUsername = (request.query as any)?.username;
+  let username = queryUsername;
+
+  const authHeader = request.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded: any = jwt.verify(authHeader.substring(7), JWT_SECRET);
+      if (decoded?.username) {
+        username = decoded.username;
+      }
+    } catch {}
+  }
+
+  if (!username) {
+    return reply.status(400).send({ error: 'Имя пользователя не указано' });
+  }
+
+  const user = db.prepare('SELECT servers FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  let servers = [];
+  if (user.servers) {
+    try {
+      servers = JSON.parse(user.servers);
+    } catch {
+      servers = [];
+    }
+  }
+
+  return {
+    success: true,
+    username,
+    servers,
+  };
+});
+
+// Сохранение синхронизированных серверов пользователя
+app.post<{
+  Body: {
+    username?: string;
+    authToken?: string;
+    servers?: any[];
+  };
+}>('/api/user/servers', async (request, reply) => {
+  const { username: bodyUsername, authToken, servers } = request.body || {};
+  let username = bodyUsername;
+
+  const authHeader = request.headers.authorization;
+  const token = authToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
+
+  if (token) {
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      if (decoded?.username) {
+        username = decoded.username;
+      }
+    } catch {}
+  }
+
+  if (!username) {
+    return reply.status(400).send({ error: 'Имя пользователя не указано' });
+  }
+
+  const user = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  if (!Array.isArray(servers)) {
+    return reply.status(400).send({ error: 'Список серверов должен быть массивом' });
+  }
+
+  const serversJson = JSON.stringify(servers);
+  db.prepare('UPDATE users SET servers = ? WHERE id = ?').run(serversJson, user.id);
+
+  return {
+    success: true,
+    message: 'Список серверов успешно синхронизирован в Bedringh ID',
+  };
+});
+
+// Публикация или обновление облачной сборки
+app.post<{
+  Body: {
+    packId?: string;
+    username?: string;
+    authToken?: string;
+    name: string;
+    description?: string;
+    gameVersion: string;
+    loader: string;
+    loaderVersion?: string;
+    manifest: any;
+  };
+}>('/api/packs/publish', async (request, reply) => {
+  const { packId, username: bodyUsername, authToken, name, description, gameVersion, loader, loaderVersion, manifest } = request.body || {};
+  let username = bodyUsername;
+
+  const authHeader = request.headers.authorization;
+  const token = authToken || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
+
+  if (token) {
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      if (decoded?.username) {
+        username = decoded.username;
+      }
+    } catch {}
+  }
+
+  if (!username) {
+    return reply.status(400).send({ error: 'Имя пользователя не указано' });
+  }
+
+  const user = db.prepare('SELECT id, username FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as UserRow | undefined;
+  if (!user) {
+    return reply.status(404).send({ error: 'Пользователь не найден' });
+  }
+
+  if (!name || !gameVersion || !loader || !manifest) {
+    return reply.status(400).send({ error: 'Заполните обязательные поля сборки (name, gameVersion, loader, manifest)' });
+  }
+
+  const manifestStr = typeof manifest === 'string' ? manifest : JSON.stringify(manifest);
+
+  if (packId) {
+    // Обновление существующей сборки
+    const existing = db.prepare('SELECT * FROM cloud_packs WHERE id = ?').get(packId) as CloudPackRow | undefined;
+    if (!existing) {
+      return reply.status(404).send({ error: 'Сборка для обновления не найдена' });
+    }
+
+    if (existing.author_username.toLowerCase() !== user.username.toLowerCase()) {
+      return reply.status(403).send({ error: 'Вы не являетесь автором этой сборки' });
+    }
+
+    const newVersion = (existing.version_number || 1) + 1;
+    db.prepare(`
+      UPDATE cloud_packs
+      SET name = ?, description = ?, game_version = ?, loader = ?, loader_version = ?, version_number = ?, manifest = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(name, description || null, gameVersion, loader, loaderVersion || null, newVersion, manifestStr, packId);
+
+    const shareUrl = `https://oskarlolpo.play2go.cloud/pack/${packId}`;
+    return {
+      success: true,
+      packId,
+      version: newVersion,
+      shareCode: packId,
+      shareUrl,
+      deepLink: `bedringh://pack/${packId}`,
+      message: 'Сборка успешно обновлена! Все подписчики получат обновление.',
+    };
+  } else {
+    // Создание новой сборки
+    const newId = `BP-${randomBytes(4).toString('hex').toUpperCase()}`;
+    db.prepare(`
+      INSERT INTO cloud_packs (id, author_username, name, description, game_version, loader, loader_version, version_number, manifest)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `).run(newId, user.username, name, description || null, gameVersion, loader, loaderVersion || null, manifestStr);
+
+    const shareUrl = `https://oskarlolpo.play2go.cloud/pack/${newId}`;
+    return {
+      success: true,
+      packId: newId,
+      version: 1,
+      shareCode: newId,
+      shareUrl,
+      deepLink: `bedringh://pack/${newId}`,
+      message: 'Сборка успешно опубликована в облаке Bedringh!',
+    };
+  }
+});
+
+// Получение манифеста облачной сборки
+app.get<{
+  Params: { packId: string };
+}>('/api/packs/:packId', async (request, reply) => {
+  const { packId } = request.params;
+  const pack = db.prepare('SELECT * FROM cloud_packs WHERE id = ? COLLATE NOCASE').get(packId.trim()) as CloudPackRow | undefined;
+  if (!pack) {
+    return reply.status(404).send({ error: 'Сборка не найдена' });
+  }
+
+  let parsedManifest = {};
+  try {
+    parsedManifest = JSON.parse(pack.manifest);
+  } catch {}
+
+  return {
+    success: true,
+    pack: {
+      id: pack.id,
+      author: pack.author_username,
+      name: pack.name,
+      description: pack.description,
+      gameVersion: pack.game_version,
+      loader: pack.loader,
+      loaderVersion: pack.loader_version,
+      version: pack.version_number,
+      updatedAt: pack.updated_at,
+      manifest: parsedManifest,
+    },
+  };
+});
+
+// Проверка наличия обновления для установленной сборки
+app.get<{
+  Params: { packId: string };
+  Querystring: { version?: string };
+}>('/api/packs/:packId/check-update', async (request, reply) => {
+  const { packId } = request.params;
+  const currentVersion = parseInt((request.query as any)?.version || '0', 10);
+
+  const pack = db.prepare('SELECT id, author_username, name, version_number, updated_at FROM cloud_packs WHERE id = ? COLLATE NOCASE').get(packId.trim()) as CloudPackRow | undefined;
+  if (!pack) {
+    return reply.status(404).send({ error: 'Сборка не найдена' });
+  }
+
+  const hasUpdate = pack.version_number > currentVersion;
+
+  return {
+    success: true,
+    hasUpdate,
+    latestVersion: pack.version_number,
+    currentVersion,
+    packName: pack.name,
+    author: pack.author_username,
+    updatedAt: pack.updated_at,
   };
 });
 
