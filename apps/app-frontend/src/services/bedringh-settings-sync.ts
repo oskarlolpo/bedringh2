@@ -72,10 +72,39 @@ export function setActiveBedringhUser(username: string, token?: string): void {
 }
 
 export function getActiveBedringhUser(): { username: string; token?: string } | null {
-	const username = localStorage.getItem(STORAGE_ACTIVE_USER_KEY)
+	let username = localStorage.getItem(STORAGE_ACTIVE_USER_KEY)
+	if (!username) {
+		username =
+			localStorage.getItem('bedringh_current_account') ||
+			localStorage.getItem('equipped_skin_username') ||
+			null
+	}
 	if (!username) return null
 	const token = localStorage.getItem(`${STORAGE_USER_TOKEN_PREFIX}${username.toLowerCase()}`) || undefined
 	return { username, token }
+}
+
+export async function resolveActiveBedringhUser(): Promise<{ username: string; token?: string } | null> {
+	const current = getActiveBedringhUser()
+	if (current && current.username) {
+		return current
+	}
+
+	try {
+		const { get_default_user, users } = await import('@/helpers/auth')
+		const allUsers = await users().catch(() => [])
+		const defaultId = await get_default_user().catch(() => null)
+		const found = allUsers.find((u: any) => u.profile?.id === defaultId) || allUsers[0]
+		if (found?.profile?.name) {
+			const token = found.access_token || ''
+			setActiveBedringhUser(found.profile.name, token)
+			return { username: found.profile.name, token }
+		}
+	} catch (e) {
+		console.warn('[Bedringh Settings Sync] Ошибка авто-определения пользователя:', e)
+	}
+
+	return null
 }
 
 export function clearActiveBedringhUser(): void {

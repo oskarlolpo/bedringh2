@@ -420,6 +420,19 @@ const selectedAccount = computed(() =>
 	accounts.value.find((account) => account.profile.id === defaultUser.value),
 )
 
+watch(
+	selectedAccount,
+	async (account) => {
+		if (account?.profile?.name) {
+			try {
+				const { setActiveBedringhUser } = await import('@/services/bedringh-settings-sync')
+				setActiveBedringhUser(account.profile.name, account.access_token)
+			} catch {}
+		}
+	},
+	{ immediate: true },
+)
+
 const STEVE_HEAD_URL = 'https://launcher-files.modrinth.com/assets/steve_head.png'
 
 const avatarUrl = computed(() => {

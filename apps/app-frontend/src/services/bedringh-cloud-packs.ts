@@ -8,7 +8,7 @@ import {
 } from '@/helpers/instance'
 import { loadInstanceContentData } from '@/helpers/instance-content'
 import { install_create_instance } from '@/helpers/install'
-import { getActiveBedringhUser } from './bedringh-settings-sync'
+import { getActiveBedringhUser, resolveActiveBedringhUser } from './bedringh-settings-sync'
 
 const API_CANDIDATES = [
 	'http://2.26.87.126:3100',
@@ -132,7 +132,10 @@ export async function publishInstanceAsCloudPack(instance: GameInstance, descrip
 	shareUrl: string
 	deepLink: string
 }> {
-	const user = getActiveBedringhUser()
+	let user = getActiveBedringhUser()
+	if (!user || !user.username) {
+		user = await resolveActiveBedringhUser()
+	}
 	if (!user || !user.username) {
 		throw new Error('Для публикации сборки необходимо войти в Bedringh ID')
 	}
