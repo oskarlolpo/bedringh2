@@ -444,7 +444,7 @@ app.get<{
     return reply
       .header('Content-Type', 'image/png')
       .header('Access-Control-Allow-Origin', '*')
-      .header('Cache-Control', 'public, max-age=60')
+      .header('Cache-Control', 'no-cache, no-store, must-revalidate')
       .send(buffer);
   }
 
@@ -586,8 +586,14 @@ const handleYggdrasilProfile = async (request: any, reply: any) => {
   const textures: Record<string, any> = {};
 
   if (hasSkin) {
+    let skinVersion = '';
+    try {
+      const stats = fs.statSync(path.join(SKINS_DIR, skinFileName));
+      skinVersion = `?v=${Math.floor(stats.mtimeMs)}`;
+    } catch {}
+
     textures.SKIN = {
-      url: `http://${host}/textures/skins/${skinFileName}`,
+      url: `http://${host}/textures/skins/${skinFileName}${skinVersion}`,
     };
     if (user.skin_model === 'slim') {
       textures.SKIN.metadata = { model: 'slim' };

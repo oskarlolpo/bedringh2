@@ -88,3 +88,8 @@ apps/frontend/src/public/robots.txt
 
 packages/tooling-config/script-utils/import-sort.js
 graphify-out/
+
+# Bedringh Auth
+services/bedringh-auth/downloads/
+services/bedringh-auth/data/
+services/bedringh-auth/*.log

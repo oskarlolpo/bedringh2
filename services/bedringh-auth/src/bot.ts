@@ -1,10 +1,15 @@
+import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
 import { randomUUID } from 'crypto';
 import { db, UserRow, SessionRow } from './db.js';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8805865461:AAFB9RE7mrkQawTubC5mIP1AVI19gw3TedA';
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 
-export const bot = new Telegraf(BOT_TOKEN);
+if (!BOT_TOKEN) {
+  console.warn('[Telegram Bot] Внимание: TELEGRAM_BOT_TOKEN не установлен в .env или переменных окружения!');
+}
+
+export const bot = new Telegraf(BOT_TOKEN || 'dummy_token');
 
 bot.catch((err, ctx) => {
   console.error(`[Telegraf] Error in bot update ${ctx.updateType}:`, err);
