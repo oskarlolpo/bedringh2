@@ -1228,6 +1228,19 @@ async fn add_and_equip_custom_skin_now(
             tracing::error!("Failed to persist equipped Bedringh custom skin: {error}");
         }
 
+        let profiles_dir = state.directories.instances_dir();
+        let cape_bytes: Option<Vec<u8>> = if let Some(ref url) = cape_url {
+            let client = &*KL_CLIENT;
+            if let Ok(res) = client.get(url).send().await {
+                res.bytes().await.ok().map(|b| b.to_vec())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        crate::launcher::bedringh::sync_skin_to_all_instances(&profiles_dir, username, &texture_blob, cape_bytes.as_deref());
+
         return Ok(());
     }
 
@@ -1428,6 +1441,19 @@ async fn equip_skin_now(
         if let Err(error) = persist_equipped_skin(&state, &profile, skin, &texture_blob).await {
             tracing::error!("Failed to persist equipped Bedringh skin: {error}");
         }
+
+        let profiles_dir = state.directories.instances_dir();
+        let cape_bytes: Option<Vec<u8>> = if let Some(ref url) = cape_url {
+            let client = &*KL_CLIENT;
+            if let Ok(res) = client.get(url).send().await {
+                res.bytes().await.ok().map(|b| b.to_vec())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        crate::launcher::bedringh::sync_skin_to_all_instances(&profiles_dir, username, &texture_blob, cape_bytes.as_deref());
 
         return Ok(());
     }

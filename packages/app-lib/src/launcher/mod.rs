@@ -1224,8 +1224,10 @@ pub async fn launch_minecraft(
                 if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
                     let username = credentials.offline_profile.name.clone();
                     let user_uuid = credentials.offline_profile.id.to_string();
+                    let instance_dir_clone = instance_path.clone();
                     tokio::spawn(async move {
-                        let _ = crate::api::minecraft_skins::KL_CLIENT
+                        let client = &*crate::api::minecraft_skins::KL_CLIENT;
+                        let _ = client
                             .post("http://2.26.87.126:3100/api/session/register")
                             .json(&serde_json::json!({
                                 "username": username,
@@ -1233,6 +1235,34 @@ pub async fn launch_minecraft(
                             }))
                             .send()
                             .await;
+
+                        if let Ok(res) = client
+                            .get(format!("http://2.26.87.126:3100/textures/skins/{}.png", username.to_lowercase()))
+                            .send()
+                            .await
+                        {
+                            if res.status().is_success() {
+                                if let Ok(skin_bytes) = res.bytes().await {
+                                    let mut cape_bytes = None;
+                                    if let Ok(skin_info) = client
+                                        .get(format!("http://2.26.87.126:3100/api/user/{}/skin", username))
+                                        .send()
+                                        .await
+                                    {
+                                        if let Ok(json) = skin_info.json::<serde_json::Value>().await {
+                                            if let Some(cape_url) = json.get("capeUrl").and_then(|u| u.as_str()) {
+                                                if let Ok(cres) = client.get(cape_url).send().await {
+                                                    if let Ok(cb) = cres.bytes().await {
+                                                        cape_bytes = Some(cb);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    bedringh::sync_skin_to_instance(&instance_dir_clone, &username, &skin_bytes, cape_bytes.as_deref().map(|b| b.as_ref()));
+                                }
+                            }
+                        }
                     });
 
                     if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
