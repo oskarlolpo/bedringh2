@@ -1190,14 +1190,22 @@ async fn add_and_equip_custom_skin_now(
             .send()
             .await;
 
+        let texture_url = png_util::blob_to_data_url(texture_blob.clone())
+            .or_else(|| {
+                png_util::blob_to_data_url(include_bytes!(
+                    "minecraft_skins/assets/default/MissingNo.png"
+                ))
+            })
+            .expect("fallback skin data url");
+
         let profile = Arc::new(MinecraftProfile {
             id: selected_credentials.offline_profile.id,
             name: selected_credentials.offline_profile.name.clone(),
             skins: vec![crate::state::MinecraftSkin {
                 id: Uuid::nil(),
                 state: MinecraftCharacterExpressionState::Active,
-                url: Arc::new(png_util::blob_to_data_url(texture_blob.clone()).unwrap_or_default()),
-                texture_key: Some(local_texture_key.to_string()),
+                url: Arc::clone(&texture_url),
+                texture_key: Some(local_texture_key.into()),
                 variant,
                 name: None,
             }],
@@ -1206,12 +1214,12 @@ async fn add_and_equip_custom_skin_now(
         });
 
         let dummy_skin = Skin {
-            texture_key: Arc::new(local_texture_key.to_string()),
+            texture_key: local_texture_key.into(),
             name: None,
             section: None,
             variant,
             cape_id,
-            texture: Arc::new(png_util::blob_to_data_url(texture_blob.clone()).unwrap_or_default()),
+            texture: Arc::clone(&texture_url),
             source: SkinSource::Custom,
             is_equipped: true,
         };
