@@ -106,9 +106,15 @@ pub fn sync_skin_to_instance(
                         });
 
                         loadlist.insert(0, entry);
-                        if let Ok(new_content) = serde_json::to_string_pretty(&json) {
-                            let _ = std::fs::write(&config_path, new_content);
-                        }
+                    }
+
+                    // Disable caching so that changing skin in launcher updates in-game upon world reload
+                    json["forceDisableCache"] = serde_json::Value::Bool(true);
+                    json["enableLocalProfileCache"] = serde_json::Value::Bool(false);
+                    json["cacheExpiry"] = serde_json::Value::Number(0.into());
+
+                    if let Ok(new_content) = serde_json::to_string_pretty(&json) {
+                        let _ = std::fs::write(&config_path, new_content);
                     }
                 }
             }
