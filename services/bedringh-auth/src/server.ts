@@ -437,7 +437,14 @@ app.get<{
   if (!filename.toLowerCase().endsWith('.png')) {
     filename += '.png';
   }
-  const filePath = path.join(SKINS_DIR, filename.toLowerCase());
+
+  let realFilename = filename;
+  const match = filename.match(/^([^_]+)_[0-9]+\.png$/i);
+  if (match) {
+    realFilename = `${match[1]}.png`;
+  }
+
+  const filePath = path.join(SKINS_DIR, realFilename.toLowerCase());
 
   if (fs.existsSync(filePath)) {
     const buffer = fs.readFileSync(filePath);
@@ -586,14 +593,14 @@ const handleYggdrasilProfile = async (request: any, reply: any) => {
   const textures: Record<string, any> = {};
 
   if (hasSkin) {
-    let skinVersion = '';
+    let skinSuffix = '';
     try {
       const stats = fs.statSync(path.join(SKINS_DIR, skinFileName));
-      skinVersion = `?v=${Math.floor(stats.mtimeMs)}`;
+      skinSuffix = `_${Math.floor(stats.mtimeMs)}`;
     } catch {}
 
     textures.SKIN = {
-      url: `http://${host}/textures/skins/${skinFileName}${skinVersion}`,
+      url: `http://${host}/textures/skins/${user.username.toLowerCase()}${skinSuffix}.png`,
     };
     if (user.skin_model === 'slim') {
       textures.SKIN.metadata = { model: 'slim' };

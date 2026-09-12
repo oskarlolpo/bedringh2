@@ -1110,14 +1110,25 @@ pub async fn add_and_equip_custom_skin(
     )
     .await?;
 
-    set_pending_skin_change(PendingSkinChange::AddAndEquipCustom {
-        selected_credentials,
-        texture_blob: Bytes::clone(&texture_blob),
-        variant,
-        cape_id,
-        local_texture_key: Arc::clone(&local_texture_key),
-    })
-    .await;
+    if is_bedringh_user(&selected_credentials) {
+        add_and_equip_custom_skin_now(
+            &selected_credentials,
+            Bytes::clone(&texture_blob),
+            variant,
+            cape_id,
+            &local_texture_key,
+        )
+        .await?;
+    } else {
+        set_pending_skin_change(PendingSkinChange::AddAndEquipCustom {
+            selected_credentials,
+            texture_blob: Bytes::clone(&texture_blob),
+            variant,
+            cape_id,
+            local_texture_key: Arc::clone(&local_texture_key),
+        })
+        .await;
+    }
 
     Ok(Skin {
         texture_key: local_texture_key,
@@ -1145,6 +1156,72 @@ async fn add_and_equip_custom_skin_now(
     local_texture_key: &str,
 ) -> crate::Result<()> {
     let state = State::get().await?;
+
+    if is_bedringh_user(selected_credentials) {
+        let username = &selected_credentials.offline_profile.name;
+        let client = &*KL_CLIENT;
+
+        let (cape_url, cape_name) = if let Some(cape_id) = cape_id {
+            let capes = get_official_minecraft_capes(None, None);
+            if let Some(c) = capes.into_iter().find(|c| c.id == cape_id) {
+                (Some(c.texture.to_string()), Some(c.name.to_string()))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        use base64::Engine;
+        let base64_texture = base64::engine::general_purpose::STANDARD.encode(&texture_blob);
+        let model_str = if variant == MinecraftSkinVariant::Slim { "slim" } else { "classic" };
+
+        let user_uuid = selected_credentials.offline_profile.id.to_string();
+        let _ = client
+            .post("http://2.26.87.126:3100/api/skin/equip")
+            .json(&serde_json::json!({
+                "username": username,
+                "uuid": user_uuid,
+                "skinBytesBase64": base64_texture,
+                "model": model_str,
+                "capeUrl": cape_url,
+                "capeName": cape_name,
+            }))
+            .send()
+            .await;
+
+        let profile = Arc::new(MinecraftProfile {
+            id: selected_credentials.offline_profile.id,
+            name: selected_credentials.offline_profile.name.clone(),
+            skins: vec![crate::state::MinecraftSkin {
+                id: Uuid::nil(),
+                state: MinecraftCharacterExpressionState::Active,
+                url: Arc::new(png_util::blob_to_data_url(texture_blob.clone()).unwrap_or_default()),
+                texture_key: Some(local_texture_key.to_string()),
+                variant,
+                name: None,
+            }],
+            capes: vec![],
+            fetch_time: None,
+        });
+
+        let dummy_skin = Skin {
+            texture_key: Arc::new(local_texture_key.to_string()),
+            name: None,
+            section: None,
+            variant,
+            cape_id,
+            texture: Arc::new(png_util::blob_to_data_url(texture_blob.clone()).unwrap_or_default()),
+            source: SkinSource::Custom,
+            is_equipped: true,
+        };
+
+        if let Err(error) = persist_equipped_skin(&state, &profile, &dummy_skin, &texture_blob).await {
+            tracing::error!("Failed to persist equipped Bedringh custom skin: {error}");
+        }
+
+        return Ok(());
+    }
 
     let previous_profile = if selected_credentials.access_token.starts_with("kl_") {
         Arc::new(MinecraftProfile {
@@ -1263,6 +1340,10 @@ pub async fn equip_skin(skin: Skin) -> crate::Result<()> {
     let selected_credentials = Credentials::get_default_credential(&state.pool)
         .await?
         .ok_or(ErrorKind::NoCredentialsError)?;
+
+    if is_bedringh_user(&selected_credentials) {
+        return equip_skin_now(&selected_credentials, &skin).await;
+    }
 
     set_pending_skin_change(PendingSkinChange::Equip {
         selected_credentials,

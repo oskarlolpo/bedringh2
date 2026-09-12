@@ -812,8 +812,8 @@ async function applySelectedSkin() {
 		await equip_skin(skinToApply);
 		setLocallyEquippedSkin(skinToApply);
 		try {
-			if (currentUserId.value) {
-				await flush_pending_skin_change_for_profile(currentUserId.value);
+			if (currentUser.value?.id) {
+				await flush_pending_skin_change_for_profile(currentUser.value.id);
 			} else {
 				await flush_pending_skin_change();
 			}
