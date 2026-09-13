@@ -408,7 +408,19 @@ const {
 		creationGeneratedIcon.value?.path === iconPath ? creationGeneratedIcon.value.config : null,
 )
 const { hasLoggedIntoMinecraft, hasLoggedIntoModrinth, showChecklist } = onboardingChecklist
-const showFriendsList = computed(() => !showChecklist.value || hasLoggedIntoModrinth.value)
+
+const {
+	bedringhAccount,
+	preferredProfile,
+	isBedringhAuthenticated,
+	setPreferredProfile,
+	setAccount: setBedringhAccount,
+	logout: logoutBedringh,
+} = useBedringhAccount()
+
+const showFriendsList = computed(
+	() => !showChecklist.value || hasLoggedIntoModrinth.value || isBedringhAuthenticated.value,
+)
 
 async function randomizeCreationIcon() {
 	const generated = await creationIconEditorModal.value?.randomizeAndSave()
@@ -1324,14 +1336,6 @@ const accountSwitcherAccounts = computed(() => {
 	}))
 })
 
-const {
-	bedringhAccount,
-	preferredProfile,
-	isBedringhAuthenticated,
-	setPreferredProfile,
-	setAccount: setBedringhAccount,
-	logout: logoutBedringh,
-} = useBedringhAccount()
 
 const bedringhAuthModalGlobal = ref(null)
 
@@ -2504,22 +2508,15 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 						</suspense>
 					</div>
 					<div
-						v-if="preferredProfile === 'bedringh'"
-						class="p-4 border-0 border-b-[1px] border-[--brand-gradient-border] border-solid"
-					>
-						<suspense>
-							<BedringhFriendsList
-								ref="bedringhFriendsList"
-								:sign-in="() => bedringhAuthModalGlobal?.show('login')"
-							/>
-						</suspense>
-					</div>
-					<div
-						v-else
 						v-show="showFriendsList"
 						class="p-4 border-0 border-b-[1px] border-[--brand-gradient-border] border-solid"
 					>
-						<suspense>
+						<BedringhFriendsList
+							v-if="preferredProfile === 'bedringh'"
+							ref="bedringhFriendsList"
+							:sign-in="() => bedringhAuthModalGlobal?.show('login')"
+						/>
+						<suspense v-else>
 							<FriendsList
 								ref="friendsList"
 								:credentials="credentials"

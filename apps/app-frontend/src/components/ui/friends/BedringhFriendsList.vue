@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import {
 	CopyIcon,
 	MailIcon,
@@ -283,7 +283,8 @@ const messages = defineMessages({
 </script>
 
 <template>
-	<!-- Модальное окно просмотра запросов в друзья -->
+	<div>
+		<!-- Модальное окно просмотра запросов в друзья -->
 	<ModalWrapper ref="friendInvitesModal" header="View friend requests">
 		<p v-if="incomingRequests.length === 0">You have no pending friend requests :C</p>
 		<div v-else class="flex flex-col gap-4 min-w-[36rem]">
@@ -641,5 +642,6 @@ const messages = defineMessages({
 				{{ formatMessage(messages.noFriendsMatch, { query: search }) }}
 			</p>
 		</template>
+	</div>
 	</div>
 </template>
