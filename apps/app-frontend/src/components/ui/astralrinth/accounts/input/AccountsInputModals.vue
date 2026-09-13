@@ -69,8 +69,8 @@ onUnmounted(() => {
 	}
 })
 
-const ELYBY_REGISTER_URL = 'https://ely.by/registration'
-const ELYBY_RECOVERY_URL = 'https://ely.by/remind'
+const ELYBY_REGISTER_URL = 'https://account.ely.by/register'
+const ELYBY_RECOVERY_URL = 'https://account.ely.by/login'
 const TLAUNCHER_REGISTER_URL = 'https://tlauncher.org/ru/reg/'
 const TLAUNCHER_RECOVERY_URL = 'https://tlauncher.org/ru/catalog/user/'
 const KLAUNCHER_REGISTER_URL = 'https://klauncher.gg/register'
