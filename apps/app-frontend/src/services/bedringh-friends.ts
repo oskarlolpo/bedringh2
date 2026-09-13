@@ -89,17 +89,17 @@ function saveCache() {
 	}
 }
 
-async function safeFetch(url: string, init: any) {
-	try {
-		return await window.fetch(url, init)
-	} catch (nativeErr) {
-		// fallback to tauri fetch
-	}
+let isBackendSupported = true
 
+async function safeFetch(url: string, init: any) {
 	try {
 		return await tauriFetch(url, init)
 	} catch (tauriErr) {
-		throw tauriErr
+		try {
+			return await window.fetch(url, init)
+		} catch (e) {
+			throw e
+		}
 	}
 }
 
@@ -113,33 +113,48 @@ async function requestApi(endpoint: string, options: { method?: string; body?: a
 
 	try {
 		const res = await safeFetch(`${activeApiBase}${endpoint}`, { method, headers, body })
-		if (res && res.status !== 502 && res.status !== 503) {
-			return res
+		if (res) {
+			if (res.status === 404) {
+				isBackendSupported = false
+				stopFriendsPolling()
+			}
+			if (res.status !== 502 && res.status !== 503) {
+				return res
+			}
 		}
 	} catch (e) {
-		console.warn(`[Bedringh Friends] Failed to connect to ${activeApiBase}${endpoint}:`, e)
+		// Silent catch
 	}
 
 	for (const candidate of API_CANDIDATES) {
 		if (candidate === activeApiBase) continue
 		try {
 			const res = await safeFetch(`${candidate}${endpoint}`, { method, headers, body })
-			if (res && res.status !== 502 && res.status !== 503) {
-				activeApiBase = candidate
-				return res
+			if (res) {
+				if (res.status === 404) {
+					isBackendSupported = false
+					stopFriendsPolling()
+				}
+				if (res.status !== 502 && res.status !== 503) {
+					activeApiBase = candidate
+					return res
+				}
 			}
 		} catch (e) {
-			console.warn(`[Bedringh Friends] Candidate ${candidate} failed:`, e)
+			// Silent catch
 		}
 	}
 
-	throw new Error('Не удалось подключиться к серверу Bedringh ID')
+	throw new Error('Сервер Bedringh ID временно недоступен')
 }
 
 /**
  * Получить список друзей и заявок с сервера
  */
-export async function refreshFriendsList(): Promise<void> {
+export async function refreshFriendsList(force = false): Promise<void> {
+	if (!isBackendSupported && !force) return
+	if (force) isBackendSupported = true
+
 	const user = await resolveActiveBedringhUser()
 	if (!user || !user.username) {
 		state.friends = []
@@ -368,6 +383,8 @@ export async function searchBedringhUsers(query: string): Promise<{ username: st
  * Обновить статус присутствия игрока (Presence Heartbeat)
  */
 export async function updatePresence(status: FriendStatus, gameInfo?: FriendGameInfo): Promise<void> {
+	if (!isBackendSupported) return
+
 	const user = await resolveActiveBedringhUser()
 	if (!user || !user.username) return
 
@@ -396,8 +413,14 @@ export async function updatePresence(status: FriendStatus, gameInfo?: FriendGame
  */
 export function startFriendsPolling(intervalMs = 25000): void {
 	stopFriendsPolling()
+	if (!isBackendSupported) return
+
 	void refreshFriendsList()
 	state.pollingInterval = setInterval(() => {
+		if (!isBackendSupported) {
+			stopFriendsPolling()
+			return
+		}
 		void refreshFriendsList()
 		void updatePresence('online')
 	}, intervalMs)

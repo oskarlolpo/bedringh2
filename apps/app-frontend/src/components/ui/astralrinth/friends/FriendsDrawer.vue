@@ -48,7 +48,7 @@ function openAddFriend() {
 }
 
 async function handleRefresh() {
-	await refreshFriendsList()
+	await refreshFriendsList(true)
 }
 
 async function handleAccept(requestId: string, username: string) {

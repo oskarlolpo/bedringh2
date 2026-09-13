@@ -855,18 +855,7 @@ async function setupApp() {
 		document.getElementsByTagName('html')[0].classList.add('windows')
 	}
 
-	fetch(`https://api.modrinth.com/appCriticalAnnouncement.json?version=${version}`)
-		.then((response) => response.json())
-		.then((res) => {
-			if (res && res.header && res.body) {
-				criticalErrorMessage.value = res
-			}
-		})
-		.catch(() => {
-			console.log(
-				`No critical announcement found at https://api.modrinth.com/appCriticalAnnouncement.json?version=${version}`,
-			)
-		})
+	// Critical announcements and news disabled in Bedringh
 
 	// News fetch disabled in Bedringh
 
