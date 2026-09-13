@@ -105,7 +105,6 @@ function handleInstallFriendPack(instanceName?: string) {
 }
 
 function show() {
-	void refreshFriendsList()
 	modal.value?.show()
 }
 

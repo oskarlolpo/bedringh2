@@ -814,25 +814,12 @@ async function setupApp() {
 	appSettings.devMode = developer_mode
 	stateInitialized.value = true
 
-	// Проверяем облачные настройки, список серверов и службу друзей Bedringh ID при старте
+	// Проверяем облачные настройки и список серверов Bedringh ID при старте
 	try {
 		const { syncOnStartup } = await import('@/services/bedringh-settings-sync')
 		void syncOnStartup()
 		const { syncServersOnStartup } = await import('@/services/bedringh-servers-sync')
 		void syncServersOnStartup()
-		const { startFriendsPolling, updatePresence } = await import('@/services/bedringh-friends')
-		startFriendsPolling()
-		void updatePresence('online')
-		const { process_listener } = await import('@/helpers/events')
-		process_listener((e) => {
-			if (e.event === 'launched') {
-				void updatePresence('in_game', {
-					instanceName: e.instance_name || e.profile_path_id || 'Minecraft',
-				})
-			} else if (e.event === 'finished') {
-				void updatePresence('online')
-			}
-		})
 	} catch (e) {
 		console.warn('[Bedringh] Ошибка фоновой синхронизации при запуске:', e)
 	}

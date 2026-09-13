@@ -152,8 +152,8 @@ async function requestApi(endpoint: string, options: { method?: string; body?: a
  * Получить список друзей и заявок с сервера
  */
 export async function refreshFriendsList(force = false): Promise<void> {
-	if (!isBackendSupported && !force) return
-	if (force) isBackendSupported = true
+	if (!force || !isBackendSupported) return
+	isBackendSupported = true
 
 	const user = await resolveActiveBedringhUser()
 	if (!user || !user.username) {
@@ -382,48 +382,15 @@ export async function searchBedringhUsers(query: string): Promise<{ username: st
 /**
  * Обновить статус присутствия игрока (Presence Heartbeat)
  */
-export async function updatePresence(status: FriendStatus, gameInfo?: FriendGameInfo): Promise<void> {
-	if (!isBackendSupported) return
-
-	const user = await resolveActiveBedringhUser()
-	if (!user || !user.username) return
-
-	const headers: Record<string, string> = {}
-	if (user.token) {
-		headers['Authorization'] = `Bearer ${user.token}`
-	}
-
-	try {
-		await requestApi('/api/friends/presence', {
-			method: 'POST',
-			headers,
-			body: {
-				username: user.username,
-				status,
-				gameInfo,
-			},
-		})
-	} catch (e) {
-		// Ошибки присутствия не должны шуметь в консоли
-	}
+export async function updatePresence(_status: FriendStatus, _gameInfo?: FriendGameInfo): Promise<void> {
+	// Network presence is paused until friends backend is deployed on VDS
 }
 
 /**
  * Запуск фонового обновления списка друзей
  */
-export function startFriendsPolling(intervalMs = 25000): void {
-	stopFriendsPolling()
-	if (!isBackendSupported) return
-
-	void refreshFriendsList()
-	state.pollingInterval = setInterval(() => {
-		if (!isBackendSupported) {
-			stopFriendsPolling()
-			return
-		}
-		void refreshFriendsList()
-		void updatePresence('online')
-	}, intervalMs)
+export function startFriendsPolling(): void {
+	// Network polling is paused until friends backend is deployed on VDS
 }
 
 export function stopFriendsPolling(): void {
