@@ -1222,6 +1222,20 @@ app.get('/downloads/authlib-injector.jar', async (request, reply) => {
   return reply.status(404).send({ error: 'authlib-injector.jar не найден' });
 });
 
+// Раздача CustomSkinLoader.jar
+app.get('/downloads/CustomSkinLoader.jar', async (request, reply) => {
+  const filePath = path.join(process.cwd(), 'downloads', 'CustomSkinLoader.jar');
+  if (fs.existsSync(filePath)) {
+    const buffer = fs.readFileSync(filePath);
+    return reply
+      .header('Content-Type', 'application/java-archive')
+      .header('Content-Disposition', 'attachment; filename="CustomSkinLoader.jar"')
+      .header('Access-Control-Allow-Origin', '*')
+      .send(buffer);
+  }
+  return reply.status(404).send({ error: 'CustomSkinLoader.jar не найден' });
+});
+
 // Client-server join stubs для authlib-injector
 app.post('/session/minecraft/join', async () => ({ success: true }));
 app.post('/sessionserver/session/minecraft/join', async () => ({ success: true }));

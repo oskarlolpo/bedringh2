@@ -1225,6 +1225,7 @@ pub async fn launch_minecraft(
                     let username = credentials.offline_profile.name.clone();
                     let user_uuid = credentials.offline_profile.id.to_string();
                     let instance_dir_clone = instance_path.clone();
+                    let libraries_dir_clone = state.directories.libraries_dir();
                     tokio::spawn(async move {
                         let client = &*crate::api::minecraft_skins::KL_CLIENT;
                         let _ = client
@@ -1259,7 +1260,7 @@ pub async fn launch_minecraft(
                                             }
                                         }
                                     }
-                                    bedringh::sync_skin_to_instance(&instance_dir_clone, &username, &skin_bytes, cape_bytes.as_deref().map(|b| b.as_ref()));
+                                    bedringh::sync_skin_to_instance(&instance_dir_clone, Some(&libraries_dir_clone), &username, &skin_bytes, cape_bytes.as_deref().map(|b| b.as_ref()));
                                 }
                             }
                         }

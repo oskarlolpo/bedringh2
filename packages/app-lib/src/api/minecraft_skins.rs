@@ -1239,7 +1239,8 @@ async fn add_and_equip_custom_skin_now(
         } else {
             None
         };
-        crate::launcher::bedringh::sync_skin_to_all_instances(&profiles_dir, username, &texture_blob, cape_bytes.as_deref());
+        let libraries_dir = state.directories.libraries_dir();
+        crate::launcher::bedringh::sync_skin_to_all_instances(&profiles_dir, Some(&libraries_dir), username, &texture_blob, cape_bytes.as_deref());
 
         return Ok(());
     }
@@ -1453,7 +1454,8 @@ async fn equip_skin_now(
         } else {
             None
         };
-        crate::launcher::bedringh::sync_skin_to_all_instances(&profiles_dir, username, &texture_blob, cape_bytes.as_deref());
+        let libraries_dir = state.directories.libraries_dir();
+        crate::launcher::bedringh::sync_skin_to_all_instances(&profiles_dir, Some(&libraries_dir), username, &texture_blob, cape_bytes.as_deref());
 
         return Ok(());
     }
