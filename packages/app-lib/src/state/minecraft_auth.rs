@@ -1191,7 +1191,7 @@ impl Credentials {
         &self,
         cache_intent: OnlineProfileCacheIntent,
     ) -> Option<Arc<MinecraftProfile>> {
-        // Offline, KLauncher, and TLauncher accounts do not have Mojang profiles.
+        // Offline, KLauncher, TLauncher, Ely.by, and Bedringh accounts do not have Mojang profiles.
         if self.access_token == "null"
             || self.access_token == "kl"
             || self.access_token.starts_with("kl")
@@ -1199,6 +1199,10 @@ impl Credentials {
             || self.access_token == "tl"
             || self.access_token.starts_with("tl")
             || self.refresh_token == "tl_refresh"
+            || self.access_token == "elyby"
+            || self.access_token.starts_with("elyby")
+            || self.access_token == "bedringh"
+            || self.access_token.starts_with("bedringh")
         {
             return None;
         }

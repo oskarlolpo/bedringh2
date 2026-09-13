@@ -288,6 +288,7 @@ pub async fn get_minecraft_arguments(
     quick_play_version: QuickPlayVersion,
 ) -> crate::Result<Vec<String>> {
     let access_token = credentials.access_token.clone();
+    let refresh_token = credentials.refresh_token.clone();
     let profile = credentials.maybe_online_profile().await;
     let mut parsed_arguments = Vec::new();
 
@@ -299,6 +300,7 @@ pub async fn get_minecraft_arguments(
                 parse_minecraft_argument(
                     arg,
                     &access_token,
+                    &refresh_token,
                     &profile.name,
                     profile.id,
                     version,
@@ -318,6 +320,7 @@ pub async fn get_minecraft_arguments(
             parsed_arguments.push(parse_minecraft_argument(
                 &x.replace(' ', TEMPORARY_REPLACE_CHAR),
                 &access_token,
+                &refresh_token,
                 &profile.name,
                 profile.id,
                 version,
@@ -350,6 +353,7 @@ pub async fn get_minecraft_arguments(
 fn parse_minecraft_argument(
     argument: &str,
     access_token: &str,
+    refresh_token: &str,
     username: &str,
     uuid: Uuid,
     version: &str,
@@ -366,9 +370,27 @@ fn parse_minecraft_argument(
         &access_token["elyby_".len()..]
     } else if access_token.starts_with("tl_") {
         &access_token["tl_".len()..]
+    } else if access_token.starts_with("bedringh_") {
+        &access_token["bedringh_".len()..]
     } else {
         access_token
     };
+
+    let is_non_msa = crate::launcher::klauncher::is_klauncher_user(access_token, refresh_token)
+        || crate::launcher::tlauncher::is_tlauncher_user(access_token, refresh_token)
+        || crate::launcher::elyby::is_elyby_user(access_token, refresh_token)
+        || crate::launcher::bedringh::is_bedringh_user(access_token, refresh_token)
+        || access_token.starts_with("kl")
+        || access_token.starts_with("elyby")
+        || access_token.starts_with("tl")
+        || access_token.starts_with("bedringh")
+        || refresh_token == "kl_refresh"
+        || refresh_token == "tl_refresh"
+        || access_token == "null"
+        || access_token == "offline"
+        || access_token.is_empty();
+
+    let user_type = if is_non_msa { "mojang" } else { "msa" };
 
     Ok(argument
         .replace("${accessToken}", raw_token)
@@ -381,7 +403,7 @@ fn parse_minecraft_argument(
         .replace("${uuid}", &uuid.simple().to_string())
         .replace("${clientid}", "c4502edb-87c6-40cb-b595-64a280cf8906")
         .replace("${user_properties}", "{}")
-        .replace("${user_type}", "msa")
+        .replace("${user_type}", user_type)
         .replace("${version_name}", version)
         .replace("${assets_index_name}", asset_index_name)
         .replace(
