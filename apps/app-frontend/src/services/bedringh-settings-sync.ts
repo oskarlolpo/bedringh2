@@ -69,6 +69,13 @@ export function setActiveBedringhUser(username: string, token?: string): void {
 	if (token) {
 		localStorage.setItem(`${STORAGE_USER_TOKEN_PREFIX}${username.toLowerCase()}`, token)
 	}
+	if (typeof window !== 'undefined') {
+		window.dispatchEvent(
+			new CustomEvent('bedringh:account-changed', {
+				detail: { username, token },
+			}),
+		)
+	}
 }
 
 export function getActiveBedringhUser(): { username: string; token?: string } | null {
@@ -94,7 +101,12 @@ export async function resolveActiveBedringhUser(): Promise<{ username: string; t
 		const { get_default_user, users } = await import('@/helpers/auth')
 		const allUsers = await users().catch(() => [])
 		const defaultId = await get_default_user().catch(() => null)
-		const found = allUsers.find((u: any) => u.profile?.id === defaultId) || allUsers[0]
+		const isBedringh = (u: any) =>
+			u?.refresh_token === 'bedringh_refresh' ||
+			u?.access_token === 'bedringh' ||
+			(typeof u?.access_token === 'string' && u.access_token.startsWith('bedringh_'))
+
+		const found = allUsers.find((u: any) => u.profile?.id === defaultId && isBedringh(u)) || allUsers.find(isBedringh)
 		if (found?.profile?.name) {
 			const token = found.access_token || ''
 			setActiveBedringhUser(found.profile.name, token)
@@ -109,6 +121,13 @@ export async function resolveActiveBedringhUser(): Promise<{ username: string; t
 
 export function clearActiveBedringhUser(): void {
 	localStorage.removeItem(STORAGE_ACTIVE_USER_KEY)
+	if (typeof window !== 'undefined') {
+		window.dispatchEvent(
+			new CustomEvent('bedringh:account-changed', {
+				detail: null,
+			}),
+		)
+	}
 }
 
 /**

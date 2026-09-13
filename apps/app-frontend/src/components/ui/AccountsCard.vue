@@ -483,6 +483,14 @@ function getAccountAvatarUrl(account: MinecraftCredential) {
 async function setAccount(account: MinecraftCredential) {
 	defaultUser.value = account.profile.id
 	await set_default_user(account.profile.id).catch(handleError)
+	if (getAccountTypeName(account) === 'Bedringh ID' && account.profile?.name) {
+		try {
+			const { useBedringhAccount } = await import('@/composables/use-bedringh-account')
+			useBedringhAccount().setAccount(account.profile.name, account.access_token)
+		} catch (e) {
+			console.warn('[AccountsCard] Ошибка установки Bedringh аккаунта:', e)
+		}
+	}
 	await refreshValues()
 	emit('change')
 }
@@ -516,8 +524,25 @@ const unlisten = await process_listener(async (e) => {
 	}
 })
 
+const handleBedringhAccountChange = async (e: any) => {
+	await refreshValues()
+	if (e.detail?.username) {
+		const found = accounts.value.find((acc) => acc.profile?.name === e.detail.username)
+		if (found && defaultUser.value !== found.profile?.id) {
+			await setAccount(found)
+		}
+	}
+}
+
+if (typeof window !== 'undefined') {
+	window.addEventListener('bedringh:account-changed', handleBedringhAccountChange)
+}
+
 onUnmounted(() => {
 	unlisten()
+	if (typeof window !== 'undefined') {
+		window.removeEventListener('bedringh:account-changed', handleBedringhAccountChange)
+	}
 })
 
 const messages = defineMessages({

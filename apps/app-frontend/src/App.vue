@@ -18,6 +18,7 @@ import {
 	ImagesIcon,
 	LogInIcon,
 	LogOutIcon,
+	ModrinthIcon,
 	NewspaperIcon,
 	PlayIcon,
 	PlusIcon,
@@ -25,11 +26,13 @@ import {
 	RightArrowIcon,
 	ServerStackIcon,
 	SettingsIcon,
+	ShieldCheckIcon,
 	ShirtIcon,
 	SpinnerIcon,
 	ToggleRightIcon,
 	UserIcon,
 	UserPlusIcon,
+	UsersIcon,
 	XIcon,
 } from '@modrinth/assets'
 import {
@@ -79,7 +82,9 @@ import SteveSkin from '@/assets/skins/steve.png'
 import ChibiAvatar from '@/components/ui/chibi/ChibiAvatar.vue'
 import AccountsCard from '@/components/ui/AccountsCard.vue'
 import BedringhCloudPackModal from '@/components/ui/astralrinth/packs/BedringhCloudPackModal.vue'
-import FriendsDrawer from '@/components/ui/astralrinth/friends/FriendsDrawer.vue'
+import BedringhAuthModal from '@/components/ui/astralrinth/accounts/BedringhAuthModal.vue'
+import BedringhFriendsList from '@/components/ui/friends/BedringhFriendsList.vue'
+import { useBedringhAccount } from '@/composables/use-bedringh-account'
 import { useBedringhFriends } from '@/services/bedringh-friends'
 import AppActionBar from '@/components/ui/AppActionBar.vue'
 import Breadcrumbs from '@/components/ui/Breadcrumbs.vue'
@@ -1094,11 +1099,10 @@ const updateToPlayModal = ref()
 const modrinthLoginModal = ref()
 const appSettingsModal = ref()
 const cloudPackModal = ref()
-const friendsDrawer = ref()
-const { totalIncoming: totalIncomingFriends } = useBedringhFriends()
+const bedringhFriendsList = ref()
 
 provide('openBedringhCloudPackModal', (code) => cloudPackModal.value?.show(code))
-provide('openBedringhFriends', () => friendsDrawer.value?.show())
+provide('openBedringhFriends', () => bedringhFriendsList.value?.showAddFriendModal())
 window.addEventListener('open-bedringh-cloud-pack', (e) => {
 	cloudPackModal.value?.show(e.detail?.code)
 })
@@ -1320,6 +1324,39 @@ const accountSwitcherAccounts = computed(() => {
 	}))
 })
 
+const {
+	bedringhAccount,
+	preferredProfile,
+	isBedringhAuthenticated,
+	setPreferredProfile,
+	setAccount: setBedringhAccount,
+	logout: logoutBedringh,
+} = useBedringhAccount()
+
+const bedringhAuthModalGlobal = ref(null)
+
+const activePlatform = computed(() => {
+	const hasBedringh = isBedringhAuthenticated.value
+	const hasModrinth = !!credentials.value?.user
+
+	if (hasBedringh && hasModrinth) {
+		return preferredProfile.value
+	}
+	if (hasBedringh) return 'bedringh'
+	if (hasModrinth) return 'modrinth'
+	return 'none'
+})
+
+async function onGlobalBedringhAuthSuccess(account) {
+	if (account) {
+		setPreferredProfile('bedringh')
+		await accounts.value?.refreshValues?.()
+		if (account.profile?.name) {
+			setBedringhAccount(account.profile.name, account.access_token)
+		}
+	}
+}
+
 const profileButtonTooltip = computed(() => {
 	if (credentials.value === undefined) return formatMessage(messages.loadingProfile)
 	if (credentials.value?.user) return formatMessage(messages.modrinthAccount)
@@ -1330,8 +1367,11 @@ const accountSwitcherOptions = computed(() => [
 	...accountSwitcherAccounts.value.map((account) => ({
 		id: account.optionId,
 		label: account.user.username,
-		selected: account.current,
-		action: () => switchModrinthAccount(account),
+		selected: preferredProfile.value === 'modrinth' && account.current,
+		action: async () => {
+			setPreferredProfile('modrinth')
+			await switchModrinthAccount(account)
+		},
 		trailingAction: {
 			label: formatMessage(messages.removeAccount),
 			icon: XIcon,
@@ -1339,6 +1379,37 @@ const accountSwitcherOptions = computed(() => [
 			action: () => forgetModrinthAccount(account.user_id),
 		},
 	})),
+	{
+		type: 'divider',
+	},
+	{
+		id: 'account-bedringh',
+		label: isBedringhAuthenticated.value
+			? (bedringhAccount.value?.username || 'Bedringh ID')
+			: 'Войти в Bedringh ID',
+		icon: ShieldCheckIcon,
+		selected: isBedringhAuthenticated.value && preferredProfile.value === 'bedringh',
+		action: () => {
+			if (isBedringhAuthenticated.value) {
+				setPreferredProfile('bedringh')
+			} else {
+				bedringhAuthModalGlobal.value?.show('login')
+			}
+		},
+		trailingAction: isBedringhAuthenticated.value
+			? {
+					label: 'Выйти из Bedringh ID',
+					icon: XIcon,
+					color: 'red',
+					action: () => {
+						logoutBedringh()
+						if (credentials.value?.user) {
+							setPreferredProfile('modrinth')
+						}
+					},
+				}
+			: undefined,
+	},
 	{
 		type: 'divider',
 	},
@@ -1375,6 +1446,7 @@ async function completeAccountSwitch(task) {
 }
 
 async function switchModrinthAccount(account) {
+	setPreferredProfile('modrinth')
 	if (account.current) return
 
 	const cached = getAccountAppearance(account.user_id)
@@ -1407,54 +1479,78 @@ async function forgetModrinthAccount(userId) {
 	await fetchStoredModrinthAccounts()
 }
 
-const modrinthAccountMenuOptions = computed(() => [
-	{
-		id: 'view-profile',
-		label: formatMessage(messages.viewProfile),
-		icon: UserIcon,
-		action: () => router.push(`/user/${encodeURIComponent(credentials.value.user.username)}`),
-	},
-	{
-		id: 'plus',
-		label: formatMessage(messages.upgradeToModrinthPlus),
-		icon: ArrowBigUpDashIcon,
-		type: 'link',
-		href: 'https://modrinth.plus?app',
-		target: '_blank',
-		tone: 'purple',
-		shown: !hasPlus.value,
-	},
-	{
-		id: 'add-friend',
-		label: formatMessage(messages.addFriend),
-		icon: UserPlusIcon,
-		action: () => friendsList.value?.showAddFriendModal(),
-	},
-	{
-		id: 'flags',
-		label: formatMessage(commonSettingsMessages.featureFlags),
-		icon: ToggleRightIcon,
-		shown: appSettings.devMode,
-		action: () => appSettingsModal.value?.showFeatureFlags(),
-	},
-	{
-		type: 'divider',
-	},
-	{
-		id: 'switch-account',
-		label: formatMessage(messages.switchAccount),
-		icon: ArrowLeftRightIcon,
-		type: 'submenu',
-		options: accountSwitcherOptions.value,
-	},
-	{
-		id: 'sign-out',
-		label: formatMessage(commonMessages.signOutButton),
-		icon: LogOutIcon,
-		tone: 'red',
-		action: () => logOut(),
-	},
-])
+const modrinthAccountMenuOptions = computed(() => {
+	const isBedringh = preferredProfile.value === 'bedringh' && isBedringhAuthenticated.value
+	return [
+		{
+			id: 'view-profile',
+			label: formatMessage(messages.viewProfile),
+			icon: UserIcon,
+			action: () => {
+				if (isBedringh) {
+					router.push('/skins')
+				} else if (credentials.value?.user) {
+					router.push(`/user/${encodeURIComponent(credentials.value.user.username)}`)
+				}
+			},
+		},
+		{
+			id: 'plus',
+			label: formatMessage(messages.upgradeToModrinthPlus),
+			icon: ArrowBigUpDashIcon,
+			type: 'link',
+			href: 'https://modrinth.plus?app',
+			target: '_blank',
+			tone: 'purple',
+			shown: !hasPlus.value && !isBedringh,
+		},
+		{
+			id: 'add-friend',
+			label: formatMessage(messages.addFriend),
+			icon: UserPlusIcon,
+			action: () => {
+				if (isBedringh) {
+					bedringhFriendsList.value?.showAddFriendModal()
+				} else {
+					friendsList.value?.showAddFriendModal()
+				}
+			},
+		},
+		{
+			id: 'flags',
+			label: formatMessage(commonSettingsMessages.featureFlags),
+			icon: ToggleRightIcon,
+			shown: appSettings.devMode,
+			action: () => appSettingsModal.value?.showFeatureFlags(),
+		},
+		{
+			type: 'divider',
+		},
+		{
+			id: 'switch-account',
+			label: formatMessage(messages.switchAccount),
+			icon: ArrowLeftRightIcon,
+			type: 'submenu',
+			options: accountSwitcherOptions.value,
+		},
+		{
+			id: 'sign-out',
+			label: formatMessage(commonMessages.signOutButton),
+			icon: LogOutIcon,
+			tone: 'red',
+			action: () => {
+				if (isBedringh) {
+					logoutBedringh()
+					if (credentials.value?.user) {
+						setPreferredProfile('modrinth')
+					}
+				} else {
+					logOut()
+				}
+			},
+		},
+	]
+})
 
 async function fetchIntercomToken() {
 	const creds = await getCreds()
@@ -2109,36 +2205,6 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 				</span>
 			</div>
 		</Transition>
-		<Suspense>
-			<AppSettingsModal ref="appSettingsModal" />
-		</Suspense>
-		<Suspense>
-			<ModrinthAccountRequiredModal ref="modrinthLoginModal" :request-auth="requestModrinthAuth" />
-		</Suspense>
-		<BedringhCloudPackModal ref="cloudPackModal" />
-		<FriendsDrawer ref="friendsDrawer" />
-		<CreationFlowModal
-			ref="installationModal"
-			type="instance"
-			:available-loaders="['bedrock', 'fabric', 'neoforge', 'forge', 'quilt']"
-			show-snapshot-toggle
-			:fetch-existing-instance-names="fetchExistingInstanceNames"
-			:search-projects="searchProjects"
-			:prepare-project-install="prepareCreationProjectInstall"
-			:create-project-install="handleCreateAndInstall"
-			:get-loader-manifest="getLoaderManifest"
-			:randomize-instance-icon="randomizeCreationIcon"
-			:customize-instance-icon="customizeCreationIcon"
-			@create="handleCreate"
-			@browse-modpacks="handleBrowseModpacks"
-			@install-cloud-pack="() => { installationModal?.hide(); cloudPackModal?.show() }"
-		/>
-		<IconEditorModal
-			ref="creationIconEditorModal"
-			:config="creationGeneratedIcon?.config"
-			@saved="onCreationIconSaved"
-		/>
-		<UnknownPackWarningModal ref="unknownPackWarningModal" />
 		<div
 			class="app-grid-navbar bg-bg-raised flex flex-col p-[0.5rem] pt-0 gap-[0.25rem] w-[--left-bar-width]"
 		>
@@ -2185,18 +2251,6 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 			>
 				<ServerStackIcon />
 			</NavButton>
-			<NavButton
-				v-tooltip.right="'Друзья (Bedringh ID)'"
-				:to="() => friendsDrawer?.show()"
-			>
-				<div class="relative flex items-center justify-center">
-					<UsersIcon />
-					<span
-						v-if="totalIncomingFriends > 0"
-						class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-solid border-bg-raised animate-pulse"
-					></span>
-				</div>
-			</NavButton>
 			<suspense>
 				<QuickInstanceSwitcher />
 			</suspense>
@@ -2225,17 +2279,25 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 				>
 					<SpinnerIcon class="animate-spin" />
 				</IconButton>
+
 				<TeleportOverflowMenu
-					v-else-if="credentials?.user"
+					v-else-if="credentials?.user || isBedringhAuthenticated"
 					type="quiet"
 					size="xl"
-					:label="formatMessage(messages.modrinthAccount)"
+					:label="preferredProfile === 'bedringh' && isBedringhAuthenticated ? (bedringhAccount?.username || 'Bedringh ID') : formatMessage(messages.modrinthAccount)"
 					:options="modrinthAccountMenuOptions"
 					placement="right-end"
 					:distance="4"
 					class="brightness-100 hover:!brightness-100 focus-visible:!brightness-100"
 				>
+					<img
+						v-if="preferredProfile === 'bedringh' && isBedringhAuthenticated && bedringhAccount?.avatarUrl"
+						:src="bedringhAccount.avatarUrl"
+						alt=""
+						class="w-8 h-8 rounded-full pointer-events-none border-2 border-solid border-purple-500/80 shadow-[0_0_8px_rgba(168,85,247,0.4)] object-cover bg-surface-2"
+					/>
 					<Avatar
+						v-else
 						:src="credentials?.user?.avatar_url"
 						alt=""
 						size="32px"
@@ -2243,6 +2305,24 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 						no-shadow
 						class="pointer-events-none !size-8"
 					/>
+					<template #account-bedringh>
+						<img
+							v-if="isBedringhAuthenticated && bedringhAccount?.avatarUrl"
+							:src="bedringhAccount.avatarUrl"
+							alt=""
+							class="w-5 h-5 rounded-full object-cover border border-solid border-purple-500 shrink-0"
+						/>
+						<ShieldCheckIcon v-else class="w-5 h-5 text-purple-400 shrink-0" />
+						<span class="truncate">
+							{{ isBedringhAuthenticated ? (bedringhAccount?.username || 'Bedringh ID') : 'Войти в Bedringh ID' }}
+						</span>
+						<span
+							v-if="isBedringhAuthenticated"
+							class="ml-auto px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/20 text-purple-400 border border-solid border-purple-500/30 shrink-0"
+						>
+							Bedringh ID
+						</span>
+					</template>
 					<template
 						v-for="account in accountSwitcherAccounts"
 						:key="account.user_id"
@@ -2263,6 +2343,10 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 					:distance="4"
 				>
 					<LogInIcon class="!text-brand" />
+					<template #account-bedringh>
+						<ShieldCheckIcon class="w-5 h-5 text-purple-400 shrink-0" />
+						<span class="truncate">Войти в Bedringh ID</span>
+					</template>
 					<template
 						v-for="account in accountSwitcherAccounts"
 						:key="account.user_id"
@@ -2420,6 +2504,18 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 						</suspense>
 					</div>
 					<div
+						v-if="preferredProfile === 'bedringh'"
+						class="p-4 border-0 border-b-[1px] border-[--brand-gradient-border] border-solid"
+					>
+						<suspense>
+							<BedringhFriendsList
+								ref="bedringhFriendsList"
+								:sign-in="() => bedringhAuthModalGlobal?.show('login')"
+							/>
+						</suspense>
+					</div>
+					<div
+						v-else
 						v-show="showFriendsList"
 						class="p-4 border-0 border-b-[1px] border-[--brand-gradient-border] border-solid"
 					>
@@ -2510,6 +2606,38 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 	<SharedInstanceInviteHandler ref="sharedInstanceInviteHandler" />
 	<InstallToPlayModal ref="installToPlayModal" :show-external-warnings="false" />
 	<UpdateToPlayModal ref="updateToPlayModal" :show-external-warnings="false" />
+
+	<!-- Modals moved out of app-grid-layout to avoid breaking CSS Grid -->
+	<Suspense>
+		<AppSettingsModal ref="appSettingsModal" />
+	</Suspense>
+	<Suspense>
+		<ModrinthAccountRequiredModal ref="modrinthLoginModal" :request-auth="requestModrinthAuth" />
+	</Suspense>
+	<BedringhCloudPackModal ref="cloudPackModal" />
+	<BedringhAuthModal ref="bedringhAuthModalGlobal" @success="onGlobalBedringhAuthSuccess" />
+	<CreationFlowModal
+		ref="installationModal"
+		type="instance"
+		:available-loaders="['bedrock', 'fabric', 'neoforge', 'forge', 'quilt']"
+		show-snapshot-toggle
+		:fetch-existing-instance-names="fetchExistingInstanceNames"
+		:search-projects="searchProjects"
+		:prepare-project-install="prepareCreationProjectInstall"
+		:create-project-install="handleCreateAndInstall"
+		:get-loader-manifest="getLoaderManifest"
+		:randomize-instance-icon="randomizeCreationIcon"
+		:customize-instance-icon="customizeCreationIcon"
+		@create="handleCreate"
+		@browse-modpacks="handleBrowseModpacks"
+		@install-cloud-pack="() => { installationModal?.hide(); cloudPackModal?.show() }"
+	/>
+	<IconEditorModal
+		ref="creationIconEditorModal"
+		:config="creationGeneratedIcon?.config"
+		@saved="onCreationIconSaved"
+	/>
+	<UnknownPackWarningModal ref="unknownPackWarningModal" />
 </template>
 
 <style lang="scss" scoped>

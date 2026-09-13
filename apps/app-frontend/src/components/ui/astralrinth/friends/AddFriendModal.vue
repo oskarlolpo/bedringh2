@@ -1,71 +1,68 @@
 <script setup lang="ts">
-import { CheckIcon, PlusIcon, SearchIcon, UserPlusIcon } from '@modrinth/assets'
-import { ButtonStyled, NewModal, StyledInput, injectNotificationManager } from '@modrinth/ui'
-import { ref, watch } from 'vue'
+import { SendIcon, UserIcon } from '@modrinth/assets'
+import { Button, defineMessages, injectNotificationManager, Input, useVIntl } from '@modrinth/ui'
+import { ref } from 'vue'
+
+import ModalWrapper from '@/components/ui/modal/ModalWrapper.vue'
 import { sendFriendRequest } from '@/services/bedringh-friends'
 
-const modal = ref<InstanceType<typeof NewModal> | null>(null)
+const modal = ref<InstanceType<typeof ModalWrapper> | null>(null)
 const { addNotification } = injectNotificationManager()
+const { formatMessage } = useVIntl()
 
-const targetUsername = ref('')
+const username = ref('')
 const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
-const headUrl = ref<string | null>(null)
 
-let searchTimeout: any = null
-
-watch(targetUsername, (val) => {
-	errorMessage.value = ''
-	successMessage.value = ''
-
-	if (searchTimeout) clearTimeout(searchTimeout)
-
-	const trimmed = val.trim()
-	if (trimmed.length >= 3) {
-		searchTimeout = setTimeout(() => {
-			headUrl.value = `https://mc-heads.net/avatar/${encodeURIComponent(trimmed)}/64`
-		}, 300)
-	} else {
-		headUrl.value = null
-	}
+const messages = defineMessages({
+	addingAFriend: {
+		id: 'friends.add-friend.title',
+		defaultMessage: 'Adding a friend',
+	},
+	usernameTitle: {
+		id: 'bedringh.friends.add-friend.username.title',
+		defaultMessage: "What's your friend's Bedringh ID username?",
+	},
+	usernameDescription: {
+		id: 'friends.add-friend.username.description',
+		defaultMessage: 'It may be different from their Minecraft username!',
+	},
+	usernamePlaceholder: {
+		id: 'bedringh.friends.add-friend.username.placeholder',
+		defaultMessage: 'Enter Bedringh ID username...',
+	},
+	sendFriendRequest: {
+		id: 'friends.add-friend.submit',
+		defaultMessage: 'Send friend request',
+	},
 })
 
-async function handleSendRequest() {
-	const trimmed = targetUsername.value.trim()
-	if (!trimmed) return
+async function addFriendFromModal() {
+	const target = username.value.trim()
+	if (!target || loading.value) return
 
 	loading.value = true
-	errorMessage.value = ''
-	successMessage.value = ''
-
 	try {
-		const res = await sendFriendRequest(trimmed)
-		successMessage.value = res.message || 'Заявка успешно отправлена!'
+		const res = await sendFriendRequest(target)
 		addNotification({
 			type: 'success',
-			title: 'Заявка в друзья',
-			text: `Заявка пользователю ${trimmed} успешно отправлена`,
+			title: formatMessage(messages.addingAFriend),
+			text: res.message || `Friend request to ${target} sent successfully`,
 		})
-		setTimeout(() => {
-			if (successMessage.value) {
-				modal.value?.hide()
-				targetUsername.value = ''
-				headUrl.value = null
-			}
-		}, 1200)
+		modal.value?.hide()
+		username.value = ''
 	} catch (e: any) {
-		errorMessage.value = e?.message || 'Не удалось отправить заявку'
+		addNotification({
+			type: 'error',
+			title: 'Error',
+			text: e?.message || 'Failed to send friend request',
+		})
 	} finally {
 		loading.value = false
 	}
 }
 
 function show() {
-	targetUsername.value = ''
-	errorMessage.value = ''
-	successMessage.value = ''
-	headUrl.value = null
+	username.value = ''
 	modal.value?.show()
 }
 
@@ -77,78 +74,34 @@ defineExpose({ show, hide })
 </script>
 
 <template>
-	<NewModal ref="modal" header="Добавить друга">
-		<div class="flex flex-col gap-4 px-6 py-5 w-[420px] max-w-full">
-			<!-- Информационный баннер -->
-			<div class="flex items-center gap-3 p-3 bg-brand/10 border border-solid border-brand/20 rounded-xl text-xs text-secondary">
-				<UserPlusIcon class="w-5 h-5 text-brand shrink-0" />
-				<span>
-					Введите никнейм игрока в <b>Bedringh ID</b> для отправки заявки в друзья.
-				</span>
-			</div>
-
-			<!-- Поле ввода -->
-			<div class="flex flex-col gap-1.5">
-				<label class="text-xs font-semibold text-secondary">Никнейм пользователя</label>
-				<div class="relative flex items-center">
-					<StyledInput
-						v-model="targetUsername"
-						type="text"
-						placeholder="Например: Player123..."
-						class="w-full"
-						:disabled="loading"
-						@keyup.enter="targetUsername.trim().length >= 3 && handleSendRequest()"
-					/>
-				</div>
-			</div>
-
-			<!-- Превью найденного игрока -->
-			<div
-				v-if="targetUsername.trim().length >= 3"
-				class="flex items-center justify-between p-3 bg-surface-2 border border-solid border-surface-5 rounded-xl transition-all"
-			>
-				<div class="flex items-center gap-3 min-w-0">
-					<img
-						v-if="headUrl"
-						:src="headUrl"
-						alt=""
-						class="w-10 h-10 rounded-lg object-cover image-pixelated bg-surface-3"
-					/>
-					<div
-						v-else
-						class="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center text-secondary font-bold"
-					>
-						?
-					</div>
-					<div class="flex flex-col min-w-0">
-						<span class="font-bold text-contrast truncate text-sm">
-							{{ targetUsername.trim() }}
-						</span>
-						<span class="text-xs text-emerald-400">Bedringh ID аккаунт</span>
-					</div>
-				</div>
-
-				<ButtonStyled color="brand">
-					<button
-						type="button"
-						class="px-3 py-1.5 text-xs font-semibold"
-						:disabled="loading || !targetUsername.trim()"
-						@click="handleSendRequest"
-					>
-						<UserPlusIcon class="w-4 h-4 mr-1 inline" />
-						Отправить
-					</button>
-				</ButtonStyled>
-			</div>
-
-			<!-- Сообщения об успехе или ошибке -->
-			<div v-if="errorMessage" class="text-xs text-red-400 font-medium px-1">
-				{{ errorMessage }}
-			</div>
-			<div v-if="successMessage" class="text-xs text-emerald-400 font-medium flex items-center gap-1.5 px-1">
-				<CheckIcon class="w-4 h-4 text-emerald-400" />
-				{{ successMessage }}
+	<ModalWrapper ref="modal" :header="formatMessage(messages.addingAFriend)">
+		<div class="min-w-[30rem]">
+			<h2 class="m-0 text-base font-medium text-primary">
+				{{ formatMessage(messages.usernameTitle) }}
+			</h2>
+			<p class="m-0 mt-1 text-sm text-secondary leading-tight">
+				{{ formatMessage(messages.usernameDescription) }}
+			</p>
+			<div class="flex items-center gap-2 mt-4">
+				<Input
+					v-model="username"
+					:icon="UserIcon"
+					type="text"
+					:placeholder="formatMessage(messages.usernamePlaceholder)"
+					wrapper-class="flex-1"
+					:disabled="loading"
+					@keyup.enter="addFriendFromModal"
+				/>
+				<Button
+					type="colored"
+					color="brand"
+					:disabled="username.trim().length === 0 || loading"
+					@click="addFriendFromModal"
+				>
+					<SendIcon />
+					{{ formatMessage(messages.sendFriendRequest) }}
+				</Button>
 			</div>
 		</div>
-	</NewModal>
+	</ModalWrapper>
 </template>

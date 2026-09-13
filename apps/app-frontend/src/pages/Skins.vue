@@ -1134,6 +1134,7 @@ await Promise.all([loadCapes(), loadCurrentUser(), loadSkins()]);
 		type="file"
 		accept="image/png"
 		class="hidden"
+		style="display: none;"
 		@change="onAddSkinFileInputChange"
 	/>
 	<ConfirmModal
