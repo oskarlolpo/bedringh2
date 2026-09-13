@@ -109,7 +109,10 @@ export async function resolveActiveBedringhUser(): Promise<{ username: string; t
 		const found = allUsers.find((u: any) => u.profile?.id === defaultId && isBedringh(u)) || allUsers.find(isBedringh)
 		if (found?.profile?.name) {
 			const token = found.access_token || ''
-			setActiveBedringhUser(found.profile.name, token)
+			localStorage.setItem(STORAGE_ACTIVE_USER_KEY, found.profile.name)
+			if (token) {
+				localStorage.setItem(`${STORAGE_USER_TOKEN_PREFIX}${found.profile.name.toLowerCase()}`, token)
+			}
 			return { username: found.profile.name, token }
 		}
 	} catch (e) {

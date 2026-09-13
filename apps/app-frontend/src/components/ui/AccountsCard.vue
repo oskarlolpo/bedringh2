@@ -437,7 +437,7 @@ const selectedAccount = computed(() =>
 watch(
 	selectedAccount,
 	async (account) => {
-		if (account?.profile?.name) {
+		if (account?.profile?.name && getAccountTypeName(account) === 'Bedringh ID') {
 			try {
 				const { setActiveBedringhUser } = await import('@/services/bedringh-settings-sync')
 				setActiveBedringhUser(account.profile.name, account.access_token)
@@ -524,14 +524,8 @@ const unlisten = await process_listener(async (e) => {
 	}
 })
 
-const handleBedringhAccountChange = async (e: any) => {
+const handleBedringhAccountChange = async () => {
 	await refreshValues()
-	if (e.detail?.username) {
-		const found = accounts.value.find((acc) => acc.profile?.name === e.detail.username)
-		if (found && defaultUser.value !== found.profile?.id) {
-			await setAccount(found)
-		}
-	}
 }
 
 if (typeof window !== 'undefined') {
