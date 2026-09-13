@@ -18,6 +18,7 @@ fn main() {
                         "bedringh_login",
                         "klauncher_login",
                         "tlauncher_login",
+                        "elyby_login",
                         "remove_user",
                         "get_default_user",
                         "set_default_user",

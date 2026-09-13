@@ -774,6 +774,269 @@ pub async fn tlauncher_auth(
     Ok(credentials)
 }
 
+#[tracing::instrument]
+pub async fn elyby_auth(
+    name: &str,
+    password: Option<&str>,
+    two_factor: Option<&str>,
+    exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
+) -> crate::Result<Credentials> {
+    let name_trimmed = name.trim();
+    let mut resolved_uuid: Option<Uuid> = None;
+    let mut resolved_display_name = name_trimmed.to_string();
+    let mut resolved_skin_url: Option<String> = None;
+
+    let access_token = if let Some(pass) = password {
+        let client = &*INSECURE_REQWEST_CLIENT;
+        let client_token = Uuid::new_v4().to_string();
+
+        let final_password = match two_factor.map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            Some(tf) => format!("{}:{}", pass, tf),
+            None => pass.to_string(),
+        };
+
+        let req_body = serde_json::json!({
+            "agent": {
+                "name": "Minecraft",
+                "version": 1
+            },
+            "username": name_trimmed,
+            "password": final_password,
+            "clientToken": client_token,
+            "requestUser": true
+        });
+
+        let url = "https://authserver.ely.by/auth/authenticate";
+        let resp = client
+            .post(url)
+            .header("User-Agent", "BedringhLauncher/1.0")
+            .json(&req_body)
+            .send()
+            .await;
+
+        match resp {
+            Ok(res) if res.status().is_success() => {
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    let token_opt = json.get("accessToken").and_then(|t| t.as_str());
+
+                    if let Some(profile) = json.get("selectedProfile") {
+                        if let Some(p_name) = profile.get("name").and_then(|n| n.as_str()) {
+                            resolved_display_name = p_name.to_string();
+                        }
+                        if let Some(p_id) = profile.get("id").and_then(|i| i.as_str()) {
+                            if let Ok(u) = Uuid::parse_str(p_id) {
+                                resolved_uuid = Some(u);
+                            } else if p_id.len() == 32 {
+                                let hyphenated = format!(
+                                    "{}-{}-{}-{}-{}",
+                                    &p_id[0..8],
+                                    &p_id[8..12],
+                                    &p_id[12..16],
+                                    &p_id[16..20],
+                                    &p_id[20..32]
+                                );
+                                if let Ok(u) = Uuid::parse_str(&hyphenated) {
+                                    resolved_uuid = Some(u);
+                                }
+                            }
+                        }
+
+                        // Извлекаем URL скина из properties (base64-encoded JSON)
+                        if let Some(props) = profile.get("properties").and_then(|p| p.as_array()) {
+                            for prop in props {
+                                if prop.get("name").and_then(|n| n.as_str()) == Some("textures") {
+                                    if let Some(b64_val) = prop.get("value").and_then(|v| v.as_str()) {
+                                        use base64::Engine;
+                                        if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(b64_val) {
+                                            if let Ok(tex_json) = serde_json::from_slice::<serde_json::Value>(&decoded) {
+                                                if let Some(skin_url) = tex_json
+                                                    .get("textures")
+                                                    .and_then(|t| t.get("SKIN"))
+                                                    .and_then(|s| s.get("url"))
+                                                    .and_then(|u| u.as_str())
+                                                {
+                                                    resolved_skin_url = Some(skin_url.to_string());
+                                                }
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(token) = token_opt {
+                        format!("elyby_{}", token)
+                    } else {
+                        "elyby".to_string()
+                    }
+                } else {
+                    "elyby".to_string()
+                }
+            }
+            Ok(res) if res.status().as_u16() == 401 || res.status().as_u16() == 403 => {
+                let err_msg = if let Ok(json) = res.json::<serde_json::Value>().await {
+                    json.get("errorMessage")
+                        .or_else(|| json.get("error"))
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Неверный логин или пароль Ely.by")
+                        .to_string()
+                } else {
+                    "Неверный логин или пароль Ely.by".to_string()
+                };
+                return Err(crate::ErrorKind::OtherError(err_msg).as_error());
+            }
+            Ok(res) => {
+                let status = res.status();
+                let err_msg = if let Ok(json) = res.json::<serde_json::Value>().await {
+                    json.get("errorMessage")
+                        .or_else(|| json.get("error"))
+                        .and_then(|m| m.as_str())
+                        .unwrap_or(&format!("Ошибка сервера авторизации Ely.by ({status})"))
+                        .to_string()
+                } else {
+                    format!("Ошибка сервера авторизации Ely.by ({status})")
+                };
+                return Err(crate::ErrorKind::OtherError(err_msg).as_error());
+            }
+            Err(e) => {
+                return Err(crate::ErrorKind::OtherError(format!(
+                    "Не удалось связаться с сервером авторизации Ely.by: {e}"
+                ))
+                .as_error());
+            }
+        }
+    } else {
+        "elyby".to_string()
+    };
+
+    let existing_uuid = Credentials::get_all(exec)
+        .await
+        .ok()
+        .and_then(|users| {
+            users
+                .iter()
+                .find(|entry| {
+                    let cred = entry.value();
+                    cred.offline_profile.name.eq_ignore_ascii_case(name_trimmed)
+                        && (cred.access_token == "elyby"
+                            || cred.access_token.starts_with("elyby_")
+                            || cred.refresh_token == "elyby_refresh")
+                })
+                .map(|entry| *entry.key())
+        });
+
+    let uuid = resolved_uuid
+        .or(existing_uuid)
+        .unwrap_or_else(Uuid::new_v4);
+    let refresh_token = "elyby_refresh".to_string();
+
+    let mut credentials = Credentials {
+        offline_profile: MinecraftProfile::default(),
+        access_token: access_token.clone(),
+        refresh_token,
+        expires: Utc::now() + Duration::days(365 * 99),
+        active: true,
+    };
+
+    credentials.offline_profile = MinecraftProfile {
+        id: uuid,
+        name: resolved_display_name,
+        ..credentials.offline_profile
+    };
+
+    credentials.upsert(exec).await?;
+
+    // Загрузка скина игрока из Ely.by
+    let client = &*INSECURE_REQWEST_CLIENT;
+    let mut downloaded_bytes: Option<bytes::Bytes> = None;
+
+    // 1. По URL из properties/textures (если был авторизованный запрос)
+    if let Some(ref skin_direct_url) = resolved_skin_url {
+        if let Ok(bytes_resp) = client.get(skin_direct_url).send().await {
+            if bytes_resp.status().is_success() {
+                if let Ok(bytes) = bytes_resp.bytes().await {
+                    if !bytes.is_empty() {
+                        downloaded_bytes = Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Ely.by skin profile API: http://skinsystem.ely.by/textures/{name}
+    if downloaded_bytes.is_none() {
+        let profile_url = format!("http://skinsystem.ely.by/textures/{}", name_trimmed);
+        if let Ok(resp) = client.get(&profile_url).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(skin_url) = json
+                        .get("SKIN")
+                        .and_then(|s| s.get("url"))
+                        .and_then(|u| u.as_str())
+                    {
+                        if let Ok(bytes_resp) = client.get(skin_url).send().await {
+                            if bytes_resp.status().is_success() {
+                                if let Ok(bytes) = bytes_resp.bytes().await {
+                                    if !bytes.is_empty() {
+                                        downloaded_bytes = Some(bytes);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback на прямое скачивание http://skinsystem.ely.by/textures/skins/{name}.png
+    if downloaded_bytes.is_none() {
+        let direct_url = format!("http://skinsystem.ely.by/textures/skins/{}.png", name_trimmed);
+        if let Ok(bytes_resp) = client.get(&direct_url).send().await {
+            if bytes_resp.status().is_success() {
+                if let Ok(bytes) = bytes_resp.bytes().await {
+                    if !bytes.is_empty() {
+                        downloaded_bytes = Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Fallback на mc-heads.net
+    if downloaded_bytes.is_none() {
+        if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name_trimmed)).send().await {
+            if bytes_resp.status().is_success() {
+                if let Ok(bytes) = bytes_resp.bytes().await {
+                    if !bytes.is_empty() {
+                        downloaded_bytes = Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(bytes) = downloaded_bytes {
+        let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+        if let Ok(state) = crate::State::get().await {
+            let _ = crate::state::minecraft_skins::CustomMinecraftSkin::add(
+                uuid,
+                &texture_key,
+                &bytes,
+                MinecraftSkinVariant::Classic,
+                None,
+                crate::state::minecraft_skins::CustomMinecraftSkinInsertPosition::Top,
+                &state.pool,
+            )
+            .await;
+        }
+    }
+
+    Ok(credentials)
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct Credentials {
     /// The offline profile of the user these credentials are for.

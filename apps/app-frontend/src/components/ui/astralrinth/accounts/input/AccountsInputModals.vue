@@ -55,6 +55,7 @@ const kLauncherStep = ref(1)
 const kLauncherHeadUrl = ref<string | null>(null)
 const tLauncherStep = ref(1)
 const tLauncherHeadUrl = ref<string | null>(null)
+const elyByHeadUrl = ref<string | null>(null)
 
 onUnmounted(() => {
 	if (kLauncherHeadUrl.value) {
@@ -63,8 +64,13 @@ onUnmounted(() => {
 	if (tLauncherHeadUrl.value) {
 		URL.revokeObjectURL(tLauncherHeadUrl.value)
 	}
+	if (elyByHeadUrl.value) {
+		URL.revokeObjectURL(elyByHeadUrl.value)
+	}
 })
 
+const ELYBY_REGISTER_URL = 'https://ely.by/registration'
+const ELYBY_RECOVERY_URL = 'https://ely.by/remind'
 const TLAUNCHER_REGISTER_URL = 'https://tlauncher.org/ru/reg/'
 const TLAUNCHER_RECOVERY_URL = 'https://tlauncher.org/ru/catalog/user/'
 const KLAUNCHER_REGISTER_URL = 'https://klauncher.gg/register'
@@ -72,6 +78,7 @@ const KLAUNCHER_RECOVERY_URL = 'https://klauncher.gg/restore'
 const KLAUNCHER_SKIN_API = 'https://api.klaun.ch/v2/user/skin?nick='
 
 let fetchHeadTimeout: ReturnType<typeof setTimeout> | null = null
+let fetchElyByHeadTimeout: ReturnType<typeof setTimeout> | null = null
 
 async function fetchKLauncherHead(nick: string) {
 	if (fetchHeadTimeout) {
@@ -245,6 +252,69 @@ function goToTLauncherStep2() {
 	}
 }
 
+async function fetchElyByHead(nick: string) {
+	if (fetchElyByHeadTimeout) {
+		clearTimeout(fetchElyByHeadTimeout)
+		fetchElyByHeadTimeout = null
+	}
+
+	if (!nick || nick.trim().length < 3) {
+		elyByHeadUrl.value = null
+		return
+	}
+
+	fetchElyByHeadTimeout = setTimeout(async () => {
+		const trimmedNick = nick.trim()
+		let headUrlFound: string | null = null
+
+		// 1. Пробуем скин напрямую из системы скинов Ely.by
+		const skinUrl = `http://skinsystem.ely.by/textures/skins/${encodeURIComponent(trimmedNick)}.png`
+		let tempBlobUrl: string | null = null
+		try {
+			tempBlobUrl = await fetchExternalImageObjectUrl(skinUrl)
+			const headBlob = await generatePlayerHeadBlob(tempBlobUrl, 64)
+			headUrlFound = URL.createObjectURL(headBlob)
+		} catch (e) {
+			console.warn('Ely.by skin fetch failed, fallback to mc-heads:', e)
+		} finally {
+			if (tempBlobUrl) {
+				URL.revokeObjectURL(tempBlobUrl)
+			}
+		}
+
+		// 2. Fallback на mc-heads
+		if (!headUrlFound) {
+			try {
+				const res = await tauriFetch(`https://mc-heads.net/avatar/${encodeURIComponent(trimmedNick)}/64`)
+				if (res.ok) {
+					const blob = await res.blob()
+					headUrlFound = URL.createObjectURL(blob)
+				}
+			} catch (fallbackError) {
+				console.warn('Failed to fetch fallback head for Ely.by:', fallbackError)
+			}
+		}
+
+		if (elyByHeadUrl.value) {
+			URL.revokeObjectURL(elyByHeadUrl.value)
+		}
+		elyByHeadUrl.value = headUrlFound
+	}, 300)
+}
+
+function handleElyByNickInput(value: string) {
+	emit('update:elyByLoginValue', value)
+	void fetchElyByHead(value)
+}
+
+function openElyByRegister() {
+	void openUrl(ELYBY_REGISTER_URL)
+}
+
+function openElyByRecovery() {
+	void openUrl(ELYBY_RECOVERY_URL)
+}
+
 const messages = defineMessages({
 	addElyByHeader: {
 		id: 'astralrinth.app.minecraft-account.input.elyby.header',
@@ -346,7 +416,17 @@ defineExpose({
 	hideOffline: () => addOfflineModal.value?.hide(),
 	hideKLauncher: () => addKLauncherModal.value?.hide(),
 	hideTLauncher: () => addTLauncherModal.value?.hide(),
-	showElyBy: () => addElyByModal.value?.show(),
+	showElyBy: () => {
+		addElyByModal.value?.show()
+		if (props.elyByLoginValue && props.elyByLoginValue.trim().length >= 3) {
+			void fetchElyByHead(props.elyByLoginValue)
+		} else {
+			if (elyByHeadUrl.value) {
+				URL.revokeObjectURL(elyByHeadUrl.value)
+			}
+			elyByHeadUrl.value = null
+		}
+	},
 	showElyByTwoFactor: () => requestElyByTwoFactorCodeModal.value?.show(),
 	showOffline: () => addOfflineModal.value?.show(),
 	showKLauncher: () => {
@@ -378,49 +458,100 @@ defineExpose({
 
 <template>
 	<ModalWrapper ref="addElyByModal" class="modal" :header="formatMessage(messages.addElyByHeader)">
-		<ModalWrapper
-			ref="requestElyByTwoFactorCodeModal"
-			class="modal"
-			:header="formatMessage(messages.requestTwoFactorHeader)"
-		>
-			<div class="flex flex-col gap-4 px-6 py-5">
-				<label class="label form-label">{{ formatMessage(messages.requestTwoFactorLabel) }}</label>
-				<input
-					:value="props.elyByTwoFactorCode"
-					type="text"
-					:placeholder="formatMessage(messages.requestTwoFactorPlaceholder)"
-					class="input soft-input"
-					@input="
-						emit('update:elyByTwoFactorCode', ($event.target as HTMLInputElement).value)
-					"
+		<div class="flex flex-col gap-4 px-6 py-5 w-[360px]">
+			<!-- Header / Player preview card -->
+			<div class="flex items-center gap-3 p-3 bg-surface-2 border border-solid border-surface-5 rounded-xl">
+				<img
+					v-if="elyByHeadUrl"
+					:src="elyByHeadUrl"
+					alt=""
+					class="w-10 h-10 rounded-lg object-cover image-pixelated"
 				/>
-				<div class="mt-6 ml-auto">
-					<Button color="primary" :disabled="props.elyByLoginDisabled" @click="emit('submit-elyby')">
-						{{ formatMessage(messages.continueAction) }}
-					</Button>
+				<div
+					v-else
+					class="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-base font-bold"
+				>
+					E
+				</div>
+				<div class="flex flex-col min-w-0">
+					<span class="font-bold text-contrast truncate text-sm">
+						{{ props.elyByLoginValue?.trim() || 'Игрок' }}
+					</span>
+					<span class="text-xs text-secondary">Аккаунт Ely.by</span>
 				</div>
 			</div>
-		</ModalWrapper>
-		<div class="flex flex-col gap-4 px-6 py-5">
-			<label class="label form-label">{{ formatMessage(messages.elyByLoginLabel) }}</label>
+
+			<!-- Input form -->
+			<div class="flex flex-col gap-3">
+				<label class="label form-label">{{ formatMessage(messages.elyByLoginLabel) }}</label>
+				<input
+					:value="props.elyByLoginValue"
+					type="text"
+					:placeholder="formatMessage(messages.elyByLoginPlaceholder)"
+					class="input soft-input"
+					@input="handleElyByNickInput(($event.target as HTMLInputElement).value)"
+					@keydown.enter="props.elyByLoginValue && props.elyByPassword && emit('submit-elyby')"
+				/>
+				<label class="label form-label">{{ formatMessage(messages.elyByPasswordLabel) }}</label>
+				<input
+					:value="props.elyByPassword"
+					type="password"
+					:placeholder="formatMessage(messages.elyByPasswordPlaceholder)"
+					class="input soft-input"
+					@input="emit('update:elyByPassword', ($event.target as HTMLInputElement).value)"
+					@keydown.enter="props.elyByLoginValue && props.elyByPassword && emit('submit-elyby')"
+				/>
+				<div class="mt-2 flex flex-col gap-2">
+					<Button
+						color="primary"
+						class="w-full"
+						:disabled="props.elyByLoginDisabled || !props.elyByLoginValue || !props.elyByPassword"
+						@click="emit('submit-elyby')"
+					>
+						{{ formatMessage(messages.loginAction) }}
+					</Button>
+				</div>
+				<div class="flex items-center justify-between mt-2">
+					<button
+						class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer"
+						@click="openElyByRegister"
+					>
+						Регистрация
+					</button>
+					<button
+						class="text-xs text-secondary underline bg-transparent border-0 cursor-pointer"
+						@click="openElyByRecovery"
+					>
+						Забыли пароль?
+					</button>
+				</div>
+			</div>
+		</div>
+	</ModalWrapper>
+
+	<ModalWrapper
+		ref="requestElyByTwoFactorCodeModal"
+		class="modal"
+		:header="formatMessage(messages.requestTwoFactorHeader)"
+	>
+		<div class="flex flex-col gap-4 px-6 py-5 w-[360px]">
+			<label class="label form-label">{{ formatMessage(messages.requestTwoFactorLabel) }}</label>
 			<input
-				:value="props.elyByLoginValue"
+				:value="props.elyByTwoFactorCode"
 				type="text"
-				:placeholder="formatMessage(messages.elyByLoginPlaceholder)"
+				:placeholder="formatMessage(messages.requestTwoFactorPlaceholder)"
 				class="input soft-input"
-				@input="emit('update:elyByLoginValue', ($event.target as HTMLInputElement).value)"
+				@input="emit('update:elyByTwoFactorCode', ($event.target as HTMLInputElement).value)"
+				@keydown.enter="props.elyByTwoFactorCode && emit('submit-elyby')"
 			/>
-			<label class="label form-label">{{ formatMessage(messages.elyByPasswordLabel) }}</label>
-			<input
-				:value="props.elyByPassword"
-				type="password"
-				:placeholder="formatMessage(messages.elyByPasswordPlaceholder)"
-				class="input soft-input"
-				@input="emit('update:elyByPassword', ($event.target as HTMLInputElement).value)"
-			/>
-			<div class="mt-6 ml-auto">
-				<Button color="primary" :disabled="props.elyByLoginDisabled" @click="emit('submit-elyby')">
-					{{ formatMessage(messages.loginAction) }}
+			<div class="mt-2 flex flex-col gap-2">
+				<Button
+					color="primary"
+					class="w-full"
+					:disabled="props.elyByLoginDisabled || !props.elyByTwoFactorCode"
+					@click="emit('submit-elyby')"
+				>
+					{{ formatMessage(messages.continueAction) }}
 				</Button>
 			</div>
 		</div>

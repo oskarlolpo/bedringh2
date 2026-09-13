@@ -1099,6 +1099,39 @@
   "minecraft-account.sign-in-tlauncher": {
     "message": "Войти через TLauncher"
   },
+  "minecraft-account.sign-in-elyby": {
+    "message": "Войти через Ely.by"
+  },
+  "bedringh.friends.title": {
+    "message": "Друзья (Bedringh ID)"
+  },
+  "bedringh.friends.add": {
+    "message": "Добавить друга"
+  },
+  "astralrinth.app.minecraft-account.input.elyby.header": {
+    "message": "Авторизация Ely.by"
+  },
+  "astralrinth.app.minecraft-account.input.elyby.login.label": {
+    "message": "Никнейм или Email"
+  },
+  "astralrinth.app.minecraft-account.input.elyby.login.placeholder": {
+    "message": "Ваш никнейм или email в Ely.by..."
+  },
+  "astralrinth.app.minecraft-account.input.elyby.password.label": {
+    "message": "Пароль"
+  },
+  "astralrinth.app.minecraft-account.input.elyby.password.placeholder": {
+    "message": "Пароль от аккаунта Ely.by..."
+  },
+  "astralrinth.app.minecraft-account.input.elyby.two-factor.header": {
+    "message": "Двухфакторная аутентификация Ely.by"
+  },
+  "astralrinth.app.minecraft-account.input.elyby.two-factor.label": {
+    "message": "Код 2FA"
+  },
+  "astralrinth.app.minecraft-account.input.elyby.two-factor.placeholder": {
+    "message": "Введите код из приложения-аутентификатора..."
+  },
   "astralrinth.app.minecraft-account.input.tlauncher.header": {
     "message": "Авторизация TLauncher"
   },

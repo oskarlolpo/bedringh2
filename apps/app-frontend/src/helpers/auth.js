@@ -100,4 +100,18 @@ export async function bedringh_login(name, token) {
 	return await invoke('plugin:auth|bedringh_login', { name, token: token || null })
 }
 
+/**
+ * Authenticates via Ely.by account or Ely.by offline mode
+ * @param {string} name
+ * @param {string} [password]
+ * @param {string} [twoFactor]
+ */
+export async function elyby_login(name, password, twoFactor) {
+	return await invoke('plugin:auth|elyby_login', {
+		name,
+		password: password || null,
+		twoFactor: twoFactor || null,
+	})
+}
+
 

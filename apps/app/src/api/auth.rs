@@ -11,6 +11,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             bedringh_login,
             klauncher_login,
             tlauncher_login,
+            elyby_login,
             check_reachable,
             login,
             remove_user,
@@ -46,6 +47,17 @@ pub async fn klauncher_login(name: &str, password: Option<&str>) -> Result<Crede
 #[tauri::command]
 pub async fn tlauncher_login(name: &str, password: Option<&str>) -> Result<Credentials> {
     let credentials = minecraft_auth::tlauncher_auth(name, password).await?;
+    Ok(credentials)
+}
+
+/// Authenticate with Ely.by account or Ely.by offline mode
+#[tauri::command]
+pub async fn elyby_login(
+    name: &str,
+    password: Option<&str>,
+    two_factor: Option<&str>,
+) -> Result<Credentials> {
+    let credentials = minecraft_auth::elyby_auth(name, password, two_factor).await?;
     Ok(credentials)
 }
 

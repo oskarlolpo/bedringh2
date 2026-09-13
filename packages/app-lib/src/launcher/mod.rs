@@ -41,6 +41,7 @@ pub mod job;
 pub mod klauncher;
 pub mod tlauncher;
 pub mod bedringh;
+pub mod elyby;
 pub mod pe;
 pub mod quick_play_version;
 
@@ -1271,6 +1272,39 @@ pub async fn launch_minecraft(
                         extra_jvm_args.push(format!("-javaagent:{}=http://2.26.87.126:3100", injector_path.to_string_lossy()));
                     } else {
                         tracing::warn!("Failed to prepare Bedringh authlib-injector Java agent!");
+                    }
+                } else if elyby::is_elyby_user(&credentials.access_token, &credentials.refresh_token) {
+                    let username = credentials.offline_profile.name.clone();
+                    let instance_dir_clone = instance_path.clone();
+                    let libraries_dir_clone = state.directories.libraries_dir();
+                    tokio::spawn(async move {
+                        let client = &*crate::api::minecraft_skins::KL_CLIENT;
+                        let skin_url = format!("http://skinsystem.ely.by/textures/skins/{}.png", username);
+                        if let Ok(res) = client.get(&skin_url).send().await {
+                            if res.status().is_success() {
+                                if let Ok(skin_bytes) = res.bytes().await {
+                                    let mut cape_bytes = None;
+                                    let cape_url = format!("http://skinsystem.ely.by/cloaks/{}.png", username);
+                                    if let Ok(cres) = client.get(&cape_url).send().await {
+                                        if cres.status().is_success() {
+                                            if let Ok(cb) = cres.bytes().await {
+                                                if !cb.is_empty() {
+                                                    cape_bytes = Some(cb);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    bedringh::sync_skin_to_instance(&instance_dir_clone, Some(&libraries_dir_clone), &username, &skin_bytes, cape_bytes.as_deref().map(|b| b.as_ref()));
+                                }
+                            }
+                        }
+                    });
+
+                    if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
+                        tracing::info!("Injecting Ely.by authlib-injector Java agent: {:?}", injector_path);
+                        extra_jvm_args.push(format!("-javaagent:{}={}", injector_path.to_string_lossy(), elyby::ELYBY_AUTHLIB_API));
+                    } else {
+                        tracing::warn!("Failed to prepare authlib-injector for Ely.by!");
                     }
                 }
                 extra_jvm_args

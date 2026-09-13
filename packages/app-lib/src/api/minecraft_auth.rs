@@ -81,6 +81,16 @@ pub async fn tlauncher_auth(
 }
 
 #[tracing::instrument]
+pub async fn elyby_auth(
+    name: &str,
+    password: Option<&str>,
+    two_factor: Option<&str>,
+) -> crate::Result<Credentials> {
+    let state = State::get().await?;
+    crate::state::elyby_auth(name, password, two_factor, &state.pool).await
+}
+
+#[tracing::instrument]
 pub async fn get_default_user() -> crate::Result<Option<uuid::Uuid>> {
     let state = State::get().await?;
     let user = Credentials::get_active(&state.pool).await?;

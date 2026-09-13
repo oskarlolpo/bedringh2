@@ -132,6 +132,12 @@
 					</button>
 				</ButtonStyled>
 				<ButtonStyled class="w-full" color="brand" type="outlined">
+					<button :disabled="loginDisabled || elyByLoginDisabled" @click="addElyByAccount()">
+						<PlusIcon />
+						{{ formatMessage(messages.signInWithElyBy) }}
+					</button>
+				</ButtonStyled>
+				<ButtonStyled class="w-full" color="brand" type="outlined">
 					<button :disabled="loginDisabled || offlineLoginDisabled" @click="addOfflineAccount()">
 						<PlusIcon />
 						{{ formatMessage(messages.createOfflineAccount) }}
@@ -147,16 +153,17 @@
 		v-model:k-launcher-password="kLauncherPassword"
 		v-model:t-launcher-login-value="tLauncherLoginValue"
 		v-model:t-launcher-password="tLauncherPassword"
-		:ely-by-login-disabled="false"
-		ely-by-login-value=""
-		ely-by-password=""
-		ely-by-two-factor-code=""
+		v-model:ely-by-login-value="elyByLoginValue"
+		v-model:ely-by-password="elyByPassword"
+		v-model:ely-by-two-factor-code="elyByTwoFactorCode"
+		:ely-by-login-disabled="elyByLoginDisabled"
 		:offline-login-disabled="offlineLoginDisabled"
 		:k-launcher-login-disabled="kLauncherLoginDisabled"
 		:t-launcher-login-disabled="tLauncherLoginDisabled"
 		@submit-offline="addOfflineProfile"
 		@submit-klauncher="addKLauncherProfile"
 		@submit-tlauncher="addTLauncherProfile"
+		@submit-elyby="addElyByProfile"
 	/>
 	<BedringhAuthModal ref="bedringhAuthModal" @success="onBedringhAuthSuccess" />
 </template>
@@ -234,6 +241,10 @@ const kLauncherLoginDisabled = ref(false)
 const tLauncherLoginValue = ref('')
 const tLauncherPassword = ref('')
 const tLauncherLoginDisabled = ref(false)
+const elyByLoginValue = ref('')
+const elyByPassword = ref('')
+const elyByTwoFactorCode = ref('')
+const elyByLoginDisabled = ref(false)
 
 async function generateLocalSteveHead() {
 	try {
@@ -299,8 +310,11 @@ async function fetchAccountHead(account: MinecraftCredential) {
 		} else if (accountType === 'Bedringh ID') {
 			// Bedringh ID accounts: mc-heads resolution by username
 			skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
+		} else if (accountType === 'Ely.by') {
+			// Ely.by accounts: fetch skin from Ely.by textures API
+			skinUrl = `http://skinsystem.ely.by/textures/skins/${encodeURIComponent(name)}.png`
 		} else {
-			// Offline / Ely.by / unknown: no reliable skin source
+			// Offline / unknown: no reliable skin source
 			return
 		}
 
@@ -547,6 +561,10 @@ const messages = defineMessages({
 		id: 'minecraft-account.sign-in-tlauncher',
 		defaultMessage: 'Sign in with TLauncher',
 	},
+	signInWithElyBy: {
+		id: 'minecraft-account.sign-in-elyby',
+		defaultMessage: 'Sign in with Ely.by',
+	},
 })
 
 function addOfflineAccount() {
@@ -635,6 +653,39 @@ async function addTLauncherProfile() {
 		tLauncherLoginDisabled.value = false
 		tLauncherLoginValue.value = ''
 		tLauncherPassword.value = ''
+	}
+}
+
+function addElyByAccount() {
+	accountsInputModals.value?.showElyBy()
+}
+
+async function addElyByProfile() {
+	if (!elyByLoginValue.value) return
+
+	const trimmedName = elyByLoginValue.value.trim()
+	if (trimmedName.length < 3 || trimmedName.length > 50) {
+		handleError('Логин должен быть от 3 до 50 символов.')
+		return
+	}
+
+	try {
+		elyByLoginDisabled.value = true
+		accountsInputModals.value?.hideElyBy()
+		const result = await import('@/helpers/auth').then(m =>
+			m.elyby_login(trimmedName, elyByPassword.value || null, elyByTwoFactorCode.value || null)
+		)
+		if (result) {
+			await setAccount(result)
+			await refreshValues()
+		}
+	} catch (error) {
+		handleError(error)
+	} finally {
+		elyByLoginDisabled.value = false
+		elyByLoginValue.value = ''
+		elyByPassword.value = ''
+		elyByTwoFactorCode.value = ''
 	}
 }
 

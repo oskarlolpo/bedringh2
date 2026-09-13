@@ -79,6 +79,8 @@ import SteveSkin from '@/assets/skins/steve.png'
 import ChibiAvatar from '@/components/ui/chibi/ChibiAvatar.vue'
 import AccountsCard from '@/components/ui/AccountsCard.vue'
 import BedringhCloudPackModal from '@/components/ui/astralrinth/packs/BedringhCloudPackModal.vue'
+import FriendsDrawer from '@/components/ui/astralrinth/friends/FriendsDrawer.vue'
+import { useBedringhFriends } from '@/services/bedringh-friends'
 import AppActionBar from '@/components/ui/AppActionBar.vue'
 import Breadcrumbs from '@/components/ui/Breadcrumbs.vue'
 import ErrorModal from '@/components/ui/ErrorModal.vue'
@@ -812,12 +814,25 @@ async function setupApp() {
 	appSettings.devMode = developer_mode
 	stateInitialized.value = true
 
-	// Проверяем облачные настройки и список серверов Bedringh ID при старте
+	// Проверяем облачные настройки, список серверов и службу друзей Bedringh ID при старте
 	try {
 		const { syncOnStartup } = await import('@/services/bedringh-settings-sync')
 		void syncOnStartup()
 		const { syncServersOnStartup } = await import('@/services/bedringh-servers-sync')
 		void syncServersOnStartup()
+		const { startFriendsPolling, updatePresence } = await import('@/services/bedringh-friends')
+		startFriendsPolling()
+		void updatePresence('online')
+		const { process_listener } = await import('@/helpers/events')
+		process_listener((e) => {
+			if (e.event === 'launched') {
+				void updatePresence('in_game', {
+					instanceName: e.instance_name || e.profile_path_id || 'Minecraft',
+				})
+			} else if (e.event === 'finished') {
+				void updatePresence('online')
+			}
+		})
 	} catch (e) {
 		console.warn('[Bedringh] Ошибка фоновой синхронизации при запуске:', e)
 	}
@@ -1103,7 +1118,11 @@ const updateToPlayModal = ref()
 const modrinthLoginModal = ref()
 const appSettingsModal = ref()
 const cloudPackModal = ref()
+const friendsDrawer = ref()
+const { totalIncoming: totalIncomingFriends } = useBedringhFriends()
+
 provide('openBedringhCloudPackModal', (code) => cloudPackModal.value?.show(code))
+provide('openBedringhFriends', () => friendsDrawer.value?.show())
 window.addEventListener('open-bedringh-cloud-pack', (e) => {
 	cloudPackModal.value?.show(e.detail?.code)
 })
@@ -2121,6 +2140,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 			<ModrinthAccountRequiredModal ref="modrinthLoginModal" :request-auth="requestModrinthAuth" />
 		</Suspense>
 		<BedringhCloudPackModal ref="cloudPackModal" />
+		<FriendsDrawer ref="friendsDrawer" />
 		<CreationFlowModal
 			ref="installationModal"
 			type="instance"
@@ -2188,6 +2208,18 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 				"
 			>
 				<ServerStackIcon />
+			</NavButton>
+			<NavButton
+				v-tooltip.right="'Друзья (Bedringh ID)'"
+				:to="() => friendsDrawer?.show()"
+			>
+				<div class="relative flex items-center justify-center">
+					<UsersIcon />
+					<span
+						v-if="totalIncomingFriends > 0"
+						class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-solid border-bg-raised animate-pulse"
+					></span>
+				</div>
 			</NavButton>
 			<suspense>
 				<QuickInstanceSwitcher />

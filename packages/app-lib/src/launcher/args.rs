@@ -362,6 +362,10 @@ fn parse_minecraft_argument(
 ) -> crate::Result<String> {
     let raw_token = if access_token.starts_with("kl_") {
         &access_token["kl_".len()..]
+    } else if access_token.starts_with("elyby_") {
+        &access_token["elyby_".len()..]
+    } else if access_token.starts_with("tl_") {
+        &access_token["tl_".len()..]
     } else {
         access_token
     };
