@@ -1306,6 +1306,13 @@ pub async fn launch_minecraft(
                     } else {
                         tracing::warn!("Failed to prepare authlib-injector for Ely.by!");
                     }
+                } else if !credentials.refresh_token.starts_with("M.") {
+                    if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
+                        tracing::info!("Injecting authlib-injector for non-MSA/KLauncher/Offline account to enable multiplayer: {:?}", injector_path);
+                        extra_jvm_args.push(format!("-javaagent:{}=http://2.26.87.126:3100", injector_path.to_string_lossy()));
+                    } else {
+                        tracing::warn!("Failed to prepare authlib-injector for non-MSA account!");
+                    }
                 }
                 extra_jvm_args
             },

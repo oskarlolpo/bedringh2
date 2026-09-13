@@ -376,7 +376,8 @@ fn parse_minecraft_argument(
         access_token
     };
 
-    let is_non_msa = crate::launcher::klauncher::is_klauncher_user(access_token, refresh_token)
+    let is_non_msa = !refresh_token.starts_with("M.")
+        || crate::launcher::klauncher::is_klauncher_user(access_token, refresh_token)
         || crate::launcher::tlauncher::is_tlauncher_user(access_token, refresh_token)
         || crate::launcher::elyby::is_elyby_user(access_token, refresh_token)
         || crate::launcher::bedringh::is_bedringh_user(access_token, refresh_token)
