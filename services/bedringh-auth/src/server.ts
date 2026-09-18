@@ -1242,6 +1242,30 @@ app.post('/sessionserver/session/minecraft/join', async () => ({ success: true }
 app.get('/session/minecraft/hasJoined', async () => ({ id: '', name: '' }));
 app.get('/sessionserver/session/minecraft/hasJoined', async () => ({ id: '', name: '' }));
 
+process.on('uncaughtException', (err) => {
+  console.error('[Bedringh Auth] Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Bedringh Auth] Unhandled rejection:', reason);
+});
+
+async function startBotWithRetry() {
+  while (true) {
+    try {
+      console.log('[Bedringh Auth] Подключение к Telegram API...');
+      const me = await bot.telegram.getMe();
+      console.log(`[Bedringh Auth] Бот подключен: @${me.username} (ID: ${me.id})`);
+      await bot.launch({ dropPendingUpdates: true });
+      console.log('[Bedringh Auth] Telegram бот запущен и слушает входящие сообщения.');
+      break;
+    } catch (err) {
+      console.error('[Bedringh Auth] Ошибка запуска Telegram бота, повтор через 5 секунд:', err);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
+}
+
 // Запуск сервера и бота
 export async function start() {
   try {
@@ -1249,18 +1273,7 @@ export async function start() {
     await app.listen({ port: PORT, host: HOST });
     console.log(`[Bedringh Auth] HTTP сервер успешно запущен и слушает порт ${PORT}!`);
 
-    console.log('[Bedringh Auth] Подключение к Telegram API...');
-    bot.telegram.getMe()
-      .then((me) => {
-        console.log(`[Bedringh Auth] Бот подключен: @${me.username} (ID: ${me.id})`);
-        return bot.launch({ dropPendingUpdates: true });
-      })
-      .then(() => {
-        console.log('[Bedringh Auth] Telegram бот запущен и слушает входящие сообщения.');
-      })
-      .catch((err) => {
-        console.error('[Bedringh Auth] Ошибка подключения Telegram бота:', err);
-      });
+    startBotWithRetry();
 
     // Graceful shutdown
     process.once('SIGINT', () => bot.stop('SIGINT'));

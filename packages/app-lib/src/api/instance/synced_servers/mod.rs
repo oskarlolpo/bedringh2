@@ -6,7 +6,7 @@ mod types;
 
 const SERVERS_FILE: &str = "servers.dat";
 
-pub(crate) use self::codec::server_data;
+pub(crate) use self::codec::{read_servers, server_data, write_servers};
 pub use self::modpack::{capture_modpack_servers, clear_modpack_servers};
 pub(crate) use self::operations::{
     add_user_server, list_server_records, remove_server_by_index,

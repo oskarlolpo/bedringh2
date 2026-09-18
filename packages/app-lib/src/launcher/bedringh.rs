@@ -33,9 +33,14 @@ pub fn prepare_bedringh_authlib(libraries_dir: &Path) -> Option<PathBuf> {
 
     for url in urls {
         tracing::info!("Downloading authlib-injector from {}", url);
-        let status = std::process::Command::new("curl.exe")
-            .args(["-f", "-sL", url, "-o", &target_jar.to_string_lossy()])
-            .status();
+        let mut cmd = std::process::Command::new("curl.exe");
+        cmd.args(["-f", "-sL", url, "-o", &target_jar.to_string_lossy()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        let status = cmd.status();
 
         if let Ok(st) = status {
             if st.success() && target_jar.exists() {
@@ -70,15 +75,21 @@ pub fn prepare_bedringh_csl(libraries_dir: &Path) -> Option<PathBuf> {
     }
 
     let urls = [
+        "http://127.0.0.1:3100/downloads/CustomSkinLoader.jar",
         "http://2.26.87.126:3100/downloads/CustomSkinLoader.jar",
         "https://github.com/xfl03/MCCustomSkinLoader/releases/download/15.0.1/CustomSkinLoader_Universal-15.0.1.jar",
     ];
 
     for url in urls {
         tracing::info!("Downloading CustomSkinLoader from {}", url);
-        let status = std::process::Command::new("curl.exe")
-            .args(["-f", "-sL", url, "-o", &target_jar.to_string_lossy()])
-            .status();
+        let mut cmd = std::process::Command::new("curl.exe");
+        cmd.args(["-f", "-sL", url, "-o", &target_jar.to_string_lossy()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        let status = cmd.status();
 
         if let Ok(st) = status {
             if st.success() && target_jar.exists() {
@@ -175,9 +186,11 @@ pub fn sync_skin_to_instance(
     let target_skin = skins_dir.join(format!("{}.png", username));
     let _ = std::fs::write(&target_skin, skin_bytes);
 
+    let target_cape = capes_dir.join(format!("{}.png", username));
     if let Some(cape) = cape_bytes {
-        let target_cape = capes_dir.join(format!("{}.png", username));
         let _ = std::fs::write(&target_cape, cape);
+    } else {
+        let _ = std::fs::remove_file(&target_cape);
     }
 
     // Configure CustomSkinLoader.json to prioritize LocalSkin and disable cache completely
@@ -228,3 +241,12 @@ pub fn sync_skin_to_all_instances(
         }
     }
 }
+
+pub fn clear_skin_from_instance(instance_dir: &Path, username: &str) {
+    let local_skin_dir = instance_dir.join("CustomSkinLoader").join("LocalSkin");
+    let target_skin = local_skin_dir.join("skins").join(format!("{}.png", username));
+    let target_cape = local_skin_dir.join("capes").join(format!("{}.png", username));
+    let _ = std::fs::remove_file(target_skin);
+    let _ = std::fs::remove_file(target_cape);
+}
+

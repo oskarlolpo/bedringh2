@@ -993,6 +993,8 @@ impl Process {
             return Ok(());
         };
 
+        crate::launcher::klauncher::notify_playing_server(instance_id, host, port).await;
+
         let state = crate::State::get().await?;
         crate::state::server_join_log::JoinLogEntry {
             instance_id: instance_id.to_owned(),
@@ -1095,6 +1097,7 @@ impl Process {
         }
 
         state.process_manager.remove(uuid);
+        crate::launcher::klauncher::stop_klauncher_bridge(&instance_id).await;
         clear_persisted_process(&state, persisted_process).await;
         emit_process(
             &instance_id,

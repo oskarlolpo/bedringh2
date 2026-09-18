@@ -956,6 +956,116 @@ fn link_project_and_version(
     }
 }
 
+async fn sync_launch_skin(
+    instance_dir: &std::path::Path,
+    libraries_dir: &std::path::Path,
+    credentials: &Credentials,
+) {
+    let username = credentials.offline_profile.name.clone();
+    let client = &*crate::api::minecraft_skins::KL_CLIENT;
+
+    if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
+        let user_uuid = credentials.offline_profile.id.to_string();
+        let _ = client
+            .post("http://2.26.87.126:3100/api/session/register")
+            .json(&serde_json::json!({
+                "username": username,
+                "uuid": user_uuid,
+            }))
+            .send()
+            .await;
+
+        if let Ok(res) = client
+            .get(format!("http://2.26.87.126:3100/textures/skins/{}.png", username.to_lowercase()))
+            .send()
+            .await
+        {
+            if res.status().is_success() {
+                if let Ok(skin_bytes) = res.bytes().await {
+                    let mut cape_bytes = None;
+                    if let Ok(skin_info) = client
+                        .get(format!("http://2.26.87.126:3100/api/user/{}/skin", username))
+                        .send()
+                        .await
+                    {
+                        if let Ok(json) = skin_info.json::<serde_json::Value>().await {
+                            if let Some(cape_url) = json.get("capeUrl").and_then(|u| u.as_str()) {
+                                if let Ok(cres) = client.get(cape_url).send().await {
+                                    if let Ok(cb) = cres.bytes().await {
+                                        cape_bytes = Some(cb);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    klauncher::restore_bedringh_csl(instance_dir);
+                    bedringh::sync_skin_to_instance(
+                        instance_dir,
+                        Some(libraries_dir),
+                        &username,
+                        &skin_bytes,
+                        cape_bytes.as_deref().map(|b| b.as_ref()),
+                    );
+                }
+            }
+        }
+    } else if klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token) {
+        // KLauncher handles skins natively through KLauncher Authlib.
+        // Clean up CustomSkinLoader and old LocalSkin files so they do not conflict or display Bedringh skin.
+        klauncher::cleanup_klauncher_instance(instance_dir);
+        klauncher::ensure_klauncher_config();
+        klauncher::ensure_envyworld_server(instance_dir).await;
+    } else if elyby::is_elyby_user(&credentials.access_token, &credentials.refresh_token) {
+        let skin_url = format!("http://skinsystem.ely.by/textures/skins/{}.png", username);
+        if let Ok(res) = client.get(&skin_url).send().await {
+            if res.status().is_success() {
+                if let Ok(skin_bytes) = res.bytes().await {
+                    let mut cape_bytes = None;
+                    let cape_url = format!("http://skinsystem.ely.by/cloaks/{}.png", username);
+                    if let Ok(cres) = client.get(&cape_url).send().await {
+                        if cres.status().is_success() {
+                            if let Ok(cb) = cres.bytes().await {
+                                if !cb.is_empty() {
+                                    cape_bytes = Some(cb);
+                                }
+                            }
+                        }
+                    }
+                    bedringh::sync_skin_to_instance(
+                        instance_dir,
+                        Some(libraries_dir),
+                        &username,
+                        &skin_bytes,
+                        cape_bytes.as_deref().map(|b| b.as_ref()),
+                    );
+                }
+            }
+        }
+    } else if !credentials.refresh_token.starts_with("M.") {
+        // Pure Offline account
+        let mut found = false;
+        if let Ok(sres) = client.get(format!("https://mc-heads.net/skin/{}", username)).send().await {
+            if sres.status().is_success() {
+                if let Ok(sb) = sres.bytes().await {
+                    if !sb.is_empty() {
+                        bedringh::sync_skin_to_instance(
+                            instance_dir,
+                            Some(libraries_dir),
+                            &username,
+                            &sb,
+                            None,
+                        );
+                        found = true;
+                    }
+                }
+            }
+        }
+        if !found {
+            bedringh::clear_skin_from_instance(instance_dir, &username);
+        }
+    }
+}
+
 #[tracing::instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
 pub async fn launch_minecraft(
@@ -1183,6 +1293,12 @@ pub async fn launch_minecraft(
 
     let rpc_server = RpcServerBuilder::new().launch().await?;
 
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_millis(2500),
+        sync_launch_skin(&instance_path, &state.directories.libraries_dir(), credentials),
+    )
+    .await;
+
     command.args(
         args::get_jvm_arguments(
             args.get(&d::minecraft::ArgumentType::Jvm)
@@ -1206,11 +1322,20 @@ pub async fn launch_minecraft(
                 let use_skins = settings.as_ref().and_then(|s| s.feature_flags.get(&crate::state::FeatureFlag::KLauncherSkinSystem).copied()).unwrap_or(true);
 
                 if (is_kl && use_klmaster) || use_klmaster_always {
-                    klauncher::inject_klmaster_mod(&instance_path, content_set.loader, &content_set.game_version);
+                    klauncher::inject_klmaster_mod(
+                        &state.directories.libraries_dir(),
+                        &instance_path,
+                        content_set.loader,
+                        &content_set.game_version,
+                    );
                 }
 
                 if is_kl && use_skins {
-                    klauncher::prepare_klauncher_authlib(&state.directories.libraries_dir(), &raw_cp)
+                    klauncher::prepare_klauncher_authlib(
+                        &state.directories.libraries_dir(),
+                        &raw_cp,
+                        &content_set.game_version,
+                    )
                 } else if is_tl {
                     tlauncher::prepare_tlauncher_authlib(&state.directories.libraries_dir(), &raw_cp)
                 } else {
@@ -1222,96 +1347,29 @@ pub async fn launch_minecraft(
             *memory,
             {
                 let mut extra_jvm_args = Vec::from(java_args);
+                let is_kl = klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token);
                 if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
-                    let username = credentials.offline_profile.name.clone();
-                    let user_uuid = credentials.offline_profile.id.to_string();
-                    let instance_dir_clone = instance_path.clone();
-                    let libraries_dir_clone = state.directories.libraries_dir();
-                    tokio::spawn(async move {
-                        let client = &*crate::api::minecraft_skins::KL_CLIENT;
-                        let _ = client
-                            .post("http://2.26.87.126:3100/api/session/register")
-                            .json(&serde_json::json!({
-                                "username": username,
-                                "uuid": user_uuid,
-                            }))
-                            .send()
-                            .await;
-
-                        if let Ok(res) = client
-                            .get(format!("http://2.26.87.126:3100/textures/skins/{}.png", username.to_lowercase()))
-                            .send()
-                            .await
-                        {
-                            if res.status().is_success() {
-                                if let Ok(skin_bytes) = res.bytes().await {
-                                    let mut cape_bytes = None;
-                                    if let Ok(skin_info) = client
-                                        .get(format!("http://2.26.87.126:3100/api/user/{}/skin", username))
-                                        .send()
-                                        .await
-                                    {
-                                        if let Ok(json) = skin_info.json::<serde_json::Value>().await {
-                                            if let Some(cape_url) = json.get("capeUrl").and_then(|u| u.as_str()) {
-                                                if let Ok(cres) = client.get(cape_url).send().await {
-                                                    if let Ok(cb) = cres.bytes().await {
-                                                        cape_bytes = Some(cb);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    bedringh::sync_skin_to_instance(&instance_dir_clone, Some(&libraries_dir_clone), &username, &skin_bytes, cape_bytes.as_deref().map(|b| b.as_ref()));
-                                }
-                            }
-                        }
-                    });
-
                     if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
                         tracing::info!("Injecting Bedringh authlib-injector Java agent: {:?}", injector_path);
-                        extra_jvm_args.push(format!("-javaagent:{}=http://2.26.87.126:3100", injector_path.to_string_lossy()));
+                        extra_jvm_args.push(format!("-javaagent:{}=http://127.0.0.1:3100", injector_path.to_string_lossy()));
                     } else {
                         tracing::warn!("Failed to prepare Bedringh authlib-injector Java agent!");
                     }
                 } else if elyby::is_elyby_user(&credentials.access_token, &credentials.refresh_token) {
-                    let username = credentials.offline_profile.name.clone();
-                    let instance_dir_clone = instance_path.clone();
-                    let libraries_dir_clone = state.directories.libraries_dir();
-                    tokio::spawn(async move {
-                        let client = &*crate::api::minecraft_skins::KL_CLIENT;
-                        let skin_url = format!("http://skinsystem.ely.by/textures/skins/{}.png", username);
-                        if let Ok(res) = client.get(&skin_url).send().await {
-                            if res.status().is_success() {
-                                if let Ok(skin_bytes) = res.bytes().await {
-                                    let mut cape_bytes = None;
-                                    let cape_url = format!("http://skinsystem.ely.by/cloaks/{}.png", username);
-                                    if let Ok(cres) = client.get(&cape_url).send().await {
-                                        if cres.status().is_success() {
-                                            if let Ok(cb) = cres.bytes().await {
-                                                if !cb.is_empty() {
-                                                    cape_bytes = Some(cb);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    bedringh::sync_skin_to_instance(&instance_dir_clone, Some(&libraries_dir_clone), &username, &skin_bytes, cape_bytes.as_deref().map(|b| b.as_ref()));
-                                }
-                            }
-                        }
-                    });
-
                     if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
                         tracing::info!("Injecting Ely.by authlib-injector Java agent: {:?}", injector_path);
                         extra_jvm_args.push(format!("-javaagent:{}={}", injector_path.to_string_lossy(), elyby::ELYBY_AUTHLIB_API));
                     } else {
                         tracing::warn!("Failed to prepare authlib-injector for Ely.by!");
                     }
-                } else if !credentials.refresh_token.starts_with("M.") {
-                    if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
-                        tracing::info!("Injecting authlib-injector for non-MSA/KLauncher/Offline account to enable multiplayer: {:?}", injector_path);
-                        extra_jvm_args.push(format!("-javaagent:{}=http://2.26.87.126:3100", injector_path.to_string_lossy()));
-                    } else {
-                        tracing::warn!("Failed to prepare authlib-injector for non-MSA account!");
+                } else if is_kl {
+                    // For KLauncher, KLauncher Authlib natively validates multiplayer and skin loading.
+                    // For Vanilla / OptiFine, inject klagent agent if available.
+                    if content_set.loader == ModLoader::Vanilla {
+                        if let Some(agent_path) = klauncher::prepare_klagent(&state.directories.libraries_dir()) {
+                            tracing::info!("Injecting KLAgent Java agent for Vanilla: {:?}", agent_path);
+                            extra_jvm_args.push(format!("-javaagent:{}", agent_path.to_string_lossy()));
+                        }
                     }
                 }
                 extra_jvm_args
@@ -1324,6 +1382,7 @@ pub async fn launch_minecraft(
                 .as_ref()
                 .and_then(|x| x.get(&LoggingSide::Client)),
             rpc_server.address(),
+            klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token),
         )?
         .into_iter(),
     );
@@ -1455,7 +1514,7 @@ pub async fn launch_minecraft(
 
     // Create Minecraft child by inserting it into the state
     // This also spawns the process and prepares the subsequent processes
-    state
+    let res = state
         .process_manager
         .insert_new_process(
             &instance.id,
@@ -1498,5 +1557,16 @@ pub async fn launch_minecraft(
                 Ok(())
             },
         )
-        .await
+        .await;
+
+    if res.is_ok() {
+        let is_kl = klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token)
+            || instance.name.to_lowercase().contains("klvoice")
+            || instance.name.to_lowercase().contains("envy");
+        if is_kl {
+            klauncher::start_klauncher_bridge(&instance.id, &credentials.offline_profile.name).await;
+        }
+    }
+
+    res
 }

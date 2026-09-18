@@ -124,6 +124,7 @@ pub fn get_jvm_arguments(
     quick_play_version: QuickPlayVersion,
     log_config: Option<&LoggingConfiguration>,
     ipc_addr: SocketAddr,
+    is_klauncher: bool,
 ) -> crate::Result<Vec<String>> {
     let mut parsed_arguments = Vec::new();
 
@@ -139,6 +140,7 @@ pub fn get_jvm_arguments(
                     class_paths,
                     version_name,
                     java_arch,
+                    is_klauncher,
                 )
             },
             java_arch,
@@ -238,8 +240,11 @@ fn parse_jvm_argument(
     class_paths: &str,
     version_name: &str,
     java_arch: &str,
+    is_klauncher: bool,
 ) -> crate::Result<String> {
     argument.retain(|c| !c.is_whitespace());
+    let launcher_name = if is_klauncher { "KLauncher" } else { "theseus" };
+    let launcher_version = if is_klauncher { "1.32.0" } else { env!("CARGO_PKG_VERSION") };
     Ok(argument
         .replace(
             "${natives_directory}",
@@ -266,8 +271,8 @@ fn parse_jvm_argument(
                 .to_string_lossy(),
         )
         .replace("${classpath_separator}", classpath_separator(java_arch))
-        .replace("${launcher_name}", "theseus")
-        .replace("${launcher_version}", env!("CARGO_PKG_VERSION"))
+        .replace("${launcher_name}", launcher_name)
+        .replace("${launcher_version}", launcher_version)
         .replace("${version_name}", version_name)
         .replace("${classpath}", class_paths))
 }
@@ -393,16 +398,21 @@ fn parse_minecraft_argument(
 
     let user_type = if is_non_msa { "mojang" } else { "msa" };
 
+    let is_kl = crate::launcher::klauncher::is_klauncher_user(access_token, refresh_token);
+    let client_id = if is_kl { "kl" } else { "c4502edb-87c6-40cb-b595-64a280cf8906" };
+    let auth_xuid = if is_kl { "kl" } else { "0" };
+    let auth_token = if is_kl { "kl" } else { raw_token };
+
     Ok(argument
-        .replace("${accessToken}", raw_token)
-        .replace("${auth_access_token}", raw_token)
-        .replace("${auth_session}", raw_token)
+        .replace("${accessToken}", auth_token)
+        .replace("${auth_access_token}", auth_token)
+        .replace("${auth_session}", auth_token)
         .replace("${auth_player_name}", username)
         // TODO: add auth xuid eventually
-        .replace("${auth_xuid}", "0")
+        .replace("${auth_xuid}", auth_xuid)
         .replace("${auth_uuid}", &uuid.simple().to_string())
         .replace("${uuid}", &uuid.simple().to_string())
-        .replace("${clientid}", "c4502edb-87c6-40cb-b595-64a280cf8906")
+        .replace("${clientid}", client_id)
         .replace("${user_properties}", "{}")
         .replace("${user_type}", user_type)
         .replace("${version_name}", version)
