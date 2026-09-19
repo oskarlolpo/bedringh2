@@ -90,7 +90,6 @@ import AppActionBar from '@/components/ui/AppActionBar.vue'
 import Breadcrumbs from '@/components/ui/Breadcrumbs.vue'
 import ErrorModal from '@/components/ui/ErrorModal.vue'
 import FriendsList from '@/components/ui/friends/FriendsList.vue'
-import HostingUpdateRequired from '@/components/ui/HostingUpdateRequired.vue'
 import AddServerToInstanceModal from '@/components/ui/install_flow/AddServerToInstanceModal.vue'
 import UnknownPackWarningModal from '@/components/ui/install_flow/UnknownPackWarningModal.vue'
 import IconEditorModal from '@/components/ui/instance_settings/icon-editor-modal/index.vue'
@@ -264,12 +263,7 @@ const forceSidebar = computed(
 )
 const sidebarVisible = computed(() => sidebarToggled.value || forceSidebar.value)
 const hostingRouteActive = computed(() => route.path.startsWith('/hosting'))
-const hostingUpdateRequired = computed(
-	() =>
-		hostingRouteActive.value &&
-		!!appUpdateState.availableUpdate.value &&
-		appUpdateState.updatesEnabled.value,
-)
+const hostingUpdateRequired = computed(() => false)
 const prideFundraiserEnabled = computed(
 	() => appSettings.getFeatureFlag('pride_fundraiser') && Date.now() < PRIDE_FUNDRAISER_END_DATE,
 )
@@ -280,17 +274,11 @@ const hostingIntercomIdentityKey = computed(() => {
 	return `${userId}:${serverId ?? 'hosting'}`
 })
 const hostingIntercom = useHostingIntercom({
-	enabled: computed(
-		() => hostingRouteActive.value && !hostingUpdateRequired.value && !!credentials.value?.session,
-	),
-	appId: 'ykeritl9',
-	fetchToken: fetchIntercomToken,
-	identityKey: hostingIntercomIdentityKey,
-	horizontalPadding: computed(() =>
-		sidebarVisible.value
-			? APP_SIDEBAR_WIDTH + INTERCOM_BUBBLE_DEFAULT_PADDING
-			: INTERCOM_BUBBLE_DEFAULT_PADDING,
-	),
+	enabled: computed(() => false),
+	appId: '',
+	fetchToken: async () => '',
+	identityKey: computed(() => ''),
+	horizontalPadding: computed(() => 0),
 })
 
 const notificationManager = new AppNotificationManager()
@@ -506,13 +494,7 @@ const authServerQuery = useQuery({
 	refetchOnWindowFocus: false,
 })
 
-const authUnreachable = computed(() => {
-	if (authServerQuery.isError.value && !authServerQuery.isLoading.value) {
-		console.warn('Failed to reach auth servers', authServerQuery.error.value)
-		return true
-	}
-	return false
-})
+const authUnreachable = computed(() => false)
 
 let unlistenEditMenu
 
@@ -614,7 +596,7 @@ const messages = defineMessages({
 	},
 	modrinthHosting: {
 		id: 'app.nav.modrinth-hosting',
-		defaultMessage: 'Modrinth Hosting',
+		defaultMessage: 'Серверы',
 	},
 	screenshots: {
 		id: 'app.nav.screenshots',
@@ -2461,16 +2443,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 					v-html="renderString(criticalErrorMessage.body ?? '')"
 				></div>
 			</Admonition>
-			<Admonition
-				v-if="authUnreachable"
-				type="warning"
-				:header="formatMessage(messages.authUnreachableHeader)"
-				class="m-6 mb-0"
-			>
-				{{ formatMessage(messages.authUnreachableBody) }}
-			</Admonition>
-			<HostingUpdateRequired v-if="hostingUpdateRequired" />
-			<RouterView v-else v-slot="{ Component }">
+			<RouterView v-slot="{ Component }">
 				<template v-if="Component">
 					<Suspense @pending="onSuspensePending" @resolve="onSuspenseResolve">
 						<KeepAlive include="LibraryPage">

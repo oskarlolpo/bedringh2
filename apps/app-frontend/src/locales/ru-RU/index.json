@@ -2949,5 +2949,221 @@
   },
   "settings.sidebar.label.display": {
     "message": "Отображение"
+  },
+  "server.view.tab.overview": {
+    "message": "Обзор и Консоль"
+  },
+  "server.view.tab.content": {
+    "message": "Контент"
+  },
+  "server.view.tab.files": {
+    "message": "Файлы"
+  },
+  "server.view.tab.settings": {
+    "message": "Настройки"
+  },
+  "server.view.all_servers": {
+    "message": "Все серверы"
+  },
+  "server.view.metric.cpu": {
+    "message": "Процессор"
+  },
+  "server.view.metric.ram": {
+    "message": "Память"
+  },
+  "server.view.metric.disk": {
+    "message": "Диск"
+  },
+  "server.view.metric.uptime": {
+    "message": "Аптайм"
+  },
+  "server.view.metric.status": {
+    "message": "Статус"
+  },
+  "server.view.metric.running": {
+    "message": "Работает"
+  },
+  "server.view.metric.stopped": {
+    "message": "Остановлен"
+  },
+  "server.view.metric.starting": {
+    "message": "Запуск..."
+  },
+  "server.view.action.start": {
+    "message": "Запустить сервер"
+  },
+  "server.view.action.stop": {
+    "message": "Остановить сервер"
+  },
+  "server.view.action.restart": {
+    "message": "Перезапустить сервер"
+  },
+  "server.view.action.add_content": {
+    "message": "Добавить плагины и моды"
+  },
+  "server.view.action.open_folder": {
+    "message": "Открыть папку сервера"
+  },
+  "server.view.action.change_icon": {
+    "message": "Сменить иконку сервера"
+  },
+  "server.view.action.copy_address": {
+    "message": "Скопировать адрес"
+  },
+  "server.view.action.delete": {
+    "message": "Удалить сервер"
+  },
+  "server.view.console.input_placeholder": {
+    "message": "Введите команду сервера (например: op, gamemode, whitelist)..."
+  },
+  "server.view.console.filter_placeholder": {
+    "message": "Фильтр логов..."
+  },
+  "server.view.console.clear": {
+    "message": "Очистить"
+  },
+  "server.view.console.copy_logs": {
+    "message": "Скопировать логи"
+  },
+  "server.view.jvm.heading": {
+    "message": "Параметры запуска и память JVM"
+  },
+  "server.view.jvm.description": {
+    "message": "Настройка выделения оперативной памяти, версии Java и флагов оптимизации запуска"
+  },
+  "server.view.jvm.min_ram": {
+    "message": "Минимальная память (-Xms)"
+  },
+  "server.view.jvm.max_ram": {
+    "message": "Максимальная память (-Xmx)"
+  },
+  "server.view.jvm.aikar_flags": {
+    "message": "Флаги оптимизации GC (Aikar's Flags)"
+  },
+  "server.view.jvm.aikar_flags_desc": {
+    "message": "Рекомендуемый набор флагов для стабильного TPS и минимальных задержек сборщика мусора"
+  },
+  "server.view.jvm.custom_args": {
+    "message": "Дополнительные аргументы JVM"
+  },
+  "server.view.jvm.custom_args_placeholder": {
+    "message": "например: -Dfile.encoding=UTF-8 -XX:+AlwaysPreTouch"
+  },
+  "server.view.jvm.java_path": {
+    "message": "Путь к исполняемому файлу Java"
+  },
+  "server.view.jvm.java_path_placeholder": {
+    "message": "По умолчанию (системный автопоиск)"
+  },
+  "server.view.jvm.save_btn": {
+    "message": "Сохранить параметры запуска"
+  },
+  "server.view.jvm.saved_success": {
+    "message": "Параметры запуска успешно сохранены"
+  },
+  "server.view.props.heading": {
+    "message": "Конфигурация server.properties"
+  },
+  "server.view.props.description": {
+    "message": "Управление параметрами игрового процесса, сложностью, сетью и миром"
+  },
+  "server.view.props.save_btn": {
+    "message": "Сохранить server.properties"
+  },
+  "server.view.props.search_placeholder": {
+    "message": "Поиск по настройкам (motd, pvp, port, gamemode)..."
+  },
+  "server.view.props.saved_success": {
+    "message": "Конфигурация server.properties успешно обновлена"
+  },
+  "server.view.props.gamemode.survival": {
+    "message": "Выживание"
+  },
+  "server.view.props.gamemode.creative": {
+    "message": "Творческий"
+  },
+  "server.view.props.gamemode.adventure": {
+    "message": "Приключение"
+  },
+  "server.view.props.gamemode.spectator": {
+    "message": "Наблюдатель"
+  },
+  "server.view.props.difficulty.peaceful": {
+    "message": "Мирный"
+  },
+  "server.view.props.difficulty.easy": {
+    "message": "Легкий"
+  },
+  "server.view.props.difficulty.normal": {
+    "message": "Нормальный"
+  },
+  "server.view.props.difficulty.hard": {
+    "message": "Сложный"
+  },
+  "server.view.delete_modal.title": {
+    "message": "Удалить сервер"
+  },
+  "server.view.delete_modal.description": {
+    "message": "Вы уверены, что хотите удалить этот сервер? Все файлы и миры сервера будут удалены безвозвратно."
+  },
+  "server.view.delete_modal.confirm": {
+    "message": "Удалить навсегда"
+  },
+  "server.view.delete_modal.cancel": {
+    "message": "Отмена"
+  },
+  "servers.list.title": {
+    "message": "Мои серверы"
+  },
+  "servers.list.create_btn": {
+    "message": "Создать сервер"
+  },
+  "servers.list.browse_btn": {
+    "message": "Каталог серверов"
+  },
+  "servers.list.empty_title": {
+    "message": "Локальные серверы пока не созданы"
+  },
+  "servers.list.empty_desc": {
+    "message": "Создайте свой собственный сервер Minecraft в один клик с поддержкой плагинов или модов"
+  },
+  "servers.browse.title": {
+    "message": "Каталог Minecraft серверов"
+  },
+  "servers.browse.search_placeholder": {
+    "message": "Поиск серверов..."
+  },
+  "servers.browse.create_banner_title": {
+    "message": "Создайте собственный локальный сервер"
+  },
+  "servers.browse.create_banner_desc": {
+    "message": "Запускайте Paper, Purpur или Fabric прямо на своем компьютере"
+  },
+  "servers.create.title": {
+    "message": "Создание Minecraft сервера"
+  },
+  "servers.create.name_label": {
+    "message": "Название сервера"
+  },
+  "servers.create.name_placeholder": {
+    "message": "Мой Minecraft сервер"
+  },
+  "servers.create.core_label": {
+    "message": "Ядро сервера"
+  },
+  "servers.create.version_label": {
+    "message": "Версия игры"
+  },
+  "servers.create.port_label": {
+    "message": "Порт сервера"
+  },
+  "servers.create.ram_label": {
+    "message": "Выделенная память (МБ)"
+  },
+  "servers.create.submit_btn": {
+    "message": "Создать и установить"
+  },
+  "servers.create.cancel_btn": {
+    "message": "Отмена"
   }
 }

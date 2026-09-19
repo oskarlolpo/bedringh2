@@ -1349,12 +1349,9 @@ pub async fn launch_minecraft(
                 let mut extra_jvm_args = Vec::from(java_args);
                 let is_kl = klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token);
                 if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
-                    if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
-                        tracing::info!("Injecting Bedringh authlib-injector Java agent: {:?}", injector_path);
-                        extra_jvm_args.push(format!("-javaagent:{}=http://127.0.0.1:3100", injector_path.to_string_lossy()));
-                    } else {
-                        tracing::warn!("Failed to prepare Bedringh authlib-injector Java agent!");
-                    }
+                    // Bedringh скины полностью обслуживаются локально через CustomSkinLoader (CSL).
+                    // Не инжектируем несуществующий локальный authlib агент (127.0.0.1:3100), чтобы JVM не падала/зависала при старте.
+                    tracing::info!("Launching Bedringh account with native CustomSkinLoader skin support");
                 } else if elyby::is_elyby_user(&credentials.access_token, &credentials.refresh_token) {
                     if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
                         tracing::info!("Injecting Ely.by authlib-injector Java agent: {:?}", injector_path);

@@ -40,6 +40,9 @@
 					"url": "https://fill.papermc.io/*"
 				},
 				{
+					"url": "https://fill-data.papermc.io/*"
+				},
+				{
 					"url": "https://api.purpurmc.org/*"
 				},
 				{
@@ -95,6 +98,36 @@
 				},
 				{
 					"url": "http://*.play2go.cloud:*/*"
+				},
+				{
+					"url": "https://api.papermc.io/*"
+				},
+				{
+					"url": "https://*.papermc.io/*"
+				},
+				{
+					"url": "https://meta.fabricmc.net/*"
+				},
+				{
+					"url": "https://maven.fabricmc.net/*"
+				},
+				{
+					"url": "https://piston-meta.mojang.com/*"
+				},
+				{
+					"url": "https://piston-data.mojang.com/*"
+				},
+				{
+					"url": "https://launcher.mojang.com/*"
+				},
+				{
+					"url": "https://libraries.minecraft.net/*"
+				},
+				{
+					"url": "https://download.getbukkit.org/*"
+				},
+				{
+					"url": "https://*.getbukkit.org/*"
 				}
 			]
 		},
@@ -131,6 +164,24 @@
 				},
 				{
 					"path": "$CONFIG/profiles/**"
+				},
+				{
+					"path": "$APPDATA/servers"
+				},
+				{
+					"path": "$APPDATA/servers/**"
+				},
+				{
+					"path": "$APPCONFIG/servers"
+				},
+				{
+					"path": "$APPCONFIG/servers/**"
+				},
+				{
+					"path": "$CONFIG/servers"
+				},
+				{
+					"path": "$CONFIG/servers/**"
 				}
 			]
 		},
@@ -160,6 +211,7 @@
 		"bedrock:default",
 		"bedrock-addons:default",
 		"bedrock-servers:default",
-		"bedrock-worlds:default"
+		"bedrock-worlds:default",
+		"local-server:default"
 	]
 }

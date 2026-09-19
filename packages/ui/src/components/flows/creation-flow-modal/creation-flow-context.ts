@@ -19,7 +19,7 @@ import type { ComboboxOption } from '../../base/Combobox.vue'
 import { stageConfigs } from './stages'
 
 export type FlowType = 'world' | 'server-onboarding' | 'reset-server' | 'instance'
-export type SetupType = 'modpack' | 'custom' | 'vanilla'
+export type SetupType = 'modpack' | 'custom' | 'vanilla' | 'server'
 export type Gamemode = 'survival' | 'creative' | 'hardcore'
 export type Difficulty = 'peaceful' | 'easy' | 'normal' | 'hard'
 export type LoaderVersionType = 'stable' | 'latest' | 'other'
@@ -235,6 +235,7 @@ export interface CreationFlowContextValue {
 	setImportMode: () => void
 	browseModpacks: () => void
 	installCloudPack: () => void
+	createServer: () => void
 	selectProject: (projectId: string, projectType: string) => Promise<void>
 	finish: () => void
 	buildProperties: () => Archon.Content.v1.PropertiesFields
@@ -283,6 +284,7 @@ export function createCreationFlowContext(
 		browseModpacks: () => void
 		create: (config: CreationFlowContextValue) => void
 		installCloudPack?: () => void
+		createServer?: () => void
 	},
 	options: CreationFlowOptions = {},
 ): CreationFlowContextValue {
@@ -348,6 +350,11 @@ export function createCreationFlowContext(
 		const version = selectedGameVersion.value
 		if (!version) return ''
 
+		if (setupType.value === 'server') {
+			const coreName = loader ? formatLoaderLabel(loader) : 'Paper'
+			return `Сервер ${coreName} ${version}`
+		}
+
 		const loaderName = loader ? formatLoaderLabel(loader) : 'Vanilla'
 		const baseName = `${loaderName} ${version}`
 
@@ -384,14 +391,15 @@ export function createCreationFlowContext(
 	// hideLoaderChips: hides the entire loader chips section (only for vanilla world type in world/server flows)
 	const hideLoaderChips = computed(() => setupType.value === 'vanilla')
 
-	// hideLoaderVersion: hides the loader version section (vanilla world type OR vanilla selected as loader chip)
-	const hideLoaderVersion = computed(
-		() =>
-			setupType.value === 'vanilla' ||
-			selectedLoader.value === 'vanilla' ||
-			selectedLoader.value === 'bedrock' ||
-			projectInstall.value !== null,
-	)
+	// hideLoaderVersion: hides the loader version section
+	const hideLoaderVersion = computed(() => {
+		if (projectInstall.value !== null) return true
+		if (selectedLoader.value === 'bedrock') return true
+		if (setupType.value === 'server') {
+			return selectedLoader.value === 'vanilla'
+		}
+		return setupType.value === 'vanilla' || selectedLoader.value === 'vanilla'
+	})
 
 	function toApiLoaderName(loader: string): string {
 		return loader === 'neoforge' ? 'neo' : loader
@@ -521,6 +529,13 @@ export function createCreationFlowContext(
 		isImportMode.value = false
 		projectInstall.value = null
 		setupType.value = type
+		if (type === 'server') {
+			selectedLoader.value = 'paper'
+			selectedLoaderVersion.value = null
+			loaderVersionType.value = 'stable'
+			modal.value?.setStage('custom-setup')
+			return
+		}
 		if (type === 'modpack') {
 			selectedLoader.value = null
 			selectedLoaderVersion.value = null
@@ -554,6 +569,11 @@ export function createCreationFlowContext(
 	function installCloudPack() {
 		modal.value?.hide()
 		emit.installCloudPack?.()
+	}
+
+	function createServer() {
+		modal.value?.hide()
+		emit.createServer?.()
 	}
 
 	async function selectProject(projectId: string, projectType: string) {
@@ -702,6 +722,7 @@ export function createCreationFlowContext(
 		setImportMode,
 		browseModpacks,
 		installCloudPack,
+		createServer,
 		selectProject,
 		finish,
 		buildProperties,

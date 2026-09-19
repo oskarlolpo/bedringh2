@@ -24,17 +24,17 @@ pub fn prepare_bedringh_authlib(libraries_dir: &Path) -> Option<PathBuf> {
         let _ = std::fs::remove_file(&target_jar);
     }
 
-    // Try multiple reliable mirrors
+    // Try multiple reliable mirrors (reliable https mirrors first, fast timeout)
     let urls = [
-        "http://2.26.87.126:3100/downloads/authlib-injector.jar",
         "https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.5/authlib-injector-1.2.5.jar",
         "https://authlib-injector.yushijinhun.com/artifact/latest/authlib-injector.jar",
+        "http://127.0.0.1:3100/downloads/authlib-injector.jar",
     ];
 
     for url in urls {
         tracing::info!("Downloading authlib-injector from {}", url);
         let mut cmd = std::process::Command::new("curl.exe");
-        cmd.args(["-f", "-sL", url, "-o", &target_jar.to_string_lossy()]);
+        cmd.args(["--connect-timeout", "2", "-m", "5", "-f", "-sL", url, "-o", &target_jar.to_string_lossy()]);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -75,15 +75,14 @@ pub fn prepare_bedringh_csl(libraries_dir: &Path) -> Option<PathBuf> {
     }
 
     let urls = [
-        "http://127.0.0.1:3100/downloads/CustomSkinLoader.jar",
-        "http://2.26.87.126:3100/downloads/CustomSkinLoader.jar",
         "https://github.com/xfl03/MCCustomSkinLoader/releases/download/15.0.1/CustomSkinLoader_Universal-15.0.1.jar",
+        "http://127.0.0.1:3100/downloads/CustomSkinLoader.jar",
     ];
 
     for url in urls {
         tracing::info!("Downloading CustomSkinLoader from {}", url);
         let mut cmd = std::process::Command::new("curl.exe");
-        cmd.args(["-f", "-sL", url, "-o", &target_jar.to_string_lossy()]);
+        cmd.args(["--connect-timeout", "2", "-m", "5", "-f", "-sL", url, "-o", &target_jar.to_string_lossy()]);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

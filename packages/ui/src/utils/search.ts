@@ -992,7 +992,22 @@ export function useSearch(
 			readParams.add('q')
 		})
 
-		for (const key of Object.keys(route.query).filter((key) => !readParams.has(key))) {
+		const KNOWN_ROUTING_PARAMS = new Set([
+			'sid',
+			'wid',
+			'from',
+			'i',
+			'ai',
+			'install',
+			'returnTo',
+			'resumeModal',
+			'openSettings',
+		])
+		for (
+			const key of Object.keys(route.query).filter(
+				(key) => !readParams.has(key) && !KNOWN_ROUTING_PARAMS.has(key),
+			)
+		) {
 			const types = filters.value.filter((type) => type.query_param === key)
 			if (types.length === 0) {
 				console.error(`Unknown filter type: ${key}`)

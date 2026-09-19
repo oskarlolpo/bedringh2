@@ -1,4 +1,5 @@
 import type {
+	AbstractPopupNotificationManager,
 	AbstractWebNotificationManager,
 	CreationFlowContextValue,
 	CreationFlowModal,
@@ -23,9 +24,12 @@ import {
 import { list } from '@/helpers/instance'
 import { get_loader_versions as getLoaderManifest } from '@/helpers/metadata.js'
 import type { InstanceIconConfig, InstanceLoader } from '@/helpers/types'
+import { type ServerCore, useLocalServers } from '@/providers/local-servers'
+import { downloadServerCore } from '@/services/server-download'
 
 export function setupCreationModal(
 	notificationManager: AbstractWebNotificationManager,
+	popupNotificationManager?: AbstractPopupNotificationManager,
 	getGeneratedIconConfig?: (iconPath: string) => InstanceIconConfig | null,
 ) {
 	const { handleError } = notificationManager
@@ -163,6 +167,108 @@ export function setupCreationModal(
 				return
 			}
 
+			if (config.setupType.value === 'server') {
+				const core = (config.selectedLoader.value || 'paper') as ServerCore
+				const name = config.instanceName.value.trim() || config.autoInstanceName.value || `Сервер ${core}`
+				const gameVersion = config.selectedGameVersion.value || '1.21.1'
+				const iconUrl = config.instanceIconUrl.value || undefined
+				const coreVersion = config.selectedLoaderVersion.value || (config.loaderVersionType.value === 'latest' ? 'latest' : null)
+
+				const { addServer, updateServer } = useLocalServers()
+				const newServer = addServer({
+					name,
+					core,
+					gameVersion,
+					coreVersion: coreVersion || undefined,
+					port: 25565,
+					iconUrl,
+					status: 'installing',
+					installProgress: {
+						stage: `Подготовка сервера ${name}...`,
+						percent: 10,
+					},
+				})
+
+				// Show popup download progress in bottom action bar
+				let downloadNotification: any = null
+				if (popupNotificationManager) {
+					try {
+						downloadNotification = popupNotificationManager.addPopupNotification({
+							contentType: 'standard',
+							title: `Загрузка ядра ${core}`,
+							type: 'download',
+							text: `Подготовка сервера ${name}...`,
+							progress: 0.1,
+							waiting: false,
+						})
+					} catch (e) {
+						console.warn('Could not register download notification:', e)
+					}
+				}
+
+				trackEvent('ServerCreate', { source: 'CreationModal' })
+				await router.push(`/hosting/manage/${newServer.id}`)
+
+				// Perform asynchronous download with live progress updates
+				void (async () => {
+					try {
+						const meta = await downloadServerCore({
+							serverId: newServer.id,
+							serverName: name,
+							core,
+							gameVersion,
+							coreVersion,
+							port: 25565,
+							onProgress: (stage, progress, receivedMb, totalMb) => {
+								const percent = progress ?? 0
+								updateServer(newServer.id, {
+									installProgress: {
+										stage,
+										percent,
+										receivedMb,
+										totalMb,
+									},
+								})
+								if (downloadNotification) {
+									downloadNotification.progress = percent / 100
+									downloadNotification.text = stage
+								}
+							},
+						})
+
+						updateServer(newServer.id, {
+							status: 'stopped',
+							installProgress: undefined,
+							path: meta.path,
+							coreVersion: meta.coreVersion,
+						})
+
+						notificationManager.addNotification({
+							title: 'Сервер создан',
+							text: `Ядро ${core} (${gameVersion}) успешно загружено! Сервер готов к запуску.`,
+							type: 'success',
+						})
+					} catch (err) {
+						console.error('Failed to download server core:', err)
+						updateServer(newServer.id, {
+							status: 'stopped',
+							installProgress: undefined,
+						})
+						notificationManager.addNotification({
+							title: 'Ошибка загрузки ядра сервера',
+							text: err instanceof Error ? err.message : String(err),
+							type: 'error',
+						})
+					} finally {
+						if (downloadNotification && popupNotificationManager) {
+							popupNotificationManager.removeNotification(downloadNotification.id)
+						}
+					}
+				})()
+
+				return
+			}
+
 			// Custom/vanilla setup
 			const loader = config.hideLoaderChips.value
 				? 'vanilla'
@@ -231,6 +337,13 @@ export function setupCreationModal(
 		return { hits: [], offset: 0, limit, total_hits: 0 }
 	}
 
+	async function openCreateServer() {
+		await installationModal.value?.show()
+		installationModal.value?.ctx.setSetupType('server')
+	}
+
+	provide('openCreateServer', openCreateServer)
+
 	return {
 		installationModal,
 		unknownPackWarningModal,
@@ -242,5 +355,6 @@ export function setupCreationModal(
 		setModpackAlreadyInstalledModal,
 		handleModpackDuplicateCreateAnyway,
 		handleModpackDuplicateGoToInstance,
+		openCreateServer,
 	}
 }

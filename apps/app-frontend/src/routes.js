@@ -23,6 +23,11 @@ export default new createRouter({
 			component: Pages.Servers,
 		},
 		{
+			path: '/server/:id',
+			name: 'ServerView',
+			component: () => import('@/pages/ServerView.vue'),
+		},
+		{
 			path: '/hosting/manage/:id',
 			name: 'ServerManage',
 			component: Hosting.Index,

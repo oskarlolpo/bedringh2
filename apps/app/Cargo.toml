@@ -32,6 +32,7 @@ tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
 futures = { workspace = true }
+sysinfo = { workspace = true, features = ["system"] }
 theseus = { workspace = true, features = ["tauri"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["time", "fs", "io-util", "rt-multi-thread"] }

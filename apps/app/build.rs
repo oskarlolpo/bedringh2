@@ -501,6 +501,21 @@ fn main() {
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,
                     ),
+            )
+            .plugin(
+                "local-server",
+                InlinedPlugin::new()
+                    .commands(&[
+                        "local_server_start",
+                        "local_server_stop",
+                        "local_server_send_command",
+                        "local_server_get_logs",
+                        "local_server_get_status",
+                        "local_server_get_metrics",
+                    ])
+                    .default_permission(
+                        DefaultPermissionRule::AllowAllCommands,
+                    ),
             ),
     )
     .expect("Failed to run tauri-build");

@@ -21,6 +21,12 @@ import {
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed, type ComputedRef, nextTick, type Ref, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useLocalServers } from '@/providers/local-servers'
+import { join } from '@tauri-apps/api/path'
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { get_version } from '@/helpers/cache.js'
+import { getServerDirectory } from '@/services/server-download'
 
 type ServerFlowFrom = 'onboarding' | 'reset-server'
 
@@ -100,7 +106,7 @@ export function createServerInstallContent(opts: {
 	const route = useRoute()
 	const router = useRouter()
 	const client = injectModrinthClient()
-	const { handleError } = injectNotificationManager()
+	const { handleError, addNotification } = injectNotificationManager()
 	const queryClient = useQueryClient()
 
 	const serverIdQuery = computed(() => readQueryString(route.query.sid))
@@ -119,7 +125,25 @@ export function createServerInstallContent(opts: {
 
 	const serverContextWorldId = ref<string | null>(worldIdQuery.value)
 
+	const { getServerById, getServerAddons, addServerAddon } = useLocalServers()
+
 	function getCachedServer(serverId: string): Archon.Servers.v0.Server | null {
+		const local = getServerById(serverId)
+		if (local) {
+			return {
+				server_id: local.id,
+				name: local.name,
+				loader: local.core,
+				mc_version: local.gameVersion,
+				status: local.status,
+				owner: 'local',
+				region: 'local',
+				memory: 4096,
+				port: local.port,
+				motd: local.motd,
+				is_medal: false,
+			} as unknown as Archon.Servers.v0.Server
+		}
 		return (
 			queryClient.getQueryData<Archon.Servers.v0.Server>(['servers', 'detail', serverId]) ??
 			queryClient
@@ -130,6 +154,10 @@ export function createServerInstallContent(opts: {
 	}
 
 	async function ensureServer(serverId: string): Promise<Archon.Servers.v0.Server> {
+		const local = getServerById(serverId)
+		if (local) {
+			return getCachedServer(serverId)!
+		}
 		return queryClient.ensureQueryData({
 			queryKey: ['servers', 'detail', serverId],
 			queryFn: () => client.archon.servers_v0.get(serverId),
@@ -169,6 +197,8 @@ export function createServerInstallContent(opts: {
 	const serverBackUrl = computed(() => {
 		const sid = serverIdQuery.value
 		if (!sid) return '/hosting/manage'
+		const local = getServerById(sid)
+		if (local) return `/server/${sid}`
 		if (serverFlowFrom.value === 'onboarding') {
 			return `/hosting/manage/${sid}?resumeModal=setup-type`
 		}
@@ -178,6 +208,8 @@ export function createServerInstallContent(opts: {
 		return `/hosting/manage/${sid}/content`
 	})
 	const serverBackLabel = computed(() => {
+		const sid = serverIdQuery.value
+		if (sid && getServerById(sid)) return 'Вернуться к серверу'
 		if (serverFlowFrom.value === 'onboarding') return 'Back to setup'
 		if (serverFlowFrom.value === 'reset-server') return 'Cancel reset'
 		return 'Back to server'
@@ -201,6 +233,14 @@ export function createServerInstallContent(opts: {
 	}
 
 	async function refreshServerInstalledContent(serverId: string, worldId: string) {
+		const local = getServerById(serverId)
+		if (local) {
+			const addons = getServerAddons(serverId)
+			serverContentProjectIds.value = new Set(
+				addons.map((a) => a.project?.id || a.id).filter(Boolean),
+			)
+			return
+		}
 		try {
 			const content = await client.archon.content_v1.getAddons(serverId, worldId)
 			if (serverIdQuery.value !== serverId || effectiveServerWorldId.value !== worldId) {
@@ -231,6 +271,14 @@ export function createServerInstallContent(opts: {
 		}
 
 		if (serverIdQuery.value !== sid) return
+
+		const local = getServerById(sid)
+		if (local) {
+			serverContextWorldId.value = 'local-world'
+			queuedServerInstalls.value = readStoredServerInstallQueue(sid, 'local-world')
+			await refreshServerInstalledContent(sid, 'local-world')
+			return
+		}
 
 		let resolvedWorldId = effectiveServerWorldId.value
 		if (!resolvedWorldId) {
@@ -426,6 +474,130 @@ export function createServerInstallContent(opts: {
 
 		const queuedPlans = getStoredServerAddonInstallQueue<InstallableSearchResult>(serverId, worldId)
 		if (queuedPlans.size === 0) return true
+
+		const local = getServerById(serverId)
+		if (local) {
+			isInstallingQueuedServerInstalls.value = true
+			queuedInstallProgress.value = {
+				completed: 0,
+				total: queuedPlans.size,
+			}
+			try {
+				const serverDir = local.path || (await getServerDirectory(serverId))
+				let installedCount = 0
+
+				for (const plan of queuedPlans.values()) {
+					const p = plan.project
+					let folderName = 'plugins'
+					if (plan.contentType === 'mod') {
+						folderName = 'mods'
+					} else if (plan.contentType === 'datapack') {
+						folderName = 'world/datapacks'
+					}
+
+					const targetDir = await join(serverDir, folderName)
+					await mkdir(targetDir, { recursive: true })
+
+					// Fetch version metadata to resolve actual download URL and file name
+					let versionData: any = null
+					if (plan.versionId) {
+						try {
+							versionData = await get_version(plan.versionId).catch(() => null)
+						} catch {
+							// fallback
+						}
+						if (!versionData) {
+							try {
+								const res = await tauriFetch(`https://api.modrinth.com/v2/version/${plan.versionId}`)
+								if (res.ok) {
+									versionData = await res.json()
+								}
+							} catch (e) {
+								console.warn('Failed to fetch version from Modrinth API:', e)
+							}
+						}
+					}
+
+					// Find primary or first downloadable file
+					const file =
+						versionData?.files?.find((f: any) => f.primary) || versionData?.files?.[0]
+					const actualFileName = file?.filename || `${p.slug ?? plan.projectId}.jar`
+					const fileUrl = file?.url
+					let fileSizeFormatted = ''
+
+					if (fileUrl) {
+						try {
+							const dlRes = await tauriFetch(fileUrl)
+							if (dlRes.ok) {
+								const arrayBuf = await dlRes.arrayBuffer()
+								const bytes = new Uint8Array(arrayBuf)
+								const filePath = await join(targetDir, actualFileName)
+								await writeFile(filePath, bytes)
+								fileSizeFormatted = `${(bytes.length / (1024 * 1024)).toFixed(2)} MB`
+								installedCount++
+							}
+						} catch (dlErr) {
+							console.error('Failed to download plugin jar:', dlErr)
+						}
+					}
+
+					addServerAddon(serverId, {
+						id: plan.projectId,
+						file_name: actualFileName,
+						project_type: plan.contentType,
+						enabled: true,
+						date_added: new Date().toISOString(),
+						description_text: p.description ?? '',
+						file_size_formatted:
+							fileSizeFormatted ||
+							(file?.size ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : undefined),
+						project: {
+							id: plan.projectId,
+							slug: p.slug,
+							title: p.title ?? p.name ?? plan.projectId,
+							icon_url: p.icon_url,
+							categories: p.categories ?? [plan.contentType],
+						},
+						version: {
+							id: versionData?.id ?? plan.versionId ?? 'latest',
+							version_number: versionData?.version_number ?? 'latest',
+							file_name: actualFileName,
+						},
+						owner: {
+							id: p.author ?? 'Author',
+							name: p.author ?? 'Author',
+							type: 'user',
+						},
+					})
+
+					queuedInstallProgress.value = {
+						completed: queuedInstallProgress.value.completed + 1,
+						total: queuedPlans.size,
+					}
+				}
+
+				serverContentProjectIds.value = new Set([
+					...serverContentProjectIds.value,
+					...Array.from(queuedPlans.keys()),
+				])
+				setStoredServerInstallPlans(serverId, worldId, new Map())
+
+				addNotification({
+					title: 'Установка завершена',
+					text: `Успешно установлено контента: ${installedCount}. Файлы сохранены в папку сервера.`,
+					type: 'success',
+				})
+
+				return true
+			} catch (err) {
+				console.error('Failed to install server content:', err)
+				handleError(err instanceof Error ? err : new Error(String(err)))
+				return false
+			} finally {
+				isInstallingQueuedServerInstalls.value = false
+				queuedInstallProgress.value = { completed: 0, total: 0 }
+			}
+		}
 
 		try {
 			await waitForServerContextRuntimeReady(client, serverId)

@@ -1,9 +1,11 @@
 <template>
 	<div
-		class="h-full w-full pt-6"
-		:class="isContainedServerRoute ? 'box-border min-h-0 overflow-hidden' : ''"
+		class="h-full w-full"
+		:class="isLocalServer ? 'overflow-y-auto box-border' : (isContainedServerRoute ? 'box-border min-h-0 overflow-hidden pt-6' : 'pt-6')"
 	>
+		<ServerView v-if="isLocalServer" :server-id="serverId" />
 		<ServersManageRootLayout
+			v-else
 			:server-id="serverId"
 			:layout-mode="isContainedServerRoute ? 'contained' : 'page'"
 			:reload-page="() => router.go(0)"
@@ -64,7 +66,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAppSettings } from '@/composables/use-app-settings.ts'
 import { get_user } from '@/helpers/cache'
 import { get as getCreds } from '@/helpers/mr_auth'
+import ServerView from '@/pages/ServerView.vue'
 import { provideBreadcrumbParent, useBreadcrumb } from '@/providers/breadcrumbs'
+import { useLocalServers } from '@/providers/local-servers'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,6 +77,7 @@ const client = injectModrinthClient()
 const queryClient = useQueryClient()
 const appSettings = useAppSettings()
 const { formatMessage } = useVIntl()
+const { getServerById } = useLocalServers()
 
 const isContainedServerRoute = computed(() => route.name === 'ServerManageOverview')
 
@@ -81,7 +86,11 @@ const serverId = computed(() => {
 	return Array.isArray(rawId) ? (rawId[0] ?? '') : (rawId ?? '')
 })
 
+const isLocalServer = computed(() => Boolean(getServerById(serverId.value)))
+
 function getCachedServerName(id: string): string | undefined {
+	const local = getServerById(id)
+	if (local) return local.name
 	return queryClient
 		.getQueryData<Archon.Servers.v0.ServerGetResponse>(['servers'])
 		?.servers.find((server) => server.server_id === id)?.name
@@ -90,7 +99,7 @@ function getCachedServerName(id: string): string | undefined {
 const { data: serverData } = useQuery({
 	queryKey: computed(() => ['servers', 'detail', serverId.value]),
 	queryFn: () => client.archon.servers_v0.get(serverId.value),
-	enabled: computed(() => Boolean(serverId.value)),
+	enabled: computed(() => Boolean(serverId.value) && !isLocalServer.value),
 	placeholderData: () =>
 		queryClient
 			.getQueryData<Archon.Servers.v0.ServerGetResponse>(['servers'])

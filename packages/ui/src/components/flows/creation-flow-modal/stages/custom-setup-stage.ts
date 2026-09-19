@@ -20,7 +20,10 @@ function isForwardBlocked(ctx: CreationFlowContextValue): boolean {
 
 export const stageConfig: StageConfigInput<CreationFlowContextValue> = {
 	id: 'custom-setup',
-	title: (ctx) => ctx.formatMessage(flowTypeHeadingMessages[ctx.flowType]),
+	title: (ctx) =>
+		ctx.setupType.value === 'server'
+			? 'Создать сервер'
+			: ctx.formatMessage(flowTypeHeadingMessages[ctx.flowType]),
 	stageContent: markRaw(CustomSetupStage),
 	skip: (ctx) =>
 		ctx.setupType.value === 'modpack' ||
@@ -34,11 +37,26 @@ export const stageConfig: StageConfigInput<CreationFlowContextValue> = {
 	}),
 	rightButtonConfig: (ctx) => {
 		const isInstance = ctx.flowType === 'instance'
+		const isServer = ctx.setupType.value === 'server'
 		const goesToNextStage =
-			ctx.flowType === 'world' ||
-			ctx.flowType === 'server-onboarding' ||
-			ctx.flowType === 'reset-server'
+			!isServer &&
+			(ctx.flowType === 'world' ||
+				ctx.flowType === 'server-onboarding' ||
+				ctx.flowType === 'reset-server')
 		const disabled = isForwardBlocked(ctx)
+
+		if (isServer) {
+			return {
+				label: 'Создать сервер',
+				icon: PlusIcon,
+				iconPosition: 'before' as const,
+				color: 'brand' as const,
+				disabled: disabled || ctx.finishDisabled.value,
+				loading: ctx.loading.value,
+				tooltip: ctx.finishDisabled.value ? ctx.finishDisabledTooltip.value : undefined,
+				onClick: () => ctx.finish(),
+			}
+		}
 
 		if (isInstance) {
 			return {

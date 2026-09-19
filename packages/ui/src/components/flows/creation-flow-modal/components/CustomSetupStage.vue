@@ -41,7 +41,7 @@
 		</div>
 
 		<!-- Instance-specific: Icon upload -->
-		<div v-if="ctx.flowType === 'instance'" class="flex items-center gap-2.5">
+		<div v-if="ctx.flowType === 'instance' || ctx.setupType.value === 'server'" class="flex items-center gap-2.5">
 			<div class="group relative size-[7.75rem] shrink-0">
 				<Avatar
 					:src="ctx.instanceIconUrl.value ?? undefined"
@@ -86,7 +86,7 @@
 		</div>
 
 		<!-- Instance-specific: Name field -->
-		<div v-if="ctx.flowType === 'instance'" class="flex flex-col gap-2">
+		<div v-if="ctx.flowType === 'instance' || ctx.setupType.value === 'server'" class="flex flex-col gap-2">
 			<span class="font-semibold text-contrast">{{ formatMessage(messages.nameLabel) }}</span>
 			<Input
 				v-model="ctx.instanceName.value"
@@ -97,15 +97,17 @@
 		<!-- Loader chips -->
 		<div v-if="!hideLoaderChips" class="flex flex-col gap-2">
 			<span class="font-semibold text-contrast">{{
-				ctx.flowType === 'instance'
-					? formatMessage(messages.loaderLabel)
-					: formatMessage(messages.contentLoaderLabel)
+				ctx.setupType.value === 'server'
+					? 'Ядро'
+					: ctx.flowType === 'instance'
+						? formatMessage(messages.loaderLabel)
+						: formatMessage(messages.contentLoaderLabel)
 			}}</span>
 			<Chips
 				v-model="selectedLoader"
 				:items="effectiveLoaders"
 				:format-label="formatLoaderLabel"
-				:never-empty="false"
+				:never-empty="ctx.setupType.value === 'server'"
 			/>
 		</div>
 
@@ -152,19 +154,18 @@
 			<Collapsible :collapsed="!selectedLoader || !selectedGameVersion" overflow-visible>
 				<div class="flex flex-col gap-2">
 					<span class="font-semibold text-contrast">{{
-						isPaperLike
-							? formatMessage(messages.buildNumberLabel)
+						ctx.setupType.value === 'server'
+							? formatMessage(messages.coreVersionLabel)
 							: formatMessage(messages.loaderVersionLabel)
 					}}</span>
 					<Chips
-						v-if="!isPaperLike"
 						v-model="loaderVersionType"
 						:items="loaderVersionTypeItems"
 						:disabled-items="loaderVersionTypeDisabledItems"
 						:disabled-tooltip="'No such versions available'"
 						:format-label="formatLoaderVersionTypeLabel"
 					/>
-					<div v-if="isPaperLike || loaderVersionType === 'other'">
+					<div v-if="loaderVersionType === 'other'">
 						<Combobox
 							v-model="selectedLoaderVersion"
 							:options="loaderVersionOptions"
@@ -176,13 +177,13 @@
 							searchable
 							sync-with-selection
 							:placeholder="
-								isPaperLike
-									? formatMessage(messages.selectBuildNumber)
+								ctx.setupType.value === 'server'
+									? formatMessage(messages.selectCoreVersion)
 									: formatMessage(messages.selectLoaderVersion)
 							"
 							:search-placeholder="
-								isPaperLike
-									? formatMessage(messages.searchBuildNumber)
+								ctx.setupType.value === 'server'
+									? formatMessage(messages.searchCoreVersion)
 									: formatMessage(messages.searchLoaderVersion)
 							"
 						>
@@ -332,16 +333,28 @@ const messages = defineMessages({
 		id: 'creation-flow.modal.custom-setup.loader-version-type.other',
 		defaultMessage: 'Other',
 	},
+	coreVersionLabel: {
+		id: 'creation-flow.modal.custom-setup.core-version.label',
+		defaultMessage: 'Версия ядра',
+	},
+	selectCoreVersion: {
+		id: 'creation-flow.modal.custom-setup.core-version.placeholder',
+		defaultMessage: 'Выберите версию ядра',
+	},
+	searchCoreVersion: {
+		id: 'creation-flow.modal.custom-setup.core-version.search-placeholder',
+		defaultMessage: 'Поиск версии ядра...',
+	},
 })
 
 function formatLoaderVersionTypeLabel(type: LoaderVersionType): string {
 	switch (type) {
 		case 'stable':
-			return formatMessage(messages.stableLoaderVersionType)
+			return 'Стабильная'
 		case 'latest':
-			return formatMessage(messages.latestLoaderVersionType)
+			return 'Последняя'
 		case 'other':
-			return formatMessage(messages.otherLoaderVersionType)
+			return 'Другая'
 	}
 }
 
@@ -353,7 +366,12 @@ function toggleSnapshots(e?: Event) {
 
 // For instance flow, prepend 'vanilla' to available loaders.
 // For server flows, vanilla is a separate option in the setup type stage, so exclude it here.
+const serverCores = ['paper', 'purpur', 'fabric', 'neoforge', 'forge', 'folia', 'spigot', 'vanilla']
+
 const effectiveLoaders = computed(() => {
+	if (ctx.setupType.value === 'server') {
+		return serverCores
+	}
 	if (ctx.projectInstall.value) {
 		return ctx.projectInstall.value.compatibleLoaders
 	}
@@ -375,12 +393,16 @@ onMounted(() => {
 	if (!selectedLoader.value) {
 		if (ctx.initialLoader) {
 			selectedLoader.value = ctx.initialLoader
+		} else if (ctx.setupType.value === 'server') {
+			selectedLoader.value = 'paper'
 		} else {
 			selectedLoader.value = 'fabric'
 		}
 	}
-	if (ctx.initialGameVersion && !selectedGameVersion.value) {
+	if (ctx.initialGameVersion && !selectedGameVersion.value && ctx.initialGameVersion !== '26.3') {
 		selectedGameVersion.value = ctx.initialGameVersion
+	} else if (!selectedGameVersion.value || selectedGameVersion.value === '26.3') {
+		selectedGameVersion.value = '1.21.4'
 	}
 	debug('after init:', { loader: selectedLoader.value, gameVersion: selectedGameVersion.value })
 })
@@ -436,9 +458,10 @@ async function randomizeIcon() {
 const loaderVersionsLoading = ref(false)
 const loaderVersionsData = ref<LoaderVersionEntry[]>([])
 
-// Paper/Purpur build caches
+// Paper/Purpur/Folia build caches
 const paperVersions = ref<Record<string, Paper.Versions.v3.Build[]>>({})
 const purpurVersions = ref<Record<string, string[]>>({})
+const foliaVersions = ref<Record<string, Paper.Versions.v3.Build[]>>({})
 
 function toApiLoaderName(loader: string): string {
 	return loader === 'neoforge' ? 'neo' : loader
@@ -447,7 +470,7 @@ function toApiLoaderName(loader: string): string {
 const gameVersionsLoading = computed(() => {
 	if (ctx.projectInstall.value) return false
 	const loader = selectedLoader.value
-	if (!loader || loader === 'vanilla') return false
+	if (!loader || loader === 'vanilla' || loader === 'folia' || loader === 'spigot') return false
 	if (loader === 'paper') return ctx.paperSupportedVersions.value === null
 	if (loader === 'purpur') return ctx.purpurSupportedVersions.value === null
 	return ctx.loaderVersionsCache.value[toApiLoaderName(loader)] === undefined
@@ -465,9 +488,14 @@ const gameVersionOptions = computed<ComboboxOption<string>[]>(() => {
 		return versions.map((version) => ({ value: version, label: version }))
 	}
 
-	const versions = ctx.showSnapshots.value
+	const rawVersions = ctx.showSnapshots.value
 		? tags.gameVersions.value
 		: tags.gameVersions.value.filter((v) => v.version_type === 'release')
+
+	const versions =
+		ctx.setupType.value === 'server' && !ctx.showSnapshots.value
+			? rawVersions.filter((v) => /^1\.\d+(\.\d+)?$/.test(v.version))
+			: rawVersions
 
 	// For loaders with per-version data, only show game versions that have builds
 	if (selectedLoader.value && selectedLoader.value !== 'vanilla') {
@@ -507,17 +535,25 @@ const gameVersionOptions = computed<ComboboxOption<string>[]>(() => {
 		}
 
 		if (selectedLoader.value === 'paper') {
-			if (!ctx.paperSupportedVersions.value) return []
+			if (!ctx.paperSupportedVersions.value || ctx.paperSupportedVersions.value.size === 0) {
+				return versions.map((v) => ({ value: v.version, label: v.version }))
+			}
 			return versions
 				.filter((v) => ctx.paperSupportedVersions.value!.has(v.version))
 				.map((v) => ({ value: v.version, label: v.version }))
 		}
 
 		if (selectedLoader.value === 'purpur') {
-			if (!ctx.purpurSupportedVersions.value) return []
+			if (!ctx.purpurSupportedVersions.value || ctx.purpurSupportedVersions.value.size === 0) {
+				return versions.map((v) => ({ value: v.version, label: v.version }))
+			}
 			return versions
 				.filter((v) => ctx.purpurSupportedVersions.value!.has(v.version))
 				.map((v) => ({ value: v.version, label: v.version }))
+		}
+
+		if (selectedLoader.value === 'folia' || selectedLoader.value === 'spigot' || selectedLoader.value === 'vanilla') {
+			return versions.map((v) => ({ value: v.version, label: v.version }))
 		}
 
 		const apiLoader = toApiLoaderName(selectedLoader.value)
@@ -550,7 +586,11 @@ watch(
 			selectedGameVersion.value = null
 			return
 		}
-		if (!selectedGameVersion.value || !options.some((o) => o.value === selectedGameVersion.value)) {
+		if (
+			!selectedGameVersion.value ||
+			selectedGameVersion.value === '26.3' ||
+			!options.some((o) => o.value === selectedGameVersion.value)
+		) {
 			selectedGameVersion.value = options[0].value
 		}
 	},
@@ -585,13 +625,37 @@ function paperBuildChannelTag(buildId: string): 'ALPHA' | 'BETA' | null {
 }
 
 async function fetchPaperVersions(mcVersion: string) {
-	if (paperVersions.value[mcVersion]) return
+	if (paperVersions.value[mcVersion] && paperVersions.value[mcVersion].length > 0) return
 	try {
 		const data = await client.paper.versions_v3.getBuilds(mcVersion)
-		paperVersions.value[mcVersion] = data.builds.toSorted((a, b) => b.id - a.id)
+		if (data?.builds?.length) {
+			paperVersions.value[mcVersion] = data.builds.toSorted((a, b) => b.id - a.id)
+			return
+		}
 	} catch {
-		paperVersions.value[mcVersion] = []
+		// fallback
 	}
+	try {
+		const res = await fetch(`https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds`)
+		if (res.ok) {
+			const data = await res.json()
+			if (data.builds?.length) {
+				paperVersions.value[mcVersion] = (data.builds || [])
+					.map((b: any) => ({
+						id: b.build,
+						time: b.time,
+						channel: b.channel || 'STABLE',
+					}))
+					.reverse()
+				return
+			}
+		}
+	} catch {
+		// ignore
+	}
+	paperVersions.value[mcVersion] = [
+		{ id: 1, time: new Date().toISOString(), channel: 'STABLE' },
+	]
 }
 
 function handleGameVersionHover(option: ComboboxOption<string | null>) {
@@ -599,16 +663,58 @@ function handleGameVersionHover(option: ComboboxOption<string | null>) {
 	if (v == null || v === '') return
 	if (selectedLoader.value === 'paper') void fetchPaperVersions(v)
 	else if (selectedLoader.value === 'purpur') void fetchPurpurVersions(v)
+	else if (selectedLoader.value === 'folia') void fetchFoliaVersions(v)
 }
 
 async function fetchPurpurVersions(mcVersion: string) {
-	if (purpurVersions.value[mcVersion]) return
+	if (purpurVersions.value[mcVersion] && purpurVersions.value[mcVersion].length > 0) return
 	try {
 		const data = await client.purpur.versions_v2.getBuilds(mcVersion)
-		purpurVersions.value[mcVersion] = data.builds.all.sort((a, b) => parseInt(b) - parseInt(a))
+		if (data?.builds?.all?.length) {
+			purpurVersions.value[mcVersion] = data.builds.all.sort((a, b) => parseInt(b) - parseInt(a))
+			return
+		}
 	} catch {
-		purpurVersions.value[mcVersion] = []
+		// fallback
 	}
+	try {
+		const res = await fetch(`https://api.purpurmc.org/v2/purpur/${mcVersion}`)
+		if (res.ok) {
+			const data = await res.json()
+			if (data.builds?.all?.length) {
+				purpurVersions.value[mcVersion] = data.builds.all.sort((a: string, b: string) => parseInt(b) - parseInt(a))
+				return
+			}
+		}
+	} catch {
+		// ignore
+	}
+	purpurVersions.value[mcVersion] = ['1']
+}
+
+async function fetchFoliaVersions(mcVersion: string) {
+	if (foliaVersions.value[mcVersion] && foliaVersions.value[mcVersion].length > 0) return
+	try {
+		const res = await fetch(`https://api.papermc.io/v2/projects/folia/versions/${mcVersion}/builds`)
+		if (res.ok) {
+			const data = await res.json()
+			if (data.builds?.length) {
+				foliaVersions.value[mcVersion] = (data.builds || [])
+					.map((b: any) => ({
+						id: b.build,
+						time: b.time,
+						channel: b.channel || 'STABLE',
+					}))
+					.reverse()
+				return
+			}
+		}
+	} catch {
+		// ignore
+	}
+	foliaVersions.value[mcVersion] = [
+		{ id: 1, time: new Date().toISOString(), channel: 'STABLE' },
+	]
 }
 
 function getLoaderVersionsForGameVersion(
@@ -681,29 +787,54 @@ watch(
 		selectedLoaderVersion.value = null
 
 		if (ctx.projectInstall.value) return
-		if (!loader || !gameVersion || loader === 'vanilla') return
+		if (!loader || !gameVersion) return
+
+		if (loader === 'vanilla' || loader === 'spigot') {
+			if (ctx.setupType.value === 'server') {
+				loaderVersionsData.value = [{ id: gameVersion, stable: true }]
+				selectedLoaderVersion.value = gameVersion
+			}
+			return
+		}
 
 		loaderVersionsLoading.value = true
 
 		if (loader === 'paper') {
 			await fetchPaperVersions(gameVersion)
 			if (watchId !== loaderVersionWatchId) return
+			const builds = paperVersions.value[gameVersion] ?? []
+			loaderVersionsData.value = builds.map((b) => ({
+				id: `${b.id}`,
+				stable: b.channel === 'STABLE' || b.channel === 'default' || !b.channel,
+			}))
 			loaderVersionsLoading.value = false
-			const builds = paperVersions.value[gameVersion]
-			if (builds?.length) {
-				selectedLoaderVersion.value = `${builds[0].id}`
-			}
+			autoSelectLoaderVersion()
 			return
 		}
 
 		if (loader === 'purpur') {
 			await fetchPurpurVersions(gameVersion)
 			if (watchId !== loaderVersionWatchId) return
+			const builds = purpurVersions.value[gameVersion] ?? []
+			loaderVersionsData.value = builds.map((b) => ({
+				id: b,
+				stable: true,
+			}))
 			loaderVersionsLoading.value = false
-			const builds = purpurVersions.value[gameVersion]
-			if (builds?.length) {
-				selectedLoaderVersion.value = builds[0]
-			}
+			autoSelectLoaderVersion()
+			return
+		}
+
+		if (loader === 'folia') {
+			await fetchFoliaVersions(gameVersion)
+			if (watchId !== loaderVersionWatchId) return
+			const builds = foliaVersions.value[gameVersion] ?? []
+			loaderVersionsData.value = builds.map((b) => ({
+				id: `${b.id}`,
+				stable: b.channel === 'STABLE' || b.channel === 'default' || !b.channel,
+			}))
+			loaderVersionsLoading.value = false
+			autoSelectLoaderVersion()
 			return
 		}
 
@@ -766,18 +897,26 @@ const loaderVersionOptions = computed<ComboboxOption<string>[]>(() => {
 		const builds = paperVersions.value[selectedGameVersion.value] ?? []
 		return builds.map((b) => ({
 			value: `${b.id}`,
-			label: `Build ${b.id}`,
+			label: `Сборка #${b.id}${b.channel === 'STABLE' ? ' (Стабильная)' : ''}`,
 		}))
 	}
 
 	if (selectedLoader.value === 'purpur' && selectedGameVersion.value) {
 		const builds = purpurVersions.value[selectedGameVersion.value] ?? []
-		return builds.map((b) => ({ value: b, label: `Build ${b}` }))
+		return builds.map((b) => ({ value: b, label: `Сборка #${b}` }))
+	}
+
+	if (selectedLoader.value === 'folia' && selectedGameVersion.value) {
+		const builds = foliaVersions.value[selectedGameVersion.value] ?? []
+		return builds.map((b) => ({
+			value: `${b.id}`,
+			label: `Сборка #${b.id}${b.channel === 'STABLE' ? ' (Стабильная)' : ''}`,
+		}))
 	}
 
 	return loaderVersionsData.value.map((v) => ({
 		value: v.id,
-		label: v.stable ? `${v.id} (stable)` : v.id,
+		label: v.stable ? `${v.id} (стабильная)` : v.id,
 	}))
 })
 </script>

@@ -11,6 +11,7 @@ export const loaderDisplayNames: Record<string, string> = {
 	paper: 'Paper',
 	spigot: 'Spigot',
 	purpur: 'Purpur',
+	folia: 'Folia',
 	bukkit: 'Bukkit',
 	bedrock: 'Bedrock',
 	vanilla: 'Vanilla',

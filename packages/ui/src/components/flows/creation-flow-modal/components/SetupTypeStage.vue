@@ -81,6 +81,13 @@
 					badge="NEW"
 					@click="ctx.installCloudPack()"
 				/>
+				<BigOptionButton
+					:icon="ServerStackIcon"
+					title="Создать сервер"
+					description="Собственный сервер Minecraft: Paper, Purpur, Fabric, Spigot и др."
+					badge="NEW"
+					@click="setSetupType('server')"
+				/>
 			</div>
 		</template>
 
@@ -124,6 +131,7 @@ import {
 	CompassIcon,
 	DownloadIcon,
 	RightArrowIcon,
+	ServerStackIcon,
 	UploadIcon,
 } from '@modrinth/assets'
 import { commonMessages, defineMessages, useVIntl } from '@modrinth/ui'

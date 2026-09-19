@@ -107,6 +107,10 @@ const breadcrumbLabel = computed(() => {
 		return formatMessage(breadcrumbMessages.discoverServers)
 	}
 
+	if (browseRoute.params.projectType === 'plugin') {
+		return 'Поиск плагинов'
+	}
+
 	return formatMessage(breadcrumbMessages.discoverProjectType, {
 		projectType: formatProjectTypeSentence(
 			formatMessage,
@@ -664,6 +668,18 @@ const selectableProjectTypes = computed(() => {
 		return [{ label: 'Servers', href: `/browse/server${suffix}` }]
 	}
 
+	if (isServerContext.value) {
+		const serverLoader = serverContextServerData.value?.loader?.toLowerCase()
+		const isPluginCore = ['paper', 'purpur', 'spigot', 'folia'].includes(serverLoader ?? '')
+		const isModCore = ['fabric', 'forge', 'neoforge', 'quilt'].includes(serverLoader ?? '')
+		return [
+			{ label: 'Плагины', href: `/browse/plugin${suffix}`, shown: isPluginCore || !serverLoader },
+			{ label: 'Моды', href: `/browse/mod${suffix}`, shown: isModCore || !serverLoader },
+			{ label: 'Датапаки', href: `/browse/datapack${suffix}`, shown: true },
+			{ label: 'Ресурспаки', href: `/browse/resourcepack${suffix}`, shown: true },
+		]
+	}
+
 	return [
 		{ label: 'Modpacks', href: `/browse/modpack${suffix}`, shown: modpacks },
 		{ label: 'Mods', href: `/browse/mod${suffix}`, shown: mods },
@@ -682,7 +698,7 @@ const installContext = computed(() => {
 			gameVersion: serverContextServerData.value.mc_version ?? '',
 			serverId: serverIdQuery.value,
 			upstream: serverContextServerData.value.upstream,
-			iconSrc: null as string | null,
+			iconSrc: (serverContextServerData.value as any)?.iconUrl ?? null,
 			isMedal: serverContextServerData.value.is_medal,
 			backUrl: serverBackUrl.value,
 			backLabel: serverBackLabel.value,
@@ -847,17 +863,18 @@ function getCardActions(
 	) {
 		const isQueued = queuedServerInstallProjectIds.value.has(projectResult.project_id)
 		const isInstallingSelection = isInstallingQueuedServerInstalls.value
+		const isItemInstalling = isInstalling || (isQueued && isInstallingSelection)
 		const validatingInstall =
 			isInstalling && currentProjectType !== 'modpack' && !isInstallingSelection
 		const installLabel = showAsInstalled
 			? commonMessages.installedLabel
 			: isQueued
-				? isInstalling || isInstallingSelection
+				? isItemInstalling
 					? validatingInstall
 						? commonMessages.validatingLabel
 						: messages.installingToServer
 					: commonMessages.selectedLabel
-				: isInstalling || isInstallingSelection
+				: isInstalling
 					? validatingInstall
 						? commonMessages.validatingLabel
 						: messages.installingToServer
@@ -867,14 +884,14 @@ function getCardActions(
 				key: 'install',
 				label: formatMessage(installLabel),
 				icon:
-					isInstalling || isInstallingSelection
+					isItemInstalling
 						? SpinnerIcon
 						: isQueued || showAsInstalled
 							? CheckIcon
 							: PlusIcon,
-				iconClass: isInstalling || isInstallingSelection ? 'animate-spin' : undefined,
-				disabled: showAsInstalled || isInstalling || isInstallingSelection,
-				color: isQueued && !isInstalling && !isInstallingSelection ? 'green' : 'brand',
+				iconClass: isItemInstalling ? 'animate-spin' : undefined,
+				disabled: showAsInstalled || isItemInstalling,
+				color: isQueued && !isItemInstalling ? 'green' : 'brand',
 				type: 'outlined',
 				onClick: async () => {
 					if (isQueued) {
@@ -1224,7 +1241,7 @@ provideBrowseManager({
 		query: getProjectBrowseQuery(),
 	}),
 	selectableProjectTypes,
-	showProjectTypeTabs: computed(() => !isServerContext.value),
+	showProjectTypeTabs: computed(() => !isSetupServerContext.value),
 	variant: 'app',
 	getCardActions,
 	installContext,

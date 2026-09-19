@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { HomeIcon } from '@modrinth/assets'
-import { injectNotificationManager } from '@modrinth/ui'
+import { ButtonStyled, injectNotificationManager } from '@modrinth/ui'
 import dayjs from 'dayjs'
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, inject, onUnmounted, ref } from 'vue'
 
 import RowDisplay from '@/components/RowDisplay.vue'
 import RecentWorldsList from '@/components/ui/world/RecentWorldsList.vue'
@@ -12,6 +12,7 @@ import type { GameInstance } from '@/helpers/types'
 import { useRootBreadcrumb } from '@/providers/breadcrumbs'
 
 const { handleError } = injectNotificationManager()
+const openCreateServer = inject<() => void>('openCreateServer')
 
 useRootBreadcrumb({
 	slot: 'root',
@@ -22,6 +23,10 @@ useRootBreadcrumb({
 })
 
 const instances = ref<GameInstance[]>([])
+
+function openCreateServerModal() {
+	openCreateServer?.()
+}
 
 const recentInstances = computed(() =>
 	instances.value
@@ -46,10 +51,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="p-6 flex flex-col gap-4">
+	<div class="p-6 flex flex-col gap-5">
 		<h1 v-if="recentInstances?.length > 0" class="m-0 text-2xl font-extrabold">Welcome back!</h1>
 		<h1 v-else class="m-0 text-2xl font-extrabold">Welcome to Bedringh!</h1>
 		<RecentWorldsList :recent-instances="recentInstances" />
+
+		<!-- Секция: Ваши сборки -->
 		<RowDisplay
 			v-if="instances.length > 0"
 			:instances="[

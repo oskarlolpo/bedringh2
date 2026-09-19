@@ -2368,5 +2368,221 @@
   },
   "settings.sidebar.label.klauncher": {
     "message": "KLauncher"
+  },
+  "server.view.tab.overview": {
+    "message": "Overview & Console"
+  },
+  "server.view.tab.content": {
+    "message": "Content"
+  },
+  "server.view.tab.files": {
+    "message": "Files"
+  },
+  "server.view.tab.settings": {
+    "message": "Settings"
+  },
+  "server.view.all_servers": {
+    "message": "All servers"
+  },
+  "server.view.metric.cpu": {
+    "message": "Processor"
+  },
+  "server.view.metric.ram": {
+    "message": "Memory"
+  },
+  "server.view.metric.disk": {
+    "message": "Disk"
+  },
+  "server.view.metric.uptime": {
+    "message": "Uptime"
+  },
+  "server.view.metric.status": {
+    "message": "Status"
+  },
+  "server.view.metric.running": {
+    "message": "Online"
+  },
+  "server.view.metric.stopped": {
+    "message": "Stopped"
+  },
+  "server.view.metric.starting": {
+    "message": "Starting..."
+  },
+  "server.view.action.start": {
+    "message": "Start server"
+  },
+  "server.view.action.stop": {
+    "message": "Stop server"
+  },
+  "server.view.action.restart": {
+    "message": "Restart server"
+  },
+  "server.view.action.add_content": {
+    "message": "Add plugins & mods"
+  },
+  "server.view.action.open_folder": {
+    "message": "Open server folder"
+  },
+  "server.view.action.change_icon": {
+    "message": "Change server icon"
+  },
+  "server.view.action.copy_address": {
+    "message": "Copy address"
+  },
+  "server.view.action.delete": {
+    "message": "Delete server"
+  },
+  "server.view.console.input_placeholder": {
+    "message": "Enter Minecraft command (e.g. op, gamemode, whitelist)..."
+  },
+  "server.view.console.filter_placeholder": {
+    "message": "Filter logs..."
+  },
+  "server.view.console.clear": {
+    "message": "Clear"
+  },
+  "server.view.console.copy_logs": {
+    "message": "Copy logs"
+  },
+  "server.view.jvm.heading": {
+    "message": "Server Startup & JVM Settings"
+  },
+  "server.view.jvm.description": {
+    "message": "Configure memory allocation, Java version and startup optimization flags"
+  },
+  "server.view.jvm.min_ram": {
+    "message": "Minimum RAM (-Xms)"
+  },
+  "server.view.jvm.max_ram": {
+    "message": "Maximum RAM (-Xmx)"
+  },
+  "server.view.jvm.aikar_flags": {
+    "message": "Aikar's Garbage Collection Flags"
+  },
+  "server.view.jvm.aikar_flags_desc": {
+    "message": "Recommended optimization flags for stable TPS and minimal GC pauses"
+  },
+  "server.view.jvm.custom_args": {
+    "message": "Custom JVM Arguments"
+  },
+  "server.view.jvm.custom_args_placeholder": {
+    "message": "e.g. -Dfile.encoding=UTF-8 -XX:+AlwaysPreTouch"
+  },
+  "server.view.jvm.java_path": {
+    "message": "Java Executable Path"
+  },
+  "server.view.jvm.java_path_placeholder": {
+    "message": "Default (system detected)"
+  },
+  "server.view.jvm.save_btn": {
+    "message": "Save startup parameters"
+  },
+  "server.view.jvm.saved_success": {
+    "message": "Startup settings saved successfully"
+  },
+  "server.view.props.heading": {
+    "message": "server.properties Configuration"
+  },
+  "server.view.props.description": {
+    "message": "Manage core Minecraft gameplay, difficulty, network and world parameters"
+  },
+  "server.view.props.save_btn": {
+    "message": "Save server.properties"
+  },
+  "server.view.props.search_placeholder": {
+    "message": "Search settings (motd, pvp, port, gamemode)..."
+  },
+  "server.view.props.saved_success": {
+    "message": "server.properties configuration saved"
+  },
+  "server.view.props.gamemode.survival": {
+    "message": "Survival"
+  },
+  "server.view.props.gamemode.creative": {
+    "message": "Creative"
+  },
+  "server.view.props.gamemode.adventure": {
+    "message": "Adventure"
+  },
+  "server.view.props.gamemode.spectator": {
+    "message": "Spectator"
+  },
+  "server.view.props.difficulty.peaceful": {
+    "message": "Peaceful"
+  },
+  "server.view.props.difficulty.easy": {
+    "message": "Easy"
+  },
+  "server.view.props.difficulty.normal": {
+    "message": "Normal"
+  },
+  "server.view.props.difficulty.hard": {
+    "message": "Hard"
+  },
+  "server.view.delete_modal.title": {
+    "message": "Delete Server"
+  },
+  "server.view.delete_modal.description": {
+    "message": "Are you sure you want to delete this server? All files and worlds will be deleted permanently."
+  },
+  "server.view.delete_modal.confirm": {
+    "message": "Delete permanently"
+  },
+  "server.view.delete_modal.cancel": {
+    "message": "Cancel"
+  },
+  "servers.list.title": {
+    "message": "My Servers"
+  },
+  "servers.list.create_btn": {
+    "message": "Create Server"
+  },
+  "servers.list.browse_btn": {
+    "message": "Public Servers"
+  },
+  "servers.list.empty_title": {
+    "message": "No local servers yet"
+  },
+  "servers.list.empty_desc": {
+    "message": "Create your own Minecraft server in one click with plugins or mods"
+  },
+  "servers.browse.title": {
+    "message": "Minecraft Servers Catalog"
+  },
+  "servers.browse.search_placeholder": {
+    "message": "Search servers..."
+  },
+  "servers.browse.create_banner_title": {
+    "message": "Create your own local server"
+  },
+  "servers.browse.create_banner_desc": {
+    "message": "Run Paper, Purpur or Fabric server right on your PC"
+  },
+  "servers.create.title": {
+    "message": "Create Minecraft Server"
+  },
+  "servers.create.name_label": {
+    "message": "Server name"
+  },
+  "servers.create.name_placeholder": {
+    "message": "My Minecraft Server"
+  },
+  "servers.create.core_label": {
+    "message": "Server core / engine"
+  },
+  "servers.create.version_label": {
+    "message": "Game version"
+  },
+  "servers.create.port_label": {
+    "message": "Port"
+  },
+  "servers.create.ram_label": {
+    "message": "Allocated RAM (MB)"
+  },
+  "servers.create.submit_btn": {
+    "message": "Create and Install"
+  },
+  "servers.create.cancel_btn": {
+    "message": "Cancel"
   }
 }

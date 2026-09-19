@@ -11368,6 +11368,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sysinfo",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
