@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
 	ChevronRightIcon,
+	DatabaseIcon,
 	FolderOpenIcon,
 	GlobeIcon,
 	LoaderCircleIcon,
@@ -25,13 +26,15 @@ import { useRouter } from 'vue-router'
 import { useRootBreadcrumb } from '@/providers/breadcrumbs'
 import { type LocalServer, useLocalServers } from '@/providers/local-servers'
 import { getServerDirectory } from '@/services/server-download'
-import { startLocalServerProcess, stopLocalServerProcess } from '@/services/local-server-process'
+import { createLocalServerBackup, startLocalServerProcess, stopLocalServerProcess } from '@/services/local-server-process'
+import ConfirmDeleteServerModal from '@/components/ui/modal/ConfirmDeleteServerModal.vue'
 
 const router = useRouter()
 const { formatMessage } = useVIntl()
 const { addNotification } = injectNotificationManager()
 const { servers: localServers, removeServer, updateServerStatus } = useLocalServers()
 const openCreateServer = inject<() => void>('openCreateServer')
+const confirmDeleteModal = ref<InstanceType<typeof ConfirmDeleteServerModal> | null>(null)
 
 const messages = defineMessages({
 	breadcrumb: { id: 'servers.list.title', defaultMessage: 'My Servers' },
@@ -67,6 +70,24 @@ function handleOpenServer(id: string) {
 	router.push(`/hosting/manage/${id}`)
 }
 
+function formatErrorMessage(err: unknown): string {
+	if (!err) return 'Неизвестная ошибка'
+	if (typeof err === 'string') return err
+	if (err instanceof Error) return err.message
+	if (typeof err === 'object') {
+		const obj = err as Record<string, unknown>
+		if (typeof obj.OtherError === 'string') return obj.OtherError
+		if (typeof obj.message === 'string') return obj.message
+		if (typeof obj.error === 'string') return obj.error
+		try {
+			return JSON.stringify(err)
+		} catch {
+			return String(err)
+		}
+	}
+	return String(err)
+}
+
 async function handleToggleServer(server: LocalServer, e: Event) {
 	e.stopPropagation()
 	if (server.status === 'stopped') {
@@ -88,8 +109,8 @@ async function handleToggleServer(server: LocalServer, e: Event) {
 		} catch (err) {
 			updateServerStatus(server.id, 'stopped', 0)
 			addNotification({
-				title: 'Error',
-				text: String(err),
+				title: 'Ошибка запуска сервера',
+				text: formatErrorMessage(err),
 				type: 'error',
 			})
 		}
@@ -108,14 +129,31 @@ async function handleToggleServer(server: LocalServer, e: Event) {
 	}
 }
 
-function handleDeleteServer(id: string, name: string, e: Event) {
+function handleDeleteServer(server: LocalServer, e: Event) {
 	e.stopPropagation()
-	if (confirm(`Delete server "${name}"?`)) {
-		removeServer(id)
+	confirmDeleteModal.value?.show(server)
+}
+
+async function handleBackupServer(server: LocalServer, e: Event) {
+	e.stopPropagation()
+	try {
 		addNotification({
-			title: name,
-			text: 'Server removed.',
+			title: 'Создание резервной копии...',
+			text: `${server.name}`,
 			type: 'info',
+		})
+		const sDir = server.path || (await getServerDirectory(server.id))
+		const res = await createLocalServerBackup(server.id, sDir, server.name)
+		addNotification({
+			title: 'Резервная копия создана',
+			text: `${res.file_name} (${(res.size_bytes / (1024 * 1024)).toFixed(1)} МБ)`,
+			type: 'success',
+		})
+	} catch (err) {
+		addNotification({
+			title: 'Ошибка создания копии',
+			text: formatErrorMessage(err),
+			type: 'error',
 		})
 	}
 }
@@ -256,11 +294,20 @@ function handleDeleteServer(id: string, name: string, e: Event) {
 						</button>
 					</ButtonStyled>
 
+					<!-- Создать резервную копию -->
+					<IconButton
+						size="sm"
+						label="Создать резервную копию"
+						@click="handleBackupServer(server, $event)"
+					>
+						<DatabaseIcon class="size-4 text-secondary hover:text-contrast" />
+					</IconButton>
+
 					<!-- Удалить -->
 					<IconButton
 						size="sm"
 						:label="formatMessage(messages.actionDelete)"
-						@click="handleDeleteServer(server.id, server.name, $event)"
+						@click="handleDeleteServer(server, $event)"
 					>
 						<TrashIcon class="size-4 text-red" />
 					</IconButton>
@@ -289,5 +336,7 @@ function handleDeleteServer(id: string, name: string, e: Event) {
 				</button>
 			</ButtonStyled>
 		</div>
+
+		<ConfirmDeleteServerModal ref="confirmDeleteModal" />
 	</div>
 </template>

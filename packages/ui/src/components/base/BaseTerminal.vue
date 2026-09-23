@@ -57,7 +57,7 @@ const props = withDefaults(
 		loading?: boolean
 	}>(),
 	{
-		scrollback: Infinity,
+		scrollback: 2000,
 		showInput: false,
 		disableInput: false,
 		disableInputTooltip: undefined,

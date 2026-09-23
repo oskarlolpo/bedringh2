@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "game": "minecraft",
+  "versionId": "1.21.11",
+  "name": "KLVoice",
+  "summary": "Официальная сборка KLVoice 1.21.11 для EnvyWorld с Plasmo Voice 2.1.15",
+  "files": [],
+  "dependencies": {
+    "minecraft": "1.21.11",
+    "fabric-loader": "0.19.2"
+  }
+}

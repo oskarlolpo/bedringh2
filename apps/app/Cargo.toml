@@ -14,11 +14,13 @@ daedalus = { workspace = true }
 dashmap = { workspace = true }
 either = { workspace = true }
 enumset = { workspace = true, features = ["serde"] }
+zip = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
 hyper-util = { workspace = true }
 native-dialog = { workspace = true }
 paste = { workspace = true }
 path-util = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -32,6 +34,7 @@ tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 tauri-plugin-window-state = { workspace = true }
 futures = { workspace = true }
+sha1_smol = { workspace = true }
 sysinfo = { workspace = true, features = ["system"] }
 theseus = { workspace = true, features = ["tauri"] }
 thiserror = { workspace = true }

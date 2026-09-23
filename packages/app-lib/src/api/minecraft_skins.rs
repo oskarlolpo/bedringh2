@@ -47,9 +47,9 @@
 //! latest profile again whenever the result is unclear.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, LazyLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub use bytes::Bytes;
@@ -88,9 +88,18 @@ pub(crate) static KL_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(4))
         .read_timeout(Duration::from_secs(3))
+        .pool_max_idle_per_host(4)
+        .pool_idle_timeout(Some(Duration::from_secs(15)))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 });
+
+static LAST_SKIN_SYNC: LazyLock<Mutex<HashMap<Uuid, Instant>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static LAST_CAPE_SYNC: LazyLock<Mutex<HashMap<Uuid, (Instant, Vec<Cape>)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SYNCED_SKIN_URLS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 const SKIN_CHANGE_DEBOUNCE: Duration = Duration::from_secs(10);
 
@@ -289,8 +298,17 @@ pub async fn get_available_capes() -> crate::Result<Vec<Cape>> {
         .await?
         .ok_or(ErrorKind::NoCredentialsError)?;
 
-    // Bedringh ID accounts have full access to all official Minecraft capes
-    if is_bedringh_user(&selected_credentials) {
+    let profile_id = selected_credentials.offline_profile.id;
+    {
+        let cache = LAST_CAPE_SYNC.lock().await;
+        if let Some((time, capes)) = cache.get(&profile_id) {
+            if time.elapsed() < Duration::from_secs(300) {
+                return Ok(capes.clone());
+            }
+        }
+    }
+
+    let capes = if is_bedringh_user(&selected_credentials) {
         let username = selected_credentials.offline_profile.name.clone();
         let pending_skin_change = pending_effective_skin_change(selected_credentials.offline_profile.id).await;
         let pending_cape_id = pending_skin_change
@@ -309,44 +327,44 @@ pub async fn get_available_capes() -> crate::Result<Vec<Cape>> {
         }
         .await;
 
-        return Ok(get_official_minecraft_capes(
+        get_official_minecraft_capes(
             current_cape_url.as_deref(),
             pending_cape_id,
-        ));
-    }
+        )
+    } else if let Some(kl_token) = klauncher_token(&selected_credentials) {
+        get_klauncher_capes(&selected_credentials, kl_token).await?
+    } else if let Some(profile) = selected_credentials.online_profile_fresh().await {
+        let pending_skin_change = pending_effective_skin_change(profile.id).await;
+        let pending_cape_id = pending_skin_change
+            .as_ref()
+            .map(PendingEffectiveSkinChange::cape_id);
 
-    // KLauncher accounts cannot query the Mojang profile endpoint; their
-    // capes live on the KLauncher server instead.
-    if let Some(kl_token) = klauncher_token(&selected_credentials) {
-        return get_klauncher_capes(&selected_credentials, kl_token).await;
-    }
-
-    let Some(profile) = selected_credentials.online_profile_fresh().await
-    else {
-        return Ok(Vec::new());
+        profile
+            .capes
+            .iter()
+            .map(|cape| Cape {
+                id: cape.id,
+                name: Arc::clone(&cape.name),
+                texture: Arc::clone(&cape.url),
+                animated_url: None,
+                delay: None,
+                animation_delay: None,
+                is_equipped: pending_cape_id.map_or_else(
+                    || cape.state == MinecraftCharacterExpressionState::Active,
+                    |cape_id| cape_id == Some(cape.id),
+                ),
+            })
+            .collect()
+    } else {
+        Vec::new()
     };
 
-    let pending_skin_change = pending_effective_skin_change(profile.id).await;
-    let pending_cape_id = pending_skin_change
-        .as_ref()
-        .map(PendingEffectiveSkinChange::cape_id);
+    {
+        let mut cache = LAST_CAPE_SYNC.lock().await;
+        cache.insert(profile_id, (Instant::now(), capes.clone()));
+    }
 
-    Ok(profile
-        .capes
-        .iter()
-        .map(|cape| Cape {
-            id: cape.id,
-            name: Arc::clone(&cape.name),
-            texture: Arc::clone(&cape.url),
-            animated_url: None,
-            delay: None,
-            animation_delay: None,
-            is_equipped: pending_cape_id.map_or_else(
-                || cape.state == MinecraftCharacterExpressionState::Active,
-                |cape_id| cape_id == Some(cape.id),
-            ),
-        })
-        .collect())
+    Ok(capes)
 }
 
 /// Gets the skins for the selected Minecraft profile.
@@ -432,109 +450,122 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
         .collect::<Vec<_>>()
         .await;
 
-    let is_kl = crate::launcher::klauncher::is_klauncher_user(
-        &selected_credentials.access_token,
-        &selected_credentials.refresh_token,
-    );
+    let should_sync_remote = {
+        let mut last_sync = LAST_SKIN_SYNC.lock().await;
+        match last_sync.get(&profile_id) {
+            Some(time) if time.elapsed() < Duration::from_secs(300) => false,
+            _ => {
+                last_sync.insert(profile_id, Instant::now());
+                true
+            }
+        }
+    };
 
-    if is_kl {
-        let name = &selected_credentials.offline_profile.name;
-        let client = &*KL_CLIENT;
-        let mut downloaded_bytes: Option<bytes::Bytes> = None;
+    if should_sync_remote {
+        let is_kl = crate::launcher::klauncher::is_klauncher_user(
+            &selected_credentials.access_token,
+            &selected_credentials.refresh_token,
+        );
 
-        if let Ok(res) = client.get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name)).send().await {
-            if res.status().is_success() {
-                if let Ok(json) = res.json::<serde_json::Value>().await {
-                    if let Some(skin_url) = json.get("textures").and_then(|t| t.get("SKIN")).and_then(|s| s.get("url")).and_then(|u| u.as_str()) {
-                        let https_url = skin_url.replace("http://", "https://");
-                        if let Ok(bytes_resp) = client.get(&https_url).send().await {
-                            if let Ok(bytes) = bytes_resp.bytes().await {
+        if is_kl {
+            let name = &selected_credentials.offline_profile.name;
+            let client = &*KL_CLIENT;
+            let mut downloaded_bytes: Option<bytes::Bytes> = None;
+
+            if let Ok(res) = client.get(format!("https://api.klaun.ch/v2/user/skin?nick={}", name)).send().await {
+                if res.status().is_success() {
+                    if let Ok(json) = res.json::<serde_json::Value>().await {
+                        if let Some(skin_url) = json.get("textures").and_then(|t| t.get("SKIN")).and_then(|s| s.get("url")).and_then(|u| u.as_str()) {
+                            let https_url = skin_url.replace("http://", "https://");
+                            if let Ok(bytes_resp) = client.get(&https_url).send().await {
+                                if let Ok(bytes) = bytes_resp.bytes().await {
+                                    downloaded_bytes = Some(bytes);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Если KLauncher API недоступен или вернул ошибку, пробуем fallback на mc-heads (только если локальных скинов ещё нет)
+            if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
+                if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
+                    if bytes_resp.status().is_success() {
+                        if let Ok(bytes) = bytes_resp.bytes().await {
+                            if !bytes.is_empty() {
                                 downloaded_bytes = Some(bytes);
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Если KLauncher API недоступен или вернул ошибку, пробуем fallback на mc-heads (только если локальных скинов ещё нет)
-        if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
-            if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
-                if bytes_resp.status().is_success() {
-                    if let Ok(bytes) = bytes_resp.bytes().await {
-                        if !bytes.is_empty() {
-                            downloaded_bytes = Some(bytes);
-                        }
-                    }
+            if let Some(bytes) = downloaded_bytes {
+                let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+                let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
+                if !already_saved {
+                    let insert_pos = if saved_custom_skins.is_empty() {
+                        CustomMinecraftSkinInsertPosition::Top
+                    } else {
+                        CustomMinecraftSkinInsertPosition::Bottom
+                    };
+                    let _ = CustomMinecraftSkin::add(
+                        profile_id,
+                        &texture_key,
+                        &bytes,
+                        MinecraftSkinVariant::Classic,
+                        None,
+                        insert_pos,
+                        &state.pool,
+                    )
+                    .await;
+
+                    saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
+                        .await?
+                        .collect::<Vec<_>>()
+                        .await;
                 }
             }
         }
 
-        if let Some(bytes) = downloaded_bytes {
-            let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
-            let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
-            if !already_saved {
-                let insert_pos = if saved_custom_skins.is_empty() {
-                    CustomMinecraftSkinInsertPosition::Top
-                } else {
-                    CustomMinecraftSkinInsertPosition::Bottom
-                };
-                let _ = CustomMinecraftSkin::add(
-                    profile_id,
-                    &texture_key,
-                    &bytes,
-                    MinecraftSkinVariant::Classic,
-                    None,
-                    insert_pos,
-                    &state.pool,
-                )
-                .await;
+        let is_tl = crate::launcher::tlauncher::is_tlauncher_user(
+            &selected_credentials.access_token,
+            &selected_credentials.refresh_token,
+        );
 
-                saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
-                    .await?
-                    .collect::<Vec<_>>()
-                    .await;
-            }
-        }
-    }
+        if is_tl {
+            let name = &selected_credentials.offline_profile.name;
+            let client = &*KL_CLIENT;
+            let mut downloaded_bytes: Option<bytes::Bytes> = None;
 
-    let is_tl = crate::launcher::tlauncher::is_tlauncher_user(
-        &selected_credentials.access_token,
-        &selected_credentials.refresh_token,
-    );
-
-    if is_tl {
-        let name = &selected_credentials.offline_profile.name;
-        let client = &*KL_CLIENT;
-        let mut downloaded_bytes: Option<bytes::Bytes> = None;
-
-        // 1. Пробуем получить скин через TLauncher API на skins.tl.vg
-        let profile_url = format!("http://skins.tl.vg/skin/profile/texture/login/{}", name);
-        if let Ok(resp) = client.get(&profile_url).header("User-Agent", "TLauncher/2.9374").send().await {
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    let raw_skin_opt = json
-                        .get("SKIN")
-                        .and_then(|s| s.get("url"))
-                        .and_then(|u| u.as_str())
-                        .or_else(|| json.get("skinUrl").and_then(|u| u.as_str()))
-                        .or_else(|| {
-                            json.get("textures")
-                                .and_then(|t| t.get("SKIN"))
-                                .and_then(|s| s.get("url"))
-                                .and_then(|u| u.as_str())
-                        });
-                    if let Some(raw_skin) = raw_skin_opt {
-                        let direct_url = raw_skin
-                            .replace("https://auth.tlauncher.org", "http://skins.tl.vg")
-                            .replace("http://auth.tlauncher.org", "http://skins.tl.vg")
-                            .replace("https://auth.tlauncher.ru", "http://skins.tl.vg")
-                            .replace("http://auth.tlauncher.ru", "http://skins.tl.vg");
-                        if let Ok(bytes_resp) = client.get(&direct_url).send().await {
-                            if bytes_resp.status().is_success() {
-                                if let Ok(bytes) = bytes_resp.bytes().await {
-                                    if !bytes.is_empty() {
-                                        downloaded_bytes = Some(bytes);
+            // 1. Пробуем получить скин через TLauncher API на skins.tl.vg
+            let profile_url = format!("http://skins.tl.vg/skin/profile/texture/login/{}", name);
+            if let Ok(resp) = client.get(&profile_url).header("User-Agent", "TLauncher/2.9374").send().await {
+                if resp.status().is_success() {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        let raw_skin_opt = json
+                            .get("SKIN")
+                            .and_then(|s| s.get("url"))
+                            .and_then(|u| u.as_str())
+                            .or_else(|| json.get("skinUrl").and_then(|u| u.as_str()))
+                            .or_else(|| {
+                                json.get("textures")
+                                    .and_then(|t| t.get("SKIN"))
+                                    .and_then(|s| s.get("url"))
+                                    .and_then(|u| u.as_str())
+                            });
+                        if let Some(raw_skin) = raw_skin_opt {
+                            let direct_url = raw_skin
+                                .replace("https://auth.tlauncher.org", "http://skins.tl.vg")
+                                .replace("http://auth.tlauncher.org", "http://skins.tl.vg")
+                                .replace("https://auth.tlauncher.ru", "http://skins.tl.vg")
+                                .replace("http://auth.tlauncher.ru", "http://skins.tl.vg");
+                            if let Ok(bytes_resp) = client.get(&direct_url).send().await {
+                                if bytes_resp.status().is_success() {
+                                    if let Ok(bytes) = bytes_resp.bytes().await {
+                                        if !bytes.is_empty() {
+                                            downloaded_bytes = Some(bytes);
+                                        }
                                     }
                                 }
                             }
@@ -542,73 +573,73 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
                     }
                 }
             }
-        }
 
-        // 2. Fallback на прямое имя файла скина TLauncher
-        if downloaded_bytes.is_none() {
-            let direct_file_url = format!("http://skins.tl.vg/skin/fileservice/skins/skin_{}.png", name);
-            if let Ok(bytes_resp) = client.get(&direct_file_url).send().await {
-                if bytes_resp.status().is_success() {
-                    if let Ok(bytes) = bytes_resp.bytes().await {
-                        if !bytes.is_empty() {
-                            downloaded_bytes = Some(bytes);
+            // 2. Fallback на прямое имя файла скина TLauncher
+            if downloaded_bytes.is_none() {
+                let direct_file_url = format!("http://skins.tl.vg/skin/fileservice/skins/skin_{}.png", name);
+                if let Ok(bytes_resp) = client.get(&direct_file_url).send().await {
+                    if bytes_resp.status().is_success() {
+                        if let Ok(bytes) = bytes_resp.bytes().await {
+                            if !bytes.is_empty() {
+                                downloaded_bytes = Some(bytes);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // 3. Fallback на mc-heads.net, только если локальных скинов ещё нет
-        if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
-            if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
-                if bytes_resp.status().is_success() {
-                    if let Ok(bytes) = bytes_resp.bytes().await {
-                        if !bytes.is_empty() {
-                            downloaded_bytes = Some(bytes);
+            // 3. Fallback на mc-heads.net, только если локальных скинов ещё нет
+            if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
+                if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
+                    if bytes_resp.status().is_success() {
+                        if let Ok(bytes) = bytes_resp.bytes().await {
+                            if !bytes.is_empty() {
+                                downloaded_bytes = Some(bytes);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        if let Some(bytes) = downloaded_bytes {
-            let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
-            let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
-            if !already_saved {
-                let insert_pos = if saved_custom_skins.is_empty() {
-                    CustomMinecraftSkinInsertPosition::Top
-                } else {
-                    CustomMinecraftSkinInsertPosition::Bottom
-                };
-                let _ = CustomMinecraftSkin::add(
-                    profile_id,
-                    &texture_key,
-                    &bytes,
-                    MinecraftSkinVariant::Classic,
-                    None,
-                    insert_pos,
-                    &state.pool,
-                )
-                .await;
-
-                saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
-                    .await?
-                    .collect::<Vec<_>>()
+            if let Some(bytes) = downloaded_bytes {
+                let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
+                let already_saved = saved_custom_skins.iter().any(|s| s.texture_key == texture_key);
+                if !already_saved {
+                    let insert_pos = if saved_custom_skins.is_empty() {
+                        CustomMinecraftSkinInsertPosition::Top
+                    } else {
+                        CustomMinecraftSkinInsertPosition::Bottom
+                    };
+                    let _ = CustomMinecraftSkin::add(
+                        profile_id,
+                        &texture_key,
+                        &bytes,
+                        MinecraftSkinVariant::Classic,
+                        None,
+                        insert_pos,
+                        &state.pool,
+                    )
                     .await;
+
+                    saved_custom_skins = CustomMinecraftSkin::get_all(profile_id, &state.pool)
+                        .await?
+                        .collect::<Vec<_>>()
+                        .await;
+                }
             }
         }
-    }
 
-    // Mirror the original KLauncher skins tab: pull the whole owned-skin
-    // history, not just the currently equipped texture.
-    if let Some(kl_token) = klauncher_token(&selected_credentials) {
-        sync_klauncher_owned_skins(
-            profile_id,
-            kl_token,
-            &mut saved_custom_skins,
-            &state.pool,
-        )
-        .await?;
+        // Mirror the original KLauncher skins tab: pull the whole owned-skin
+        // history, not just the currently equipped texture.
+        if let Some(kl_token) = klauncher_token(&selected_credentials) {
+            sync_klauncher_owned_skins(
+                profile_id,
+                kl_token,
+                &mut saved_custom_skins,
+                &state.pool,
+            )
+            .await?;
+        }
     }
 
     for mut custom_skin in saved_custom_skins {
@@ -1021,6 +1052,13 @@ pub async fn sync_klauncher_owned_skins(
             continue;
         };
 
+        {
+            let synced = SYNCED_SKIN_URLS.lock().await;
+            if synced.contains(&url) {
+                continue;
+            }
+        }
+
         // Если в метаданных или в имени файла URL содержится sha256 хэш, и он уже есть в БД — пропускаем
         let possible_hash = item.get("hash")
             .or_else(|| item.get("sha256"))
@@ -1031,6 +1069,8 @@ pub async fn sync_klauncher_owned_skins(
 
         if let Some(h) = possible_hash {
             if saved_custom_skins.iter().any(|s| s.texture_key == h) {
+                let mut synced = SYNCED_SKIN_URLS.lock().await;
+                synced.insert(url.clone());
                 continue;
             }
         }
@@ -1041,6 +1081,11 @@ pub async fn sync_klauncher_owned_skins(
         let Ok(bytes) = bytes_resp.bytes().await else {
             continue;
         };
+
+        {
+            let mut synced = SYNCED_SKIN_URLS.lock().await;
+            synced.insert(url.clone());
+        }
 
         let texture_key = format!("{:x}", sha2::Sha256::digest(&bytes));
         if saved_custom_skins

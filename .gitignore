@@ -93,3 +93,6 @@ graphify-out/
 services/bedringh-auth/downloads/
 services/bedringh-auth/data/
 services/bedringh-auth/*.log
+
+target_check/
+

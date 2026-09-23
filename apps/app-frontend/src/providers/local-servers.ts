@@ -1,4 +1,9 @@
 import { ref, computed } from 'vue'
+import { join } from '@tauri-apps/api/path'
+import { remove, writeTextFile } from '@tauri-apps/plugin-fs'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { getServerDirectory } from '@/services/server-download'
+import { stopLocalServerProcess, scanLocalServerAddons } from '@/services/local-server-process'
 
 export type ServerCore =
 	| 'paper'
@@ -8,6 +13,8 @@ export type ServerCore =
 	| 'fabric'
 	| 'forge'
 	| 'neoforge'
+	| 'mohist'
+	| 'quilt'
 	| 'vanilla'
 
 export interface ServerAddonItem {
@@ -123,7 +130,26 @@ export function useLocalServers() {
 		return newServer
 	}
 
-	function removeServer(id: string) {
+	async function removeServer(id: string, deleteFiles: boolean = true) {
+		const s = getServerById(id)
+		if (s) {
+			try {
+				await stopLocalServerProcess(id)
+			} catch (e) {
+				console.warn('Error stopping server before removal:', e)
+			}
+
+			if (deleteFiles) {
+				try {
+					const sDir = s.path || (await getServerDirectory(id))
+					if (sDir) {
+						await remove(sDir, { recursive: true })
+					}
+				} catch (e) {
+					console.warn('Failed to delete server directory on disk:', e)
+				}
+			}
+		}
 		servers.value = servers.value.filter((s) => s.id !== id)
 		saveToStorage()
 	}
@@ -205,6 +231,151 @@ export function useLocalServers() {
 			...settings,
 		}
 		saveToStorage()
+		syncServerJsonToDisk(s)
+	}
+
+	async function syncServerJsonToDisk(server: LocalServer) {
+		try {
+			const sDir = server.path || (await getServerDirectory(server.id))
+			if (sDir) {
+				const metaPath = await join(sDir, 'server.json')
+				const data = JSON.stringify(
+					{
+						id: server.id,
+						name: server.name,
+						core: server.core,
+						gameVersion: server.gameVersion,
+						coreVersion: server.coreVersion,
+						port: server.port,
+						motd: server.motd,
+						createdAt: server.createdAt,
+						launchSettings: server.launchSettings,
+						addons: server.addons,
+					},
+					null,
+					2,
+				)
+				await writeTextFile(metaPath, data)
+			}
+		} catch (e) {
+			console.warn('Failed to sync server.json to disk:', e)
+		}
+	}
+
+	async function syncAddonsWithDisk(serverId: string): Promise<ServerAddonItem[]> {
+		const s = getServerById(serverId)
+		if (!s) return []
+		const sDir = s.path || (await getServerDirectory(s.id))
+		if (!sDir) return []
+
+		try {
+			const scanned = await scanLocalServerAddons(sDir)
+			const existingAddons = Array.isArray(s.addons) ? [...s.addons] : []
+			const existingMap = new Map<string, ServerAddonItem>()
+			for (const a of existingAddons) {
+				existingMap.set(a.file_name, a)
+			}
+
+			const activeScannedFiles = new Set(scanned.map((f) => f.file_name))
+			for (const f of scanned) {
+				if (f.file_name.endsWith('.disabled')) {
+					activeScannedFiles.add(f.file_name.replace(/\.disabled$/, ''))
+				} else {
+					activeScannedFiles.add(`${f.file_name}.disabled`)
+				}
+			}
+
+			// 1. Filter out removed files
+			const updatedAddons: ServerAddonItem[] = existingAddons.filter((a) =>
+				activeScannedFiles.has(a.file_name),
+			)
+
+			// 2. Find new/untracked files
+			const untracked = scanned.filter(
+				(f) =>
+					!existingMap.has(f.file_name) &&
+					!existingMap.has(f.file_name.replace(/\.disabled$/, '')),
+			)
+
+			if (untracked.length > 0) {
+				const hashes = untracked.map((u) => u.sha1).filter(Boolean)
+				let mrVersions: Record<string, any> = {}
+				if (hashes.length > 0) {
+					try {
+						const res = await tauriFetch('https://api.modrinth.com/v2/version_files', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'User-Agent': 'Bedringh-Launcher/1.0',
+							},
+							body: JSON.stringify({
+								hashes,
+								algorithm: 'sha1',
+							}),
+						})
+						if (res.ok) {
+							mrVersions = await res.json()
+						}
+					} catch (e) {
+						console.warn('Failed to query Modrinth API for scanned addons:', e)
+					}
+				}
+
+				for (const item of untracked) {
+					const matchedVer = mrVersions[item.sha1]
+					let title = item.file_name
+						.replace(/\.(jar|zip)(\.disabled)?$/i, '')
+						.replace(/[-_]/g, ' ')
+					let projId = item.file_name
+					let projSlug: string | null = null
+					let iconUrl: string | null = null
+					let authorName = 'Локальный файл'
+					const categories: string[] = [item.addon_type]
+
+					if (matchedVer && matchedVer.project_id) {
+						projId = matchedVer.project_id
+						title = matchedVer.name || title
+					}
+
+					const sizeMb = (item.size_bytes / (1024 * 1024)).toFixed(2)
+					const newAddon: ServerAddonItem = {
+						id: projId,
+						file_name: item.file_name,
+						project_type: item.addon_type,
+						enabled: item.enabled,
+						has_update: false,
+						file_size_formatted: `${sizeMb} MB`,
+						description_text: 'Обнаружено на диске сервера',
+						project: {
+							id: projId,
+							slug: projSlug,
+							title,
+							icon_url: iconUrl,
+							categories,
+						},
+						version: {
+							id: matchedVer?.id || item.sha1.substring(0, 8),
+							version_number: matchedVer?.version_number || 'local',
+							file_name: item.file_name,
+						},
+						owner: {
+							id: 'local',
+							name: authorName,
+							type: 'user',
+						},
+					}
+					updatedAddons.push(newAddon)
+				}
+			}
+
+			s.addons = updatedAddons
+			saveToStorage()
+			await syncServerJsonToDisk(s)
+			return updatedAddons
+		} catch (err) {
+			console.error('Failed to sync addons with disk:', err)
+			return s.addons || []
+		}
 	}
 
 	return {
@@ -220,5 +391,8 @@ export function useLocalServers() {
 		toggleServerAddon,
 		isAddonInstalled,
 		updateServerLaunchSettings,
+		syncAddonsWithDisk,
+		syncServerJsonToDisk,
 	}
 }
+

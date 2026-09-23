@@ -105,7 +105,6 @@ import NewIconEditorNotification from '@/components/ui/new-icon-editor-notificat
 import { shouldShowNewIconEditorNotification } from '@/components/ui/new-icon-editor-notification/show-notification'
 import OnboardingChecklist from '@/components/ui/onboarding-checklist/index.vue'
 import PrideFundraiserBanner from '@/components/ui/PrideFundraiserBanner.vue'
-import PromotionWrapper from '@/components/ui/PromotionWrapper.vue'
 import QuickInstanceSwitcher from '@/components/ui/QuickInstanceSwitcher.vue'
 import SharedInstanceInviteHandler from '@/components/ui/shared-instances/shared-instance-invite-handler/index.vue'
 import SplashScreen from '@/components/ui/SplashScreen.vue'
@@ -748,19 +747,6 @@ async function onAccountChanged() {
 
 provide('refreshChibiSkin', refreshChibiSkin)
 provide('accountChanged', accountChanged)
-
-watch(
-	() => route.path,
-	() => {
-		void refreshChibiSkin()
-	}
-)
-
-if (typeof window !== 'undefined') {
-	window.addEventListener('focus', () => {
-		void refreshChibiSkin()
-	})
-}
 
 async function setupApp() {
 	void refreshChibiSkin()

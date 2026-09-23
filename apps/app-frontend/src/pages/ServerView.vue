@@ -11,11 +11,13 @@ import {
 	DownloadIcon,
 	FileIcon,
 	FolderOpenIcon,
+	GlobeIcon,
 	HistoryIcon,
 	LinkIcon,
 	LoaderCircleIcon,
 	MoreVerticalIcon,
 	PlayIcon,
+	PlugIcon,
 	PlusIcon,
 	RefreshCwIcon,
 	SearchIcon,
@@ -33,7 +35,7 @@ import {
 	Button,
 	ButtonStyled,
 	Chips,
-	ConfirmModal,
+	ConsolePageLayout,
 	ContextMenu,
 	ContentCardLayout,
 	FilePageLayout,
@@ -46,6 +48,7 @@ import {
 	PageHeaderActions,
 	PageHeaderMetadata,
 	PageHeaderMetadataItem,
+	provideConsoleManager,
 	provideContentManager,
 	provideFileManager,
 	ReadyTransition,
@@ -54,13 +57,14 @@ import {
 	defineMessages,
 	useVIntl,
 } from '@modrinth/ui'
-import type { ContentItem, EditingFile, FileItem, UploadState } from '@modrinth/ui'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { ContentItem, EditingFile, FileItem, LogLine, LogLevel, UploadState } from '@modrinth/ui'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { openPath } from '@/helpers/utils.js'
 
+import ConfirmDeleteServerModal from '@/components/ui/modal/ConfirmDeleteServerModal.vue'
 import { type LocalServer, type ServerLaunchSettings, useLocalServers } from '@/providers/local-servers'
 import {
 	mkdir,
@@ -75,12 +79,18 @@ import {
 } from '@tauri-apps/plugin-fs'
 import { getServerDirectory } from '@/services/server-download'
 import {
+	createLocalServerBackup,
+	deleteLocalServerBackup,
+	generateLocalServerScripts,
 	getLocalServerLogs,
 	getLocalServerMetrics,
 	getLocalServerStatus,
+	listLocalServerBackups,
+	restoreLocalServerBackup,
 	sendLocalServerCommand,
 	startLocalServerProcess,
 	stopLocalServerProcess,
+	type LocalServerBackup,
 } from '@/services/local-server-process'
 
 const props = defineProps({
@@ -104,12 +114,14 @@ const {
 	removeServer,
 	updateServer,
 	updateServerLaunchSettings,
+	syncAddonsWithDisk,
 } = useLocalServers()
 
 const messages = defineMessages({
 	tabOverview: { id: 'server.view.tab.overview', defaultMessage: 'Overview & Console' },
 	tabContent: { id: 'server.view.tab.content', defaultMessage: 'Content' },
 	tabFiles: { id: 'server.view.tab.files', defaultMessage: 'Files' },
+	tabBackups: { id: 'server.view.tab.backups', defaultMessage: 'Backups' },
 	tabSettings: { id: 'server.view.tab.settings', defaultMessage: 'Settings' },
 	allServers: { id: 'server.view.all_servers', defaultMessage: 'All servers' },
 	metricCpu: { id: 'server.view.metric.cpu', defaultMessage: 'Processor' },
@@ -171,12 +183,16 @@ const server = computed<LocalServer | undefined>(() =>
 )
 
 const serverContextMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
-const deleteServerModal = ref<InstanceType<typeof ConfirmModal> | null>(null)
+const confirmDeleteModal = ref<InstanceType<typeof ConfirmDeleteServerModal> | null>(null)
+
+const isModCore = computed(() => {
+	const c = server.value?.core?.toLowerCase() ?? ''
+	return ['fabric', 'forge', 'neoforge', 'quilt'].includes(c)
+})
 
 function handleBrowseContent() {
 	if (!server.value) return
-	const isModCore = ['fabric', 'forge', 'neoforge', 'quilt'].includes(server.value.core.toLowerCase())
-	router.push(`/browse/${isModCore ? 'mod' : 'plugin'}?sid=${server.value.id}`)
+	router.push(`/browse/${isModCore.value ? 'mod' : 'plugin'}?sid=${server.value.id}`)
 }
 
 async function handleOpenServerFolder() {
@@ -221,19 +237,12 @@ async function handleChangeAvatar() {
 }
 
 function handleDeleteServer() {
-	deleteServerModal.value?.show()
+	if (server.value) {
+		confirmDeleteModal.value?.show(server.value)
+	}
 }
 
-async function confirmDeleteServer() {
-	if (!server.value) return
-	const sName = server.value.name
-	const sid = server.value.id
-	removeServer(sid)
-	addNotification({
-		title: 'Сервер удален',
-		text: `Сервер "${sName}" успешно удален.`,
-		type: 'info',
-	})
+function handleServerDeleted() {
 	router.push('/hosting/manage')
 }
 
@@ -288,6 +297,13 @@ function handleAvatarContextMenu(event: MouseEvent) {
 			action: () => handleChangeAvatar(),
 		},
 		{
+			id: 'backup',
+			label: 'Создать резервную копию',
+			icon: DatabaseIcon,
+			shown: true,
+			action: () => handleCreateBackup(),
+		},
+		{
 			id: 'copy_address',
 			label: formatMessage(messages.actionCopyAddress),
 			icon: CopyIcon,
@@ -307,13 +323,14 @@ function handleAvatarContextMenu(event: MouseEvent) {
 
 // ==========================================
 // НАВИГАЦИЯ ПО ВКЛАДКАМ (Modrinth NavTabs)
-// Порядок: 1. Обзор и Логи, 2. Контент, 3. Файлы, 4. Настройки
+// Порядок: 1. Обзор и Логи, 2. Контент, 3. Файлы, 4. Бэкапы, 5. Настройки
 // ==========================================
 const activeTabIndex = ref(0)
 const navTabs = computed(() => [
 	{ label: formatMessage(messages.tabOverview), href: 'overview', icon: TerminalSquareIcon },
 	{ label: formatMessage(messages.tabContent), href: 'content', icon: BoxesIcon },
 	{ label: formatMessage(messages.tabFiles), href: 'files', icon: FolderOpenIcon },
+	{ label: formatMessage(messages.tabBackups), href: 'backups', icon: DatabaseIcon },
 	{ label: formatMessage(messages.tabSettings), href: 'settings', icon: SettingsIcon },
 ])
 
@@ -366,47 +383,93 @@ const formattedUptime = computed(() => {
 	return `${m}м ${s}с`
 })
 
-// Console state
-interface ConsoleLine {
-	id: number
-	timestamp: string
-	type: 'info' | 'warn' | 'error' | 'system' | 'relay'
-	text: string
-}
+// Console state (Modrinth ConsolePageLayout)
+const logLines = shallowRef<LogLine[]>([])
 
-let nextLineId = 1
-const consoleLogs = ref<ConsoleLine[]>([])
-const consoleInput = ref('')
-const consoleFilter = ref('')
-const consoleContainer = ref<HTMLElement | null>(null)
-const commandHistory = ref<string[]>([])
-const historyIndex = ref(-1)
-
-function addLog(text: string, type: ConsoleLine['type'] = 'info') {
-	const now = new Date()
-	const timestamp = now.toTimeString().split(' ')[0]
-	consoleLogs.value.push({
-		id: nextLineId++,
-		timestamp,
-		type,
-		text,
-	})
-	if (consoleLogs.value.length > 500) {
-		consoleLogs.value.shift()
+function parseLogLevel(text: string): LogLevel | null {
+	if (
+		text.includes('[STDERR]') ||
+		text.includes('/ERROR') ||
+		text.includes('Exception:') ||
+		text.includes('Error:') ||
+		text.includes('SEVERE')
+	) {
+		return 'error'
 	}
-	nextTick(() => {
-		if (consoleContainer.value) {
-			consoleContainer.value.scrollTop = consoleContainer.value.scrollHeight
-		}
-	})
+	if (text.includes('/WARN') || text.includes('WARN') || text.includes('WARNING')) {
+		return 'warn'
+	}
+	if (text.includes('/DEBUG') || text.includes('DEBUG')) {
+		return 'debug'
+	}
+	if (text.includes('/TRACE') || text.includes('TRACE')) {
+		return 'trace'
+	}
+	if (
+		text.includes('/INFO') ||
+		text.includes('INFO') ||
+		text.includes('[Система]') ||
+		text.includes('[JVM]')
+	) {
+		return 'info'
+	}
+	return null
 }
 
-const filteredLogs = computed(() => {
-	if (!consoleFilter.value.trim()) return consoleLogs.value
-	const q = consoleFilter.value.toLowerCase()
-	return consoleLogs.value.filter(
-		(l) => l.text.toLowerCase().includes(q) || l.type.toLowerCase().includes(q),
-	)
+function addLogs(texts: string[]) {
+	if (!texts.length) return
+	const parsed = texts.map((text) => ({
+		text,
+		level: parseLogLevel(text),
+	}))
+	const newLines = [...logLines.value, ...parsed]
+	if (newLines.length > 4000) {
+		logLines.value = newLines.slice(newLines.length - 3000)
+	} else {
+		logLines.value = newLines
+	}
+}
+
+function addLog(text: string, levelOverride?: LogLevel | null) {
+	const level = levelOverride !== undefined ? levelOverride : parseLogLevel(text)
+	const newLines = [...logLines.value, { text, level }]
+	if (newLines.length > 4000) {
+		logLines.value = newLines.slice(newLines.length - 3000)
+	} else {
+		logLines.value = newLines
+	}
+}
+
+function clearConsole() {
+	logLines.value = []
+	addLog('[Система] Консоль очищена.', 'info')
+}
+
+provideConsoleManager({
+	logLines,
+	sendCommand: async (cmd: string) => {
+		const trimmed = cmd.trim()
+		if (!trimmed) return
+		addLog(`> ${trimmed}`, 'info')
+		if (!server.value || server.value.status !== 'running') {
+			addLog('[Система] Сервер не запущен. Команда не может быть выполнена.', 'warn')
+			return
+		}
+		try {
+			await sendLocalServerCommand(server.value.id, trimmed)
+		} catch (e) {
+			addLog(`[Ошибка] ${formatErrorMessage(e)}`, 'warn')
+		}
+	},
+	onClear: clearConsole,
+	clearDisabled: computed(() => logLines.value.length === 0),
+	emptyStateType: 'server',
+	loading: computed(() => server.value?.status === 'starting'),
+	showCommandInput: true,
+	disableCommandInput: computed(() => server.value?.status !== 'running'),
+	disableCommandInputTooltip: computed(() =>
+		server.value?.status !== 'running' ? 'Сервер не запущен' : undefined,
+	),
 })
 
 let logPollInterval: ReturnType<typeof setInterval> | null = null
@@ -429,24 +492,24 @@ function handleProcessExited() {
 	}
 	cpuPercent.value = 0
 	ramUsedMb.value = 0
-	addLog('[Система] Сервер остановлен.', 'system')
+	addLog('[Система] Сервер остановлен.', 'info')
 }
 
 function startLogPolling() {
 	if (logPollInterval) clearInterval(logPollInterval)
+	if (server.value?.status !== 'running') return
 	logPollInterval = setInterval(async () => {
-		if (!server.value) return
+		if (!server.value || server.value.status !== 'running') {
+			if (logPollInterval) {
+				clearInterval(logPollInterval)
+				logPollInterval = null
+			}
+			return
+		}
 		try {
 			const res = await getLocalServerLogs(server.value.id, lastLogIndex)
 			if (res.logs && res.logs.length > 0) {
-				for (const line of res.logs) {
-					const lvl = line.includes('[STDERR]') || line.includes('ERROR')
-						? 'error'
-						: line.includes('WARN')
-							? 'warn'
-							: 'info'
-					addLog(line, lvl)
-				}
+				addLogs(res.logs)
 				lastLogIndex = res.total
 			}
 			if (!res.running && server.value.status === 'running') {
@@ -455,68 +518,7 @@ function startLogPolling() {
 		} catch (e) {
 			// ignore poll errors
 		}
-	}, 350)
-}
-
-async function handleSendCommand() {
-	const cmd = consoleInput.value.trim()
-	if (!cmd) return
-
-	addLog(`> ${cmd}`, 'system')
-	commandHistory.value.push(cmd)
-	historyIndex.value = -1
-	consoleInput.value = ''
-
-	if (server.value?.status !== 'running') {
-		addLog('Сервер не запущен. Команда не может быть выполнена.', 'warn')
-		return
-	}
-
-	try {
-		await sendLocalServerCommand(server.value.id, cmd)
-	} catch (e) {
-		addLog(`Ошибка отправки команды: ${e}`, 'error')
-	}
-}
-
-function handleHistoryKey(e: KeyboardEvent) {
-	if (e.key === 'ArrowUp') {
-		if (commandHistory.value.length === 0) return
-		if (historyIndex.value === -1) {
-			historyIndex.value = commandHistory.value.length - 1
-		} else if (historyIndex.value > 0) {
-			historyIndex.value--
-		}
-		consoleInput.value = commandHistory.value[historyIndex.value] || ''
-		e.preventDefault()
-	} else if (e.key === 'ArrowDown') {
-		if (historyIndex.value === -1) return
-		if (historyIndex.value < commandHistory.value.length - 1) {
-			historyIndex.value++
-			consoleInput.value = commandHistory.value[historyIndex.value] || ''
-		} else {
-			historyIndex.value = -1
-			consoleInput.value = ''
-		}
-		e.preventDefault()
-	}
-}
-
-function clearConsole() {
-	consoleLogs.value = []
-	addLog('Консоль очищена.', 'system')
-}
-
-function copyAllLogs() {
-	const text = consoleLogs.value
-		.map((l) => `[${l.timestamp}] [${l.type.toUpperCase()}] ${l.text}`)
-		.join('\n')
-	navigator.clipboard.writeText(text)
-	addNotification({
-		title: 'Логи скопированы',
-		text: 'Содержимое консоли скопировано в буфер обмена.',
-		type: 'success',
-	})
+	}, 1000)
 }
 
 // Lifecycle управления сервером
@@ -561,6 +563,15 @@ function saveLaunchSettings() {
 
 async function pollMetrics() {
 	if (!server.value) return
+	if (server.value.status !== 'running') {
+		if (metricsInterval) {
+			clearInterval(metricsInterval)
+			metricsInterval = null
+		}
+		cpuPercent.value = 0
+		ramUsedMb.value = 0
+		return
+	}
 	try {
 		const sDir = server.value.path || (await getServerDirectory(server.value.id))
 		const m = await getLocalServerMetrics(server.value.id, sDir)
@@ -591,8 +602,27 @@ async function pollMetrics() {
 
 function startMetricsPolling() {
 	if (metricsInterval) clearInterval(metricsInterval)
+	if (server.value?.status !== 'running') return
 	pollMetrics()
-	metricsInterval = setInterval(pollMetrics, 1500)
+	metricsInterval = setInterval(pollMetrics, 2000)
+}
+
+function formatErrorMessage(err: unknown): string {
+	if (!err) return 'Неизвестная ошибка'
+	if (typeof err === 'string') return err
+	if (err instanceof Error) return err.message
+	if (typeof err === 'object') {
+		const obj = err as Record<string, unknown>
+		if (typeof obj.OtherError === 'string') return obj.OtherError
+		if (typeof obj.message === 'string') return obj.message
+		if (typeof obj.error === 'string') return obj.error
+		try {
+			return JSON.stringify(err)
+		} catch {
+			return String(err)
+		}
+	}
+	return String(err)
 }
 
 async function handleStartServer() {
@@ -629,10 +659,11 @@ async function handleStartServer() {
 	} catch (err) {
 		console.error('Failed to start server:', err)
 		updateServerStatus(server.value.id, 'stopped', 0)
-		addLog(`[Ошибка запуска] ${err}`, 'error')
+		const errMsg = formatErrorMessage(err)
+		addLog(`[Ошибка запуска] ${errMsg}`, 'error')
 		addNotification({
 			title: 'Ошибка запуска сервера',
-			text: String(err),
+			text: errMsg,
 			type: 'error',
 		})
 	}
@@ -779,20 +810,21 @@ provideContentManager({
 		})
 	},
 	refresh: async () => {
+		if (!server.value) return
 		contentLoading.value = true
-		setTimeout(() => {
+		try {
+			addLog('[Контент] Сканирование модификаций и плагинов с диска (ATLauncher scanMissingMods)...', 'info')
+			const updated = await syncAddonsWithDisk(server.value.id)
+			addLog(`[Контент] Синхронизировано: найдено ${updated.length} элементов на диске.`, 'info')
+		} catch (e) {
+			console.error('Failed to sync addons:', e)
+			addLog(`[Контент] Ошибка синхронизации: ${e}`, 'error')
+		} finally {
 			contentLoading.value = false
-		}, 300)
+		}
 	},
 	browse: () => {
-		const sid = server.value?.id
-		if (!sid) return
-		const core = server.value?.core?.toLowerCase()
-		const isPluginCore = ['paper', 'purpur', 'spigot', 'folia'].includes(core ?? '')
-		router.push({
-			path: `/browse/${isPluginCore ? 'plugin' : 'mod'}`,
-			query: { sid },
-		})
+		handleBrowseContent()
 	},
 	uploadFiles: () => {
 		activeTabIndex.value = 2 // Перейти во вкладку файлов
@@ -1386,7 +1418,7 @@ function copyAddress() {
 onMounted(async () => {
 	if (server.value) {
 		serverProps.value.server_port = server.value.port
-		addLog(`[Система] Сервер инициализирован: ${server.value.name}`, 'system')
+		addLog(`[Система] Сервер инициализирован: ${server.value.name}`, 'info')
 
 		// Initial poll for disk size and state
 		await pollMetrics()
@@ -1405,6 +1437,186 @@ onMounted(async () => {
 		}
 	}
 })
+
+// ==========================================
+// 4. РЕЗЕРВНЫЕ КОПИИ (Backups)
+// ==========================================
+const backups = ref<LocalServerBackup[]>([])
+const backupsLoading = ref(false)
+const creatingBackup = ref(false)
+const restoringBackupFile = ref<string | null>(null)
+const confirmRestoreModalVisible = ref(false)
+const backupToRestore = ref<LocalServerBackup | null>(null)
+
+async function loadBackups() {
+	if (!server.value) return
+	backupsLoading.value = true
+	try {
+		backups.value = await listLocalServerBackups(server.value.id)
+	} catch (e) {
+		console.error('Failed to load backups:', e)
+	} finally {
+		backupsLoading.value = false
+	}
+}
+
+async function handleCreateBackup() {
+	if (!server.value || creatingBackup.value) return
+	creatingBackup.value = true
+	addLog('[Бэкап] Запуск архивации сервера (ATLauncher architecture)...', 'info')
+	try {
+		const sDir = server.value.path || (await getServerDirectory(server.value.id))
+		const res = await createLocalServerBackup(server.value.id, sDir, server.value.name)
+		addNotification({
+			title: 'Резервная копия создана',
+			text: `${res.file_name} (${(res.size_bytes / (1024 * 1024)).toFixed(1)} МБ)`,
+			type: 'success',
+		})
+		addLog(`[Бэкап] Резервная копия успешно создана: ${res.file_name}`, 'info')
+		await loadBackups()
+	} catch (e) {
+		const errMsg = formatErrorMessage(e)
+		addNotification({
+			title: 'Ошибка создания резервной копии',
+			text: errMsg,
+			type: 'error',
+		})
+		addLog(`[Бэкап] Ошибка создания: ${errMsg}`, 'error')
+	} finally {
+		creatingBackup.value = false
+	}
+}
+
+function promptRestoreBackup(backup: LocalServerBackup) {
+	if (server.value?.status === 'running') {
+		addNotification({
+			title: 'Сервер запущен',
+			text: 'Пожалуйста, сначала остановите сервер перед восстановлением резервной копии.',
+			type: 'warn',
+		})
+		return
+	}
+	backupToRestore.value = backup
+	confirmRestoreModalVisible.value = true
+}
+
+async function confirmRestore() {
+	if (!server.value || !backupToRestore.value) return
+	const fileName = backupToRestore.value.file_name
+	confirmRestoreModalVisible.value = false
+	restoringBackupFile.value = fileName
+	addLog(`[Бэкап] Восстановление из архива ${fileName}...`, 'info')
+	try {
+		const sDir = server.value.path || (await getServerDirectory(server.value.id))
+		await restoreLocalServerBackup(server.value.id, sDir, fileName)
+		addNotification({
+			title: 'Сервер восстановлен',
+			text: `Успешно восстановлено из ${fileName}`,
+			type: 'success',
+		})
+		addLog(`[Бэкап] Сервер успешно восстановлен из ${fileName}`, 'info')
+	} catch (e) {
+		const errMsg = formatErrorMessage(e)
+		addNotification({
+			title: 'Ошибка восстановления',
+			text: errMsg,
+			type: 'error',
+		})
+		addLog(`[Бэкап] Ошибка восстановления: ${errMsg}`, 'error')
+	} finally {
+		restoringBackupFile.value = null
+		backupToRestore.value = null
+	}
+}
+
+async function handleDeleteBackup(fileName: string) {
+	if (!server.value) return
+	try {
+		await deleteLocalServerBackup(server.value.id, fileName)
+		backups.value = backups.value.filter((b) => b.file_name !== fileName)
+		addNotification({
+			title: 'Резервная копия удалена',
+			text: fileName,
+			type: 'info',
+		})
+	} catch (e) {
+		console.error('Failed to delete backup:', e)
+	}
+}
+
+function formatBackupSize(bytes: number): string {
+	if (bytes >= 1024 * 1024 * 1024) {
+		return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+	}
+	if (bytes >= 1024 * 1024) {
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+	}
+	return `${Math.round(bytes / 1024)} KB`
+}
+
+function formatBackupDate(ms: number): string {
+	if (!ms) return ''
+	const d = new Date(ms)
+	return d.toLocaleString('ru-RU', {
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	})
+}
+
+async function handleOpenBackupsFolder() {
+	if (!server.value) return
+	try {
+		const sDir = server.value.path || (await getServerDirectory(server.value.id))
+		const backupsDir = await join(sDir, '..', '..', 'backups', 'servers', server.value.id)
+		await openPath(backupsDir)
+	} catch (e) {
+		console.warn('Failed to open backups folder:', e)
+	}
+}
+
+// ==========================================
+// 5. АВТОНОМНЫЕ СКРИПТЫ ЗАПУСКА (LaunchServer.bat)
+// ==========================================
+const generatingScripts = ref(false)
+async function handleGenerateScripts() {
+	if (!server.value) return
+	generatingScripts.value = true
+	try {
+		const sDir = server.value.path || (await getServerDirectory(server.value.id))
+		await generateLocalServerScripts(sDir, server.value.name, {
+			minRamMb: launchSettings.value.minRamMb,
+			maxRamMb: launchSettings.value.maxRamMb,
+			jvmArgs: launchSettings.value.jvmArgs,
+			javaPath: launchSettings.value.javaPath,
+		})
+		addNotification({
+			title: 'Скрипты сгенерированы',
+			text: 'LaunchServer.bat и LaunchServer.sh созданы в папке сервера.',
+			type: 'success',
+		})
+		addLog('[Скрипты запуска] LaunchServer.bat и LaunchServer.sh успешно обновлены.', 'info')
+	} catch (e) {
+		addNotification({
+			title: 'Ошибка генерации скриптов',
+			text: formatErrorMessage(e),
+			type: 'error',
+		})
+	} finally {
+		generatingScripts.value = false
+	}
+}
+
+watch(
+	() => activeTabIndex.value,
+	(idx) => {
+		if (idx === 3) {
+			loadBackups()
+		}
+	},
+)
 
 onUnmounted(() => {
 	if (uptimeTimer) clearInterval(uptimeTimer)
@@ -1570,6 +1782,13 @@ onUnmounted(() => {
 					>
 						<RefreshCwIcon aria-hidden="true" />
 					</IconButton>
+
+					<IconButton
+						:label="formatMessage(messages.actionDelete)"
+						@click="handleDeleteServer"
+					>
+						<TrashIcon class="size-4 text-red" aria-hidden="true" />
+					</IconButton>
 				</PageHeaderActions>
 			</template>
 		</PageHeader>
@@ -1689,94 +1908,9 @@ onUnmounted(() => {
 				</div>
 			</div>
 
-			<!-- Терминал Minecraft Консоли -->
-			<div class="bg-bg-raised border border-solid border-surface-4 rounded-3xl overflow-hidden flex flex-col">
-				<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-solid border-surface-4 bg-surface-2">
-					<div class="flex items-center gap-2 font-bold text-contrast text-base">
-						<span>Консоль сервера</span>
-						<span
-							class="size-2 rounded-full"
-							:class="server.status === 'running' ? 'bg-green' : 'bg-secondary'"
-						/>
-					</div>
-
-					<div class="flex items-center gap-2">
-						<div class="relative flex items-center">
-							<SearchIcon class="size-3.5 absolute left-2.5 text-secondary pointer-events-none" />
-							<input
-								v-model="consoleFilter"
-								type="text"
-								:placeholder="formatMessage(messages.filterPlaceholder)"
-								class="bg-surface-3 text-contrast placeholder:text-secondary rounded-lg pl-8 pr-3 py-1 text-xs border border-solid border-transparent focus:border-brand focus:outline-none w-48 transition-colors"
-							/>
-						</div>
-
-						<IconButton
-							:label="formatMessage(messages.consoleCopy)"
-							@click="copyAllLogs"
-						>
-							<CopyIcon class="size-4" />
-						</IconButton>
-
-						<IconButton
-							:label="formatMessage(messages.consoleClear)"
-							@click="clearConsole"
-						>
-							<TrashIcon class="size-4" />
-						</IconButton>
-					</div>
-				</div>
-
-				<div
-					ref="consoleContainer"
-					class="p-4 bg-surface-1 font-mono text-xs leading-5 h-[460px] overflow-y-auto flex flex-col gap-1 select-text"
-				>
-					<div
-						v-for="log in filteredLogs"
-						:key="log.id"
-						class="flex items-start gap-2 break-all"
-					>
-						<span class="text-secondary select-none opacity-60">[{{ log.timestamp }}]</span>
-						<span
-							:class="
-								log.type === 'warn'
-									? 'text-yellow'
-									: log.type === 'error'
-										? 'text-red font-bold'
-										: log.type === 'relay'
-											? 'text-brand font-bold'
-											: log.type === 'system'
-												? 'text-blue'
-												: 'text-contrast'
-							"
-						>
-							{{ log.text }}
-						</span>
-					</div>
-
-					<div v-if="filteredLogs.length === 0" class="text-secondary italic text-center py-10">
-						{{ consoleFilter ? 'Ничего не найдено по вашему запросу.' : 'Логов пока нет.' }}
-					</div>
-				</div>
-
-				<form
-					class="flex items-center gap-2 p-3 bg-surface-2 border-t border-solid border-surface-4"
-					@submit.prevent="handleSendCommand"
-				>
-					<span class="font-mono text-sm font-bold text-brand pl-2">&gt;</span>
-					<input
-						v-model="consoleInput"
-						type="text"
-						class="flex-1 bg-surface-3 text-contrast placeholder:text-secondary rounded-xl px-4 py-2.5 text-sm border border-solid border-transparent focus:border-brand focus:outline-none transition-colors"
-						:placeholder="formatMessage(messages.inputPlaceholder)"
-						@keydown="handleHistoryKey"
-					/>
-					<ButtonStyled color="brand">
-						<button type="submit">
-							&crarr;
-						</button>
-					</ButtonStyled>
-				</form>
+			<!-- Консоль Minecraft сервера (В стиле Modrinth ConsolePageLayout) -->
+			<div class="h-[620px] flex flex-col min-h-0 bg-bg-raised border border-solid border-surface-4 rounded-3xl p-5 overflow-hidden">
+				<ConsolePageLayout />
 			</div>
 		</div>
 
@@ -1797,11 +1931,178 @@ onUnmounted(() => {
 		</div>
 
 		<!-- ========================================== -->
-		<!-- ВКЛАДКА 4: НАСТРОЙКИ (server.properties)   -->
+		<!-- ВКЛАДКА 4: РЕЗЕРВНЫЕ КОПИИ (Backups)       -->
+		<!-- ATLauncher backup architecture             -->
+		<!-- ========================================== -->
+		<div v-if="activeTabIndex === 3" class="max-w-[960px] mx-auto w-full flex flex-col gap-6 pb-12">
+			<!-- Шапка раздела бэкапов -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<h3 class="m-0 text-lg font-bold text-contrast flex items-center gap-2">
+						<DatabaseIcon class="size-5 text-brand" />
+						<span>Резервные копии сервера</span>
+					</h3>
+					<p class="m-0 text-xs text-secondary mt-1">
+						Создавайте полные резервные копии сервера (мир, настройки, плагины), чтобы в любой момент восстановить его состояние.
+					</p>
+				</div>
+				<div class="flex items-center gap-2">
+					<Button
+						type="colored"
+						color="brand"
+						size="md"
+						native-type="button"
+						:disabled="creatingBackup"
+						@click="handleCreateBackup"
+					>
+						<LoaderCircleIcon v-if="creatingBackup" class="size-4 animate-spin" aria-hidden="true" />
+						<PlusIcon v-else class="size-4" aria-hidden="true" />
+						<span>{{ creatingBackup ? 'Архивация...' : 'Создать копию' }}</span>
+					</Button>
+
+					<IconButton
+						label="Обновить список"
+						:disabled="backupsLoading"
+						@click="loadBackups"
+					>
+						<RefreshCwIcon :class="backupsLoading ? 'animate-spin' : ''" class="size-4" aria-hidden="true" />
+					</IconButton>
+
+					<IconButton
+						label="Открыть папку бэкапов"
+						@click="handleOpenBackupsFolder"
+					>
+						<FolderOpenIcon class="size-4" aria-hidden="true" />
+					</IconButton>
+				</div>
+			</div>
+
+			<!-- Предупреждение/индикатор восстановления -->
+			<div
+				v-if="restoringBackupFile"
+				class="p-4 rounded-2xl bg-brand/10 border border-solid border-brand/30 flex items-center gap-3"
+			>
+				<LoaderCircleIcon class="size-5 text-brand animate-spin" />
+				<div class="flex flex-col">
+					<span class="font-bold text-contrast text-sm">Восстановление резервной копии...</span>
+					<span class="text-xs text-secondary">{{ restoringBackupFile }}</span>
+				</div>
+			</div>
+
+			<!-- Модальное окно подтверждения восстановления -->
+			<div
+				v-if="confirmRestoreModalVisible && backupToRestore"
+				class="p-5 rounded-2xl bg-red/10 border border-solid border-red/30 flex flex-col gap-3"
+			>
+				<div class="flex items-center gap-2 text-red font-bold text-base">
+					<HistoryIcon class="size-5" />
+					<span>Подтверждение восстановления</span>
+				</div>
+				<p class="m-0 text-sm text-contrast">
+					Вы уверены, что хотите восстановить сервер из резервной копии <strong>{{ backupToRestore.file_name }}</strong>? Все текущие файлы мира и настроек будут заменены состоянием из архива.
+				</p>
+				<div class="flex items-center gap-3 justify-end mt-2">
+					<Button
+						type="outlined"
+						size="sm"
+						native-type="button"
+						@click="confirmRestoreModalVisible = false"
+					>
+						Отмена
+					</Button>
+					<Button
+						type="colored"
+						color="red"
+						size="sm"
+						native-type="button"
+						@click="confirmRestore"
+					>
+						Восстановить
+					</Button>
+				</div>
+			</div>
+
+			<!-- Состояние загрузки -->
+			<div v-if="backupsLoading" class="flex justify-center p-12">
+				<LoaderCircleIcon class="size-8 text-brand animate-spin" />
+			</div>
+
+			<!-- Пустой список -->
+			<div
+				v-else-if="backups.length === 0"
+				class="flex flex-col items-center justify-center p-12 rounded-2xl border border-dashed border-surface-4 bg-surface-1 text-center"
+			>
+				<DatabaseIcon class="size-12 text-secondary opacity-40 mb-3" />
+				<h4 class="m-0 text-base font-bold text-contrast">Резервных копий пока нет</h4>
+				<p class="m-0 text-xs text-secondary max-w-[400px] mt-1 mb-4">
+					Создайте первую резервную копию вашего сервера в один клик. Архив сохранится в надежном хранилище.
+				</p>
+				<Button
+					type="colored"
+					color="brand"
+					size="md"
+					native-type="button"
+					:disabled="creatingBackup"
+					@click="handleCreateBackup"
+				>
+					<PlusIcon class="size-4" aria-hidden="true" />
+					<span>Создать резервную копию</span>
+				</Button>
+			</div>
+
+			<!-- Список резервных копий -->
+			<div v-else class="flex flex-col gap-3">
+				<div
+					v-for="b in backups"
+					:key="b.file_name"
+					class="p-4 rounded-2xl border border-solid border-surface-4 bg-surface-1 hover:border-surface-5 transition-all flex items-center justify-between gap-4"
+				>
+					<div class="flex items-center gap-3.5 min-w-0">
+						<div class="size-10 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
+							<DatabaseIcon class="size-5" />
+						</div>
+						<div class="flex flex-col min-w-0">
+							<span class="font-bold text-contrast text-sm truncate" :title="b.file_name">
+								{{ b.file_name }}
+							</span>
+							<div class="flex items-center gap-2 text-xs text-secondary mt-0.5">
+								<span>{{ formatBackupDate(b.created_at) }}</span>
+								<span>•</span>
+								<span>{{ formatBackupSize(b.size_bytes) }}</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="flex items-center gap-2 shrink-0">
+						<Button
+							type="outlined"
+							size="sm"
+							native-type="button"
+							:disabled="server.status === 'running' || restoringBackupFile !== null"
+							@click="promptRestoreBackup(b)"
+						>
+							<HistoryIcon class="size-3.5" aria-hidden="true" />
+							<span>Восстановить</span>
+						</Button>
+
+						<IconButton
+							label="Удалить копию"
+							:disabled="restoringBackupFile !== null"
+							@click="handleDeleteBackup(b.file_name)"
+						>
+							<TrashIcon class="size-4 text-red" aria-hidden="true" />
+						</IconButton>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- ========================================== -->
+		<!-- ВКЛАДКА 5: НАСТРОЙКИ (server.properties)   -->
 		<!-- Стиль настроек Modrinth: карточки, Chips,  -->
 		<!-- Toggle, Input                              -->
 		<!-- ========================================== -->
-		<div v-if="activeTabIndex === 3" class="max-w-[860px] mx-auto w-full flex flex-col gap-6 pb-12">
+		<div v-if="activeTabIndex === 4" class="max-w-[860px] mx-auto w-full flex flex-col gap-6 pb-12">
 			<!-- 0. Параметры запуска и память JVM -->
 			<div class="flex flex-col gap-2.5">
 				<div class="flex items-center justify-between">
@@ -1907,6 +2208,38 @@ onUnmounted(() => {
 							/>
 						</div>
 					</div>
+				</div>
+			</div>
+
+			<!-- Блок: Автономные скрипты запуска (ATLauncher architecture) -->
+			<div class="flex flex-col gap-2.5">
+				<div class="flex items-center justify-between">
+					<div>
+						<h3 class="m-0 text-base font-semibold text-contrast flex items-center gap-2">
+							<TerminalSquareIcon class="size-4 text-brand" />
+							<span>Автономные скрипты запуска (LaunchServer.bat / LaunchServer.sh)</span>
+						</h3>
+						<p class="m-0 text-xs text-secondary mt-0.5">
+							Генерация исполняемых файлов для запуска сервера напрямую через Проводник или консоль Windows без открытого лаунчера
+						</p>
+					</div>
+					<Button
+						type="colored"
+						color="brand"
+						size="sm"
+						native-type="button"
+						:disabled="generatingScripts"
+						@click="handleGenerateScripts"
+					>
+						<LoaderCircleIcon v-if="generatingScripts" class="size-3.5 animate-spin" aria-hidden="true" />
+						<RefreshCwIcon v-else class="size-3.5" aria-hidden="true" />
+						<span>{{ generatingScripts ? 'Генерация...' : 'Обновить скрипты' }}</span>
+					</Button>
+				</div>
+				<div class="p-4 rounded-2xl border border-solid border-surface-5 bg-surface-1 flex flex-col gap-2 text-xs text-secondary">
+					<p class="m-0">
+						В корневой папке сервера будут созданы и обновлены файлы <code class="text-brand font-bold">LaunchServer.bat</code> (Windows), <code class="text-brand font-bold">LaunchServer.sh</code> (Linux/Mac) и <code class="text-brand font-bold">user_jvm_args.txt</code> с текущими параметрами памяти и Java.
+					</p>
 				</div>
 			</div>
 
@@ -2393,13 +2726,9 @@ onUnmounted(() => {
 		<ContextMenu ref="serverContextMenu" label="Действия с сервером" />
 
 		<!-- Модальное окно подтверждения удаления сервера -->
-		<ConfirmModal
-			ref="deleteServerModal"
-			:title="formatMessage(messages.deleteModalTitle)"
-			:description="formatMessage(messages.deleteModalDescription)"
-			:proceed-label="formatMessage(messages.deleteModalConfirm)"
-			danger
-			@proceed="confirmDeleteServer"
+		<ConfirmDeleteServerModal
+			ref="confirmDeleteModal"
+			@deleted="handleServerDeleted"
 		/>
 	</div>
 

@@ -257,10 +257,15 @@ async function generateLocalSteveHead() {
 
 generateLocalSteveHead()
 
+const fetchingHeads = new Set<string>()
+
 async function fetchAccountHead(account: MinecraftCredential) {
 	const name = account.profile?.name
 	const profileId = account.profile?.id
 	if (!name || !profileId) return
+	if (accountHeadCache.value.has(profileId)) return
+	if (fetchingHeads.has(profileId)) return
+	fetchingHeads.add(profileId)
 
 	const accountType = getAccountTypeName(account)
 	let skinUrl: string | null = null
@@ -343,6 +348,8 @@ async function fetchAccountHead(account: MinecraftCredential) {
 		}
 	} catch {
 		// ignore
+	} finally {
+		fetchingHeads.delete(profileId)
 	}
 }
 

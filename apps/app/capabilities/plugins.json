@@ -128,6 +128,57 @@
 				},
 				{
 					"url": "https://*.getbukkit.org/*"
+				},
+				{
+					"url": "https://maven.minecraftforge.net/*"
+				},
+				{
+					"url": "https://files.minecraftforge.net/*"
+				},
+				{
+					"url": "https://*.minecraftforge.net/*"
+				},
+				{
+					"url": "https://maven.neoforged.net/*"
+				},
+				{
+					"url": "https://*.neoforged.net/*"
+				},
+				{
+					"url": "https://meta.quiltmc.org/*"
+				},
+				{
+					"url": "https://*.quiltmc.org/*"
+				},
+				{
+					"url": "https://maven.creeperhost.net/*"
+				},
+				{
+					"url": "https://*.creeperhost.net/*"
+				},
+				{
+					"url": "https://bmclapi2.bangbang93.com/*"
+				},
+				{
+					"url": "https://*.bangbang93.com/*"
+				},
+				{
+					"url": "https://mirrors.cernet.edu.cn/*"
+				},
+				{
+					"url": "https://*.cernet.edu.cn/*"
+				},
+				{
+					"url": "https://download.fastmirror.net/*"
+				},
+				{
+					"url": "https://*.fastmirror.net/*"
+				},
+				{
+					"url": "https://mohistmc.com/*"
+				},
+				{
+					"url": "https://*.mohistmc.com/*"
 				}
 			]
 		},

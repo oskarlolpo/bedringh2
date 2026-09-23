@@ -76,3 +76,86 @@ export async function getLocalServerMetrics(
 		serverPath: serverPath || undefined,
 	})
 }
+
+export interface LocalServerBackup {
+	file_name: string
+	file_path: string
+	size_bytes: number
+	created_at: number
+}
+
+export interface ScannedAddonFile {
+	file_name: string
+	relative_path: string
+	addon_type: 'mod' | 'plugin' | 'datapack'
+	enabled: boolean
+	size_bytes: number
+	sha1: string
+}
+
+export async function createLocalServerBackup(
+	serverId: string,
+	serverPath: string,
+	backupName?: string,
+): Promise<LocalServerBackup> {
+	return await invoke<LocalServerBackup>('plugin:local-server|local_server_create_backup', {
+		serverId,
+		serverPath,
+		backupName: backupName || undefined,
+	})
+}
+
+export async function listLocalServerBackups(serverId: string): Promise<LocalServerBackup[]> {
+	return await invoke<LocalServerBackup[]>('plugin:local-server|local_server_list_backups', {
+		serverId,
+	})
+}
+
+export async function restoreLocalServerBackup(
+	serverId: string,
+	serverPath: string,
+	backupFileName: string,
+): Promise<void> {
+	return await invoke<void>('plugin:local-server|local_server_restore_backup', {
+		serverId,
+		serverPath,
+		backupFileName,
+	})
+}
+
+export async function deleteLocalServerBackup(
+	serverId: string,
+	backupFileName: string,
+): Promise<void> {
+	return await invoke<void>('plugin:local-server|local_server_delete_backup', {
+		serverId,
+		backupFileName,
+	})
+}
+
+export async function generateLocalServerScripts(
+	serverPath: string,
+	serverName: string,
+	options: {
+		minRamMb?: number
+		maxRamMb?: number
+		jvmArgs?: string
+		javaPath?: string
+	},
+): Promise<void> {
+	return await invoke<void>('plugin:local-server|local_server_generate_scripts', {
+		serverPath,
+		serverName,
+		minRamMb: options.minRamMb ?? 1024,
+		maxRamMb: options.maxRamMb ?? 4096,
+		jvmArgs: options.jvmArgs || undefined,
+		javaPath: options.javaPath || undefined,
+	})
+}
+
+export async function scanLocalServerAddons(serverPath: string): Promise<ScannedAddonFile[]> {
+	return await invoke<ScannedAddonFile[]>('plugin:local-server|local_server_scan_addons', {
+		serverPath,
+	})
+}
+

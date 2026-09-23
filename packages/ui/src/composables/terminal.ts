@@ -136,14 +136,6 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
 	const scrollToBottom = () => {
 		terminal.value?.scrollToBottom()
 		isAtBottom.value = true
-
-		// dont even ask, shit is broken as hell
-		// scrollToBottom is unreliable so we have to spam it to make sure it actually goes to the bottom
-		let calls = 0
-		const interval = setInterval(() => {
-			terminal.value?.scrollToBottom()
-			if (++calls >= 10) clearInterval(interval)
-		}, 25)
 	}
 
 	const checkIfAtBottom = () => {
@@ -167,9 +159,9 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
 
 		const term = new Terminal({
 			disableStdin: true,
-			scrollback: options.scrollback ?? Infinity,
+			scrollback: options.scrollback ?? 2000,
 			convertEol: true,
-			smoothScrollDuration: 125,
+			smoothScrollDuration: 0,
 			fontFamily: 'monospace',
 			fontSize: 14,
 			lineHeight: 1.5,

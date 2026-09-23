@@ -24,14 +24,14 @@
 		</Button>
 		<Button
 			v-if="hasLogs"
-			v-tooltip="shareDisabled ? shareDisabledTooltip : undefined"
+			v-tooltip="copyDisabled ? copyDisabledTooltip : (copied ? 'Скопировано в буфер обмена' : 'Копировать логи в буфер обмена')"
 			type="quiet"
-			:disabled="shareDisabled || sharing"
-			@click="emit('share')"
+			:disabled="copyDisabled"
+			@click="emit('copy')"
 		>
-			<SpinnerIcon v-if="sharing" class="animate-spin" />
-			<ShareIcon v-else />
-			Share
+			<CheckIcon v-if="copied" class="text-green" />
+			<CopyIcon v-else />
+			{{ copied ? 'Скопировано' : 'Копировать' }}
 		</Button>
 		<Button type="quiet" @click="emit('toggle-fullscreen')">
 			<ContractIcon v-if="fullscreen" />
@@ -43,10 +43,10 @@
 
 <script setup lang="ts">
 import {
+	CheckIcon,
 	ContractIcon,
+	CopyIcon,
 	ExpandIcon,
-	ShareIcon,
-	SpinnerIcon,
 	TrashIcon,
 	XIcon,
 } from '@modrinth/assets'
@@ -56,9 +56,9 @@ import { Button } from '#ui/components/base/buttons'
 defineProps<{
 	showClear?: boolean
 	hasLogs?: boolean
-	shareDisabled?: boolean
-	shareDisabledTooltip?: string
-	sharing?: boolean
+	copied?: boolean
+	copyDisabled?: boolean
+	copyDisabledTooltip?: string
 	fullscreen?: boolean
 	clearDisabled?: boolean
 	clearDisabledTooltip?: string
@@ -69,7 +69,7 @@ defineProps<{
 
 const emit = defineEmits<{
 	clear: []
-	share: []
+	copy: []
 	'toggle-fullscreen': []
 	delete: []
 }>()

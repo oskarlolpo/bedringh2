@@ -11365,9 +11365,11 @@ dependencies = [
  "objc2-app-kit",
  "paste",
  "path-util",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "serde_with",
+ "sha1_smol",
  "sysinfo",
  "tauri",
  "tauri-build",
@@ -11390,6 +11392,7 @@ dependencies = [
  "webview2-com",
  "windows",
  "windows-core 0.61.2",
+ "zip 6.0.0",
 ]
 
 [[package]]

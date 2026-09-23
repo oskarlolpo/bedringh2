@@ -441,10 +441,18 @@ const serverContextFilters = computed(() => {
 		if (gameVersion) filters.push({ type: 'game_version', option: gameVersion })
 
 		const platform = serverContextServerData.value.loader?.toLowerCase()
-		if (platform && ['fabric', 'forge', 'quilt', 'neoforge'].includes(platform))
+		if (platform && ['fabric', 'forge', 'quilt', 'neoforge'].includes(platform)) {
 			filters.push({ type: 'mod_loader', option: platform })
-		if (platform && ['paper', 'purpur'].includes(platform))
-			filters.push({ type: 'plugin_loader', option: platform })
+		} else if (platform === 'mohist') {
+			if (pt === 'mod') {
+				filters.push({ type: 'mod_loader', option: 'forge' })
+			} else if (pt === 'plugin') {
+				filters.push({ type: 'plugin_loader', option: 'paper' })
+			}
+		}
+		if (platform && ['paper', 'purpur', 'spigot', 'folia', 'bukkit'].includes(platform)) {
+			filters.push({ type: 'plugin_loader', option: platform === 'purpur' ? 'purpur' : 'paper' })
+		}
 
 		if (pt === 'mod') filters.push({ type: 'environment', option: 'server' })
 

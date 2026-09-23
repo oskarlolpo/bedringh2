@@ -281,35 +281,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 malicious_origins: HashSet::new(),
             }));
 
-            // We refresh the ads window periodically to mitigate memory leak issues.
-            // Skip refreshes when app state has hidden the ads WebView. The refresh does
-            // not reset the visibility state.
-            let refresh_app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    let should_refresh = refresh_app
-                        .state::<RwLock<AdsState>>()
-                        .try_read()
-                        .map(|state| {
-                            state.shown
-                                && state.visibility_holds == 0
-                                && !state.consent_required
-                                && !state.consent_overlay_shown
-                                && !state.occluded
-                        })
-                        .unwrap_or(false);
-
-                    if should_refresh
-                        && let Some(webview) =
-                            refresh_app.webviews().get_mut("ads-window")
-                    {
-                        let _ = webview.navigate(AD_LINK.parse().unwrap());
-                    }
-
-                    tokio::time::sleep(std::time::Duration::from_secs(60 * 5))
-                        .await;
-                }
-            });
+            // Background ad refreshes and 200ms Win32 occlusion polling loops are disabled in Bedringh
+            // to eliminate idle CPU thrashing and prevent Windows Defender (Antimalware Service) scans.
 
             if let Some(main_window) = app.get_window("main") {
                 let app_handle = app.clone();
@@ -336,19 +309,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                             &delayed_was_minimized,
                         );
                     });
-                });
-            }
-
-            #[cfg(any(windows, target_os = "macos"))]
-            {
-                let app_handle = app.clone();
-
-                tauri::async_runtime::spawn(async move {
-                    loop {
-                        sync_ads_occlusion(&app_handle).await;
-
-                        tokio::time::sleep(Duration::from_millis(200)).await;
-                    }
                 });
             }
 

@@ -43,8 +43,7 @@
 				<ConsoleActionButtons
 					:show-clear="isLiveSource"
 					:has-logs="hasLogs"
-					:share-disabled="resolvedShareDisabled"
-					:sharing="isSharing"
+					:copied="isCopied"
 					:fullscreen="isFullscreen"
 					:clear-disabled="resolvedClearDisabled"
 					:clear-disabled-tooltip="resolvedClearDisabledTooltip"
@@ -52,7 +51,7 @@
 					:delete-disabled="resolvedDeleteDisabled"
 					:delete-disabled-tooltip="ctx.deleteDisabledTooltip"
 					@clear="handleClear"
-					@share="handleShare"
+					@copy="handleCopy"
 					@toggle-fullscreen="toggleFullscreen"
 					@delete="handleDelete"
 				/>
@@ -344,7 +343,6 @@ watch(ctx.logLines, (lines, oldLines) => {
 
 	if (
 		terminalRef.value?.showingEmptyState ||
-		lines !== oldLines ||
 		lines.length < lastWrittenIndex
 	) {
 		terminalRef.value?.clearEmptyState()
@@ -418,6 +416,36 @@ async function confirmDelete() {
 		})
 	} finally {
 		isDeleting.value = false
+	}
+}
+
+const isCopied = ref(false)
+let copyTimeout: ReturnType<typeof setTimeout> | null = null
+
+async function handleCopy() {
+	const predicate = buildCombinedPredicate()
+	const lines = predicate ? ctx.logLines.value.filter(predicate) : ctx.logLines.value
+	const content = lines.map((l) => l.text).join('\n')
+
+	try {
+		await navigator.clipboard.writeText(content)
+		isCopied.value = true
+		if (copyTimeout) clearTimeout(copyTimeout)
+		copyTimeout = setTimeout(() => {
+			isCopied.value = false
+		}, 2000)
+		addNotification({
+			type: 'success',
+			title: 'Скопировано',
+			text: 'Логи скопированы в буфер обмена',
+		})
+	} catch (err) {
+		console.error('Failed to copy logs:', err)
+		addNotification({
+			type: 'error',
+			title: 'Ошибка',
+			text: 'Не удалось скопировать логи в буфер обмена',
+		})
 	}
 }
 

@@ -25,8 +25,6 @@ export function useInstanceMetadataRefresh(events: AppEvents) {
 				try {
 					do {
 						refreshQueued = false
-						const joinedExistingRequest =
-							queryClient.isFetching({ queryKey: instanceKeys.list(), exact: true }) > 0
 						const instances = await queryClient.fetchQuery({
 							...instanceListQueryOptions(),
 							staleTime: 0,
@@ -34,10 +32,6 @@ export function useInstanceMetadataRefresh(events: AppEvents) {
 
 						for (const instance of instances) {
 							queryClient.setQueryData(instanceKeys.detail(instance.id), instance)
-						}
-
-						if (joinedExistingRequest) {
-							refreshQueued = true
 						}
 					} while (refreshQueued)
 				} finally {
