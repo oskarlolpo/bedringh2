@@ -8,7 +8,7 @@ import {
 import { getActiveBedringhUser } from './bedringh-settings-sync'
 
 const API_CANDIDATES = [
-	'http://2.26.87.126:3100',
+	'http://bedringh.duckdns.org:3100',
 	'https://oskarlolpo.play2go.cloud',
 	'http://oskarlolpo.play2go.cloud:3100',
 ]

@@ -58,9 +58,11 @@
 					
 					<div class="p-4 flex flex-col gap-1.5 flex-1">
 						<div class="flex items-center gap-1.5">
-							<div class="font-bold text-base text-primary truncate" :title="world.name">
-								{{ world.name }}
-							</div>
+							<div
+								class="font-bold text-base text-primary truncate"
+								:title="world.name"
+								v-html="formatMinecraftText(world.name)"
+							/>
 							<span
 								v-if="world.isValid === false"
 								class="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/15 text-red-400"
@@ -149,7 +151,7 @@
 
 <script setup lang="ts">
 import { ArchiveIcon, CompassIcon, DownloadIcon, GlobeIcon, SearchIcon, SpinnerIcon, TrashIcon } from '@modrinth/assets'
-import { ButtonStyled, EmptyState, injectNotificationManager,NewModal, ReadyTransition, StyledInput } from '@modrinth/ui'
+import { ButtonStyled, EmptyState, formatMinecraftText, injectNotificationManager, NewModal, ReadyTransition, StyledInput } from '@modrinth/ui'
 import { convertFileSrc,invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { computed, onMounted, ref, watch } from 'vue'

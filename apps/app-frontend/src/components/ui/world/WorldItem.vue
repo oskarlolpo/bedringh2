@@ -26,6 +26,7 @@ import {
 	commonMessages,
 	ContextMenu,
 	defineMessages,
+	formatMinecraftText,
 	injectNotificationManager,
 	SmartClickable,
 	TagItem,
@@ -476,9 +477,10 @@ function openContextMenu(event: MouseEvent) {
 				/>
 				<div class="flex flex-col justify-center gap-0.5 h-full">
 					<div class="flex items-center gap-1.5">
-						<div class="text-base text-contrast font-semibold truncate">
-							{{ world.name }}
-						</div>
+						<div
+							class="text-base text-contrast font-semibold truncate"
+							v-html="formatMinecraftText(world.name)"
+						/>
 						<TagItem
 							v-if="managed"
 							v-tooltip="formatMessage(messages.linkedServer)"

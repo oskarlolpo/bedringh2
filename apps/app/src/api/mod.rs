@@ -24,6 +24,7 @@ pub mod tags;
 pub mod users;
 pub mod utils;
 pub mod local_server;
+pub mod tunnel;
 
 pub mod ads;
 #[cfg(target_os = "macos")]

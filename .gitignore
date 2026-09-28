@@ -60,6 +60,8 @@ apps/frontend/src/generated
 target
 !apps/app-frontend/src/generated/**
 .env
+.env*.local
+*.local.json
 
 # app testing dir
 app-playground-data/*

@@ -5,7 +5,7 @@ import { useTheme } from '@/composables/use-theme'
 import i18n from '@/i18n.config'
 
 const API_CANDIDATES = [
-	'http://2.26.87.126:3100',
+	'http://bedringh.duckdns.org:3100',
 	'https://oskarlolpo.play2go.cloud',
 	'http://oskarlolpo.play2go.cloud:3100',
 ]

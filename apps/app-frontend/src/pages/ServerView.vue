@@ -1406,7 +1406,7 @@ function matchesSearch(...terms: (string | undefined | null)[]): boolean {
 }
 
 function copyAddress() {
-	const addr = `localhost:${server.value?.port || 25565}`
+	const addr = server.value?.publicAddress || `localhost:${server.value?.port || 25565}`
 	navigator.clipboard.writeText(addr)
 	addNotification({
 		title: 'Адрес скопирован',
@@ -1714,7 +1714,7 @@ onUnmounted(() => {
 							class="bg-transparent border-none p-0 text-secondary hover:text-contrast cursor-pointer flex items-center gap-1 text-sm font-medium"
 							@click="copyAddress"
 						>
-							<span>localhost:{{ server.port }}</span>
+							<span>{{ server.publicAddress || `localhost:${server.port}` }}</span>
 							<CopyIcon class="size-3.5 opacity-60 ml-0.5" />
 						</button>
 					</PageHeaderMetadataItem>

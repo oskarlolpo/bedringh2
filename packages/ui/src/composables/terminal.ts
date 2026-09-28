@@ -178,8 +178,10 @@ export function useTerminal(options: UseTerminalOptions): UseTerminalReturn {
 		term.open(container)
 		await nextTick()
 		const dims = fit.proposeDimensions()
-		if (dims) {
-			term.resize(dims.cols, dims.rows)
+		if (dims && Number.isFinite(dims.cols) && Number.isFinite(dims.rows)) {
+			const cols = Math.max(1, Math.floor(dims.cols))
+			const rows = Math.max(1, Math.floor(dims.rows))
+			term.resize(cols, rows)
 		}
 
 		term.options.disableStdin = true

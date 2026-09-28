@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatMinecraftText } from '../../../utils/minecraft-text'
+
 defineProps<{
 	title: string
 	compact?: boolean
@@ -10,9 +12,8 @@ defineProps<{
 	<span
 		class="project-card-title line-clamp-1 pb-[2px] mb-[-2px] break-all font-semibold text-contrast m-0 leading-none smart-clickable:underline-on-hover"
 		:class="compact ? 'text-lg' : 'text-xl'"
-	>
-		{{ title }}
-	</span>
+		v-html="formatMinecraftText(title)"
+	/>
 </template>
 <style scoped>
 @container (width < 550px) {

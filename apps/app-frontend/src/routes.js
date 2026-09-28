@@ -4,6 +4,7 @@ import { get as getInstance } from '@/helpers/instance'
 import * as Hosting from '@/pages/hosting/manage'
 import * as Pages from '@/pages'
 import * as Instance from '@/pages/instance'
+import * as Library from '@/pages/library'
 import * as Project from '@/pages/project'
 
 /**
@@ -16,6 +17,15 @@ export default new createRouter({
 			path: '/',
 			name: 'Home',
 			component: Pages.Index,
+		},
+		{
+			path: '/servers/library',
+			name: 'ServerLibrary',
+			component: Pages.ServersLibrary,
+		},
+		{
+			path: '/servers',
+			redirect: '/servers/library',
 		},
 		{
 			path: '/hosting/manage/',
@@ -83,6 +93,38 @@ export default new createRouter({
 			path: '/user/:user/:projectType?',
 			name: 'User',
 			component: Pages.User,
+		},
+		{
+			path: '/library',
+			name: 'Library',
+			component: Library.Index,
+			children: [
+				{
+					path: '',
+					name: 'Overview',
+					component: Library.Overview,
+				},
+				{
+					path: 'downloaded',
+					name: 'Downloaded',
+					component: Library.Downloaded,
+				},
+				{
+					path: 'modpacks',
+					name: 'Modpacks',
+					component: Library.Modpacks,
+				},
+				{
+					path: 'servers',
+					name: 'LibraryServers',
+					component: Library.Servers,
+				},
+				{
+					path: 'custom',
+					name: 'Custom',
+					component: Library.Custom,
+				},
+			],
 		},
 		{
 			path: '/:projectType(mod|plugin|datapack|resourcepack|shader|modpack)/:id/:rest(.*)*',

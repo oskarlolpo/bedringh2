@@ -593,8 +593,8 @@ const messages = defineMessages({
 		id: 'app.nav.home',
 		defaultMessage: 'Home',
 	},
-	modrinthHosting: {
-		id: 'app.nav.modrinth-hosting',
+	serversNav: {
+		id: 'app.nav.bedringh-servers',
 		defaultMessage: 'Серверы',
 	},
 	screenshots: {
@@ -2212,7 +2212,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 				<ImagesIcon />
 			</NavButton>
 			<NavButton
-				v-tooltip.right="formatMessage(messages.modrinthHosting)"
+				v-tooltip.right="formatMessage(messages.serversNav)"
 				to="/hosting/manage"
 				:is-primary="(r) => r.path === '/hosting/manage' || r.path === '/hosting/manage/'"
 				:is-subpage="

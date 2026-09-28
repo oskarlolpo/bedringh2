@@ -10,9 +10,11 @@ import { instance_listener } from '@/helpers/events'
 import { list } from '@/helpers/instance'
 import type { GameInstance } from '@/helpers/types'
 import { useRootBreadcrumb } from '@/providers/breadcrumbs'
+import { useLocalServers } from '@/providers/local-servers'
 
 const { handleError } = injectNotificationManager()
 const openCreateServer = inject<() => void>('openCreateServer')
+const { servers: localServers } = useLocalServers()
 
 useRootBreadcrumb({
 	slot: 'root',
@@ -65,6 +67,20 @@ onUnmounted(() => {
 					route: '/library',
 					instances: instances,
 					instance: true,
+				},
+			]"
+			:can-paginate="true"
+		/>
+
+		<!-- Секция: Ваши серверы -->
+		<RowDisplay
+			v-if="localServers.length > 0"
+			:instances="[
+				{
+					label: 'Ваши серверы',
+					route: '/servers/library',
+					instances: localServers,
+					server: true,
 				},
 			]"
 			:can-paginate="true"

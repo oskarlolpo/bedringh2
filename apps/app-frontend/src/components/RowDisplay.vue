@@ -20,12 +20,17 @@ import ContextMenu from '@/components/ui/ContextMenu.vue'
 import Instance from '@/components/ui/Instance.vue'
 import LegacyProjectCard from '@/components/ui/LegacyProjectCard.vue'
 import ConfirmDeleteInstanceModal from '@/components/ui/modal/ConfirmDeleteInstanceModal.vue'
+import ConfirmDeleteServerModal from '@/components/ui/modal/ConfirmDeleteServerModal.vue'
+import ServerCard from '@/components/ui/servers/ServerCard.vue'
 import { trackEvent } from '@/helpers/analytics'
 import { install_duplicate_instance } from '@/helpers/install'
 import { kill, remove, run } from '@/helpers/instance'
 import { get_by_instance_id } from '@/helpers/process.js'
-import { showInstanceInFolder } from '@/helpers/utils.js'
+import { openPath, showInstanceInFolder } from '@/helpers/utils.js'
 import { injectContentInstall } from '@/providers/content-install'
+import { useLocalServers } from '@/providers/local-servers'
+import { startLocalServerProcess, stopLocalServerProcess } from '@/services/local-server-process'
+import { getServerDirectory } from '@/services/server-download'
 import { handleSevereError } from '@/store/error.js'
 
 const { handleError } = injectNotificationManager()
@@ -58,6 +63,8 @@ const instanceOptions = ref(null)
 const instanceComponents = ref(null)
 const rows = ref(null)
 const deleteConfirmModal = ref(null)
+const deleteServerConfirmModal = ref(null)
+const { updateServerStatus } = useLocalServers()
 
 const currentDeleteInstance = ref(null)
 
@@ -127,8 +134,67 @@ const handleProjectClick = (event, passedInstance) => {
 	])
 }
 
+const handleServerRightClick = (event, passedServer) => {
+	const isRunning = passedServer.status === 'running'
+	const options = [
+		isRunning
+			? {
+					name: 'stop_server',
+					color: 'danger',
+				}
+			: {
+					name: 'play_server',
+					color: 'primary',
+				},
+		{ name: 'edit_server' },
+		{ name: 'open_server_folder' },
+		{ type: 'divider' },
+		{
+			name: 'delete_server',
+			color: 'danger',
+		},
+	]
+
+	instanceOptions.value.showMenu(event, passedServer, options)
+}
+
 const handleOptionsClick = async (args) => {
 	switch (args.option) {
+		case 'play_server': {
+			try {
+				updateServerStatus(args.item.id, 'starting')
+				const sDir = args.item.path || (await getServerDirectory(args.item.id))
+				await startLocalServerProcess(args.item.id, sDir, {
+					minRamMb: args.item.launchSettings?.minRamMb ?? 1024,
+					maxRamMb: args.item.launchSettings?.maxRamMb ?? 4096,
+					jvmArgs: args.item.launchSettings?.jvmArgs,
+					javaPath: args.item.launchSettings?.javaPath,
+				})
+				updateServerStatus(args.item.id, 'running', 0)
+			} catch (e) {
+				updateServerStatus(args.item.id, 'stopped', 0)
+				handleError(e)
+			}
+			break
+		}
+		case 'stop_server': {
+			try {
+				await stopLocalServerProcess(args.item.id)
+			} catch {}
+			updateServerStatus(args.item.id, 'stopped', 0)
+			break
+		}
+		case 'edit_server':
+			await router.push(`/hosting/manage/${encodeURIComponent(args.item.id)}`)
+			break
+		case 'open_server_folder': {
+			const sDir = args.item.path || (await getServerDirectory(args.item.id))
+			if (sDir) await openPath(sDir).catch(handleError)
+			break
+		}
+		case 'delete_server':
+			deleteServerConfirmModal.value?.show(args.item)
+			break
 		case 'play':
 			await run(args.item.id).catch((err) => handleSevereError(err, { instanceId: args.item.id }))
 			trackEvent('InstanceStart', {
@@ -265,6 +331,24 @@ onUnmounted(() => {
 					@contextmenu.prevent.stop="(event) => handleInstanceRightClick(event, instance)"
 				/>
 			</section>
+			<section
+				v-else-if="row.server"
+				ref="modsRow"
+				class="instances"
+				:class="{ compact: row.compact }"
+			>
+				<ServerCard
+					v-for="(server, serverIndex) in row.instances.slice(
+						0,
+						row.compact ? maxInstancesPerCompactRow : maxInstancesPerRow,
+					)"
+					:key="row.label + server.id"
+					:server="server"
+					:compact="row.compact"
+					:first="serverIndex === 0"
+					@contextmenu.prevent.stop="(event) => handleServerRightClick(event, server)"
+				/>
+			</section>
 			<section v-else ref="modsRow" class="projects">
 				<LegacyProjectCard
 					v-for="project in row.instances.slice(0, maxProjectsPerRow)"
@@ -289,7 +373,13 @@ onUnmounted(() => {
 		<template #install> <DownloadIcon /> Install </template>
 		<template #open_link> <GlobeIcon /> Open in Modrinth <ExternalIcon /> </template>
 		<template #copy_link> <ClipboardCopyIcon /> Copy link </template>
+		<template #play_server> <PlayIcon /> Запустить </template>
+		<template #stop_server> <StopCircleIcon /> Остановить </template>
+		<template #edit_server> <EyeIcon /> Управление </template>
+		<template #open_server_folder> <FolderOpenIcon /> Открыть папку </template>
+		<template #delete_server> <TrashIcon /> Удалить </template>
 	</ContextMenu>
+	<ConfirmDeleteServerModal ref="deleteServerConfirmModal" />
 </template>
 <style lang="scss" scoped>
 .content {

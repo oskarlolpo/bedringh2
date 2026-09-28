@@ -516,6 +516,23 @@ fn main() {
                     .default_permission(
                         DefaultPermissionRule::AllowAllCommands,
                     ),
+            )
+            .plugin(
+                "tunnel",
+                InlinedPlugin::new()
+                    .commands(&[
+                        "tunnel_open",
+                        "tunnel_close",
+                        "tunnel_set_local_port",
+                        "tunnel_status",
+                        "tunnel_list",
+                        "tunnel_probe_ping",
+                        "tunnel_connect_client",
+                        "tunnel_disconnect_client",
+                    ])
+                    .default_permission(
+                        DefaultPermissionRule::AllowAllCommands,
+                    ),
             ),
     )
     .expect("Failed to run tauri-build");

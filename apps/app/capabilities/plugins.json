@@ -88,10 +88,16 @@
 					"url": "https://*.githubusercontent.com/*"
 				},
 				{
-					"url": "http://2.26.87.126:3100/*"
+					"url": "http://bedringh.duckdns.org:3100/*"
 				},
 				{
-					"url": "http://2.26.87.126:*/*"
+					"url": "http://bedringh.duckdns.org:*/*"
+				},
+				{
+					"url": "http://*.duckdns.org:*/*"
+				},
+				{
+					"url": "https://*.duckdns.org/*"
 				},
 				{
 					"url": "https://*.play2go.cloud/*"
@@ -263,6 +269,7 @@
 		"bedrock-addons:default",
 		"bedrock-servers:default",
 		"bedrock-worlds:default",
-		"local-server:default"
+		"local-server:default",
+		"tunnel:default"
 	]
 }

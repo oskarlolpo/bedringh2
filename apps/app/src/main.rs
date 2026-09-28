@@ -254,6 +254,7 @@ fn main() {
         .plugin(api::bedrock_servers::init())
         .plugin(api::bedrock_worlds::init())
         .plugin(api::local_server::init())
+        .plugin(api::tunnel::init())
         .manage(PendingUpdateData::default())
         .invoke_handler(tauri::generate_handler![
             initialize_state,
