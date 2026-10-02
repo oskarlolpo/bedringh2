@@ -428,15 +428,8 @@ async function fetchAccountHead(account: MinecraftCredential) {
 			void fetchAccountHead(account)
 		}
 
-		// Если слева активен Bedringh ID, гарантируем, что активным игровым аккаунтом является именно он
-		const activeBedringhCredential = accounts.value.find(
-			(a) =>
-				getAccountTypeName(a) === 'Bedringh ID' &&
-				a.profile?.name?.toLowerCase() === activeBedringhName,
-		)
-		if (activeBedringhCredential && defaultUser.value !== activeBedringhCredential.profile.id) {
-			await setAccount(activeBedringhCredential)
-		} else if (
+		// Если аккаунт не выбран или выбранный аккаунт был удалён, выбираем первый доступный
+		if (
 			(!defaultUser.value || !accounts.value.some((a) => a.profile.id === defaultUser.value)) &&
 			accounts.value.length > 0
 		) {
