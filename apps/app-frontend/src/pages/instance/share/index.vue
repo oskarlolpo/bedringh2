@@ -240,7 +240,7 @@ import {
 	useVIntl,
 } from '@modrinth/ui'
 import { useQueryClient } from '@tanstack/vue-query'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ExportModal from '@/components/ui/ExportModal.vue'
 import CloudPackPublishModal from '@/components/ui/astralrinth/packs/CloudPackPublishModal.vue'
@@ -319,11 +319,21 @@ async function refreshAuthorChangesStatus() {
 	}
 }
 
+function handleShareAccountChanged() {
+	activeBedringhUser.value = getActiveBedringhUser()
+	void refreshAuthorChangesStatus()
+}
+
 onMounted(async () => {
 	if (!activeBedringhUser.value?.username) {
 		activeBedringhUser.value = await resolveActiveBedringhUser()
 	}
+	window.addEventListener('bedringh:account-changed', handleShareAccountChanged)
 	void refreshAuthorChangesStatus()
+})
+
+onUnmounted(() => {
+	window.removeEventListener('bedringh:account-changed', handleShareAccountChanged)
 })
 
 const cloudMeta = ref<CloudPackMeta | null>(

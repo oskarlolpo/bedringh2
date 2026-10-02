@@ -4,11 +4,16 @@ pub fn is_bedringh_user(access_token: &str, refresh_token: &str) -> bool {
     access_token == "bedringh"
         || access_token.starts_with("bedringh")
         || refresh_token == "bedringh_refresh"
+        || access_token == "offline"
+        || access_token == "null"
+        || access_token.is_empty()
+        || refresh_token == "offline"
+        || refresh_token == "null"
 }
 
 /// Prepares authlib-injector Java agent for Bedringh accounts.
 /// Authlib-injector intercepts session/texture requests in Minecraft
-/// and forwards them to our Bedringh Auth server (http://2.26.87.126:3100).
+/// and forwards them to our Bedringh Auth server (http://bedringh.duckdns.org:3100).
 pub fn prepare_bedringh_authlib(libraries_dir: &Path) -> Option<PathBuf> {
     let injector_dir = libraries_dir.join("gg").join("bedringh").join("authlib-injector");
     let _ = std::fs::create_dir_all(&injector_dir);

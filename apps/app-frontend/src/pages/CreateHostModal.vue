@@ -10,6 +10,7 @@ import { computed, ref } from 'vue'
 import { detectAllActiveLanGames, type DetectedLanGame } from '@/services/bedringh-lan-detect'
 import { getActiveBedringhUser } from '@/services/bedringh-settings-sync'
 import { SERVER_CATEGORIES, type Edition } from '@/services/bedringh-server-categories'
+import { useBedringhAccount } from '@/composables/use-bedringh-account'
 
 const { formatMessage } = useVIntl()
 const messages = defineMessages({
@@ -38,7 +39,8 @@ const started = ref(false)
 const openWorlds = computed(() => detectedGames.value.filter((g) => g.found && g.port))
 const runningWithoutPort = computed(() => detectedGames.value.filter((g) => !g.found && g.instanceName))
 
-const activeUser = computed(() => getActiveBedringhUser()?.username || 'Вы')
+const { bedringhAccount } = useBedringhAccount()
+const activeUser = computed(() => bedringhAccount.value?.username || getActiveBedringhUser()?.username || 'Вы')
 const portPlaceholder = computed(() => (edition.value === 'java' ? '25565' : '19132'))
 
 function selectEdition(next: Edition) {

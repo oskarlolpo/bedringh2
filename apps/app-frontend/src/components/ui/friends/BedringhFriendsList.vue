@@ -1,59 +1,103 @@
 <script setup lang="ts">
 import {
 	CopyIcon,
+	ExternalIcon,
+	GameIcon,
 	MailIcon,
+	MessagesSquareIcon,
 	MoreVerticalIcon,
+	PlayIcon,
 	SearchIcon,
 	SendIcon,
+	ServerStackIcon,
 	TrashIcon,
 	UserIcon,
 	UserPlusIcon,
 	XIcon,
 } from '@modrinth/assets'
+import type { ButtonMenuOption } from '@modrinth/ui'
 import {
 	Accordion,
 	Avatar,
 	Button,
+	ContextMenu,
 	defineMessages,
 	IconButton,
 	injectNotificationManager,
 	Input,
-	IntlFormatted,
 	TeleportOverflowMenu,
+	UserAvatar,
 	useRelativeTime,
 	useVIntl,
 } from '@modrinth/ui'
-import { computed, ref } from 'vue'
+import { computed, inject, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
+import BedringhChatThread from '@/components/ui/friends/BedringhChatThread.vue'
 import ModalWrapper from '@/components/ui/modal/ModalWrapper.vue'
 import { useAppSettings } from '@/composables/use-app-settings.ts'
-import { useBedringhAccount } from '@/composables/use-bedringh-account'
+import { get as getSettings, set as setSettings } from '@/helpers/settings.ts'
 import {
+	type BedringhFriend,
 	cancelFriendRequest,
+	type FriendRequest,
+	openChatTarget,
 	refreshFriendsList,
 	removeFriend as removeFriendApi,
 	respondFriendRequest,
+	searchBedringhUsers,
 	sendFriendRequest,
+	startFriendsPolling,
 	useBedringhFriends,
-	type BedringhFriend,
-	type FriendRequest,
 } from '@/services/bedringh-friends'
-import { get as getSettings, set as setSettings } from '@/helpers/settings.ts'
+import { quickJoinServer, triggerPlayInvite } from '@/services/bedringh-play-invite'
+import { resolveActiveBedringhUser } from '@/services/bedringh-settings-sync'
 
 const props = defineProps<{
-	signIn: () => void
+	signIn?: () => void
 }>()
 
+const openBedringhAuthModal = inject<(mode?: 'login' | 'register') => void>(
+	'openBedringhAuthModal',
+	() => {},
+)
+
+function handleSignIn() {
+	if (props.signIn) {
+		props.signIn()
+	} else {
+		openBedringhAuthModal('login')
+	}
+}
+
+const router = useRouter()
 const { formatMessage } = useVIntl()
 const { handleError, addNotification } = injectNotificationManager()
 const formatRelativeTime = useRelativeTime()
 const appSettings = useAppSettings()
-const { isBedringhAuthenticated } = useBedringhAccount()
+const friendOptions = useTemplateRef('friendOptions')
 
 const {
 	state,
-	totalIncoming,
+	totalUnreadMessages,
 } = useBedringhFriends()
+
+// Мини-чат прямо внутри правого сайдбара
+const inlineChatTarget = ref<{ type: 'dm' | 'room'; id: string } | null>(null)
+
+onMounted(async () => {
+	await resolveActiveBedringhUser()
+	startFriendsPolling()
+})
+
+watch(
+	() => state.activeUsername,
+	(active) => {
+		if (!active) {
+			inlineChatTarget.value = null
+		}
+	},
+)
 
 type FriendsSectionCollapsedFlag =
 	| 'friends_active_collapsed'
@@ -76,21 +120,41 @@ function setFriendsSectionCollapsed(flag: FriendsSectionCollapsedFlag, collapsed
 }
 
 const search = ref('')
+const modalSearchSuggestions = ref<{ username: string; avatarUrl?: string }[]>([])
+let lookupTimer: ReturnType<typeof setTimeout> | null = null
+
 const friendInvitesModal = ref()
 const addFriendModal = ref()
 const username = ref('')
 const addingFriendLoading = ref(false)
 
+watch(username, (q) => {
+	if (lookupTimer) clearTimeout(lookupTimer)
+	const trimmed = q.trim()
+	if (trimmed.length < 2) {
+		modalSearchSuggestions.value = []
+		return
+	}
+	lookupTimer = setTimeout(async () => {
+		const res = await searchBedringhUsers(trimmed)
+		const existingSet = new Set(state.friends.map((f) => f.username.toLowerCase()))
+		modalSearchSuggestions.value = [...res.users, ...res.similar].filter(
+			(u) => !existingSet.has(u.username.toLowerCase()),
+		)
+	}, 280)
+})
+
 const sortedFriends = computed<BedringhFriend[]>(() => {
-	return state.friends.slice().sort((a, b) => a.username.localeCompare(b.username))
+	return state.friends.slice().sort((a, b) => {
+		if ((b.unread || 0) !== (a.unread || 0)) return (b.unread || 0) - (a.unread || 0)
+		return a.username.localeCompare(b.username)
+	})
 })
 
 const filteredFriends = computed<BedringhFriend[]>(() => {
 	const q = search.value.trim().toLowerCase()
 	if (!q) return sortedFriends.value
-	return sortedFriends.value.filter((x) =>
-		x.username.toLowerCase().includes(q),
-	)
+	return sortedFriends.value.filter((x) => x.username.toLowerCase().includes(q))
 })
 
 const activeFriends = computed<BedringhFriend[]>(() =>
@@ -110,13 +174,11 @@ const incomingRequests = computed<FriendRequest[]>(() => state.incomingRequests)
 const pendingFriends = computed<FriendRequest[]>(() => {
 	const q = search.value.trim().toLowerCase()
 	if (!q) return state.outgoingRequests
-	return state.outgoingRequests.filter((x) =>
-		x.username.toLowerCase().includes(q),
-	)
+	return state.outgoingRequests.filter((x) => x.username.toLowerCase().includes(q))
 })
 
-async function addFriendFromModal() {
-	const target = username.value.trim()
+async function quickAddFriend(targetNick: string) {
+	const target = targetNick.trim()
 	if (!target || addingFriendLoading.value) return
 
 	addingFriendLoading.value = true
@@ -125,25 +187,91 @@ async function addFriendFromModal() {
 		addNotification({
 			type: 'success',
 			title: formatMessage(messages.addingAFriend),
-			text: res.message || `Запрос дружбы пользователю ${target} отправлен`,
+			text: res.message || `Заявка в друзья отправлена игроку ${target}`,
 		})
 		addFriendModal.value?.hide()
 		username.value = ''
+		modalSearchSuggestions.value = []
 		await refreshFriendsList(true)
 	} catch (e: any) {
 		addNotification({
 			type: 'error',
 			title: 'Ошибка',
-			text: e?.message || 'Не удалось отправить запрос в друзья',
+			text: e?.message || 'Не удалось отправить заявку в друзья',
 		})
 	} finally {
 		addingFriendLoading.value = false
 	}
 }
 
+async function addFriendFromModal() {
+	await quickAddFriend(username.value)
+}
+
 function showAddFriendModal() {
+	if (!state.activeUsername) {
+		handleSignIn()
+		return
+	}
 	username.value = ''
+	modalSearchSuggestions.value = []
 	addFriendModal.value?.show()
+}
+
+async function openInlineChat(friend: BedringhFriend) {
+	const target = { type: 'dm' as const, id: friend.username }
+	inlineChatTarget.value = target
+	await openChatTarget(target)
+}
+
+function openFullMessenger(peerUsername?: string) {
+	if (peerUsername) {
+		void router.push({ path: '/chats', query: { peer: peerUsername } })
+	} else {
+		void router.push('/chats')
+	}
+}
+
+async function handleJoinFriendServer(friend: BedringhFriend) {
+	if (!friend.gameInfo?.serverAddress) return
+	await quickJoinServer(
+		{
+			addr: friend.gameInfo.serverAddress,
+			name: friend.gameInfo.serverName || friend.gameInfo.instanceName || friend.username,
+			version: friend.gameInfo.mcVersion,
+			loader: friend.gameInfo.loader,
+			packCode: friend.gameInfo.packCode,
+		},
+		(n) =>
+			addNotification({
+				title: n.title,
+				text: n.text,
+				type: n.type || 'info',
+			}),
+	)
+}
+
+async function handleInviteFriend(friend: BedringhFriend) {
+	await triggerPlayInvite(
+		{
+			type: 'dm',
+			id: friend.username,
+			title: friend.username,
+		},
+		{
+			navigateToServers: () => void router.push('/hosting/manage/'),
+			openChat: (target) => {
+				inlineChatTarget.value = target
+				void openChatTarget(target)
+			},
+			notify: (n) =>
+				addNotification({
+					title: n.title,
+					text: n.text,
+					type: n.type || 'info',
+				}),
+		},
+	)
 }
 
 async function acceptIncomingRequest(request: FriendRequest) {
@@ -191,8 +319,71 @@ function handleCopyServer(friend: BedringhFriend) {
 
 function getAvatarUrl(userOrName: string | BedringhFriend | FriendRequest): string {
 	const name = typeof userOrName === 'string' ? userOrName : userOrName.username
-	const customAvatar = typeof userOrName !== 'string' && 'avatarUrl' in userOrName ? userOrName.avatarUrl : undefined
+	const customAvatar =
+		typeof userOrName !== 'string' && 'avatarUrl' in userOrName ? userOrName.avatarUrl : undefined
 	return customAvatar || `https://mc-heads.net/avatar/${encodeURIComponent(name)}/32`
+}
+
+function getFriendSubtitle(friend: BedringhFriend): string {
+	if (friend.status === 'in_game') {
+		return `Играет в ${friend.gameInfo?.serverName || friend.gameInfo?.instanceName || 'Minecraft'}`
+	}
+	if (friend.lastMessage) {
+		return friend.lastMessage
+	}
+	return friend.status === 'online' ? 'В сети' : ''
+}
+
+function createFriendMenuOptions(friend: BedringhFriend): ButtonMenuOption[] {
+	const options: ButtonMenuOption[] = [
+		{
+			id: 'open-chat',
+			label: 'Написать сообщение',
+			icon: SendIcon,
+			action: () => void openInlineChat(friend),
+		},
+		{
+			id: 'open-full-chat',
+			label: 'Открыть в мессенджере',
+			icon: MessagesSquareIcon,
+			action: () => openFullMessenger(friend.username),
+		},
+	]
+
+	if (friend.gameInfo?.serverAddress) {
+		options.push(
+			{
+				id: 'join-server',
+				label: 'Присоединиться к игре',
+				icon: PlayIcon,
+				action: () => void handleJoinFriendServer(friend),
+			},
+			{
+				id: 'copy-ip',
+				label: 'Скопировать IP сервера',
+				icon: CopyIcon,
+				action: () => handleCopyServer(friend),
+			},
+		)
+	} else {
+		options.push({
+			id: 'invite-game',
+			label: 'Позвать в игру',
+			icon: ServerStackIcon,
+			action: () => void handleInviteFriend(friend),
+		})
+	}
+
+	options.push({
+		id: 'remove-friend',
+		label: formatMessage(messages.removeFriend),
+		icon: TrashIcon,
+		tone: 'red',
+		hoverFilledOnly: true,
+		action: () => void removeFriendRecord(friend),
+	})
+
+	return options
 }
 
 defineExpose({ showAddFriendModal })
@@ -208,15 +399,15 @@ const messages = defineMessages({
 	},
 	usernameTitle: {
 		id: 'bedringh.friends.add-friend.username.title',
-		defaultMessage: "What's your friend's Bedringh ID username?",
+		defaultMessage: 'Введите никнейм друга в Bedringh ID',
 	},
 	usernameDescription: {
 		id: 'friends.add-friend.username.description',
-		defaultMessage: 'It may be different from their Minecraft username!',
+		defaultMessage: 'Вы можете найти друга по его нику в системе Bedringh ID.',
 	},
 	usernamePlaceholder: {
 		id: 'bedringh.friends.add-friend.username.placeholder',
-		defaultMessage: 'Enter Bedringh ID username...',
+		defaultMessage: 'Введите ник Bedringh ID...',
 	},
 	sendFriendRequest: {
 		id: 'friends.add-friend.submit',
@@ -254,15 +445,6 @@ const messages = defineMessages({
 		id: 'friends.no-friends-match',
 		defaultMessage: `No friends matching ''{query}''`,
 	},
-	signInToAddFriends: {
-		id: 'bedringh.friends.sign-in-to-add-friends',
-		defaultMessage:
-			"<link>Sign in to a Bedringh ID account</link> to add friends and see what they're playing!",
-	},
-	addFriendsToShare: {
-		id: 'friends.add-friends-to-share',
-		defaultMessage: "<link>Add friends</link> to see what they're playing!",
-	},
 	heading: {
 		id: 'friends.section.heading',
 		defaultMessage: '{title} - {count}',
@@ -279,21 +461,28 @@ const messages = defineMessages({
 		id: 'friends.friend.request-sent',
 		defaultMessage: 'Friend request sent',
 	},
+	friendActionsLabel: {
+		id: 'friends.friend.actions.label',
+		defaultMessage: 'Friend actions',
+	},
 })
 </script>
 
 <template>
-	<div>
-		<!-- Модальное окно просмотра запросов в друзья -->
-	<ModalWrapper ref="friendInvitesModal" header="View friend requests">
-		<p v-if="incomingRequests.length === 0">You have no pending friend requests :C</p>
-		<div v-else class="flex flex-col gap-4 min-w-[36rem]">
-			<div v-for="req in incomingRequests" :key="req.id" class="flex gap-2">
+	<ContextMenu ref="friendOptions" :label="formatMessage(messages.friendActionsLabel)" />
+
+	<!-- Модалка входящих заявок (в точном стиле оригинального FriendsList.vue) -->
+	<ModalWrapper ref="friendInvitesModal" header="Заявки в друзья">
+		<p v-if="incomingRequests.length === 0" class="m-0 text-secondary">
+			У вас нет ожидающих заявок в друзья.
+		</p>
+		<div v-else class="flex flex-col gap-4 min-w-[34rem]">
+			<div v-for="req in incomingRequests" :key="req.id" class="flex gap-3 items-center">
 				<Avatar :src="getAvatarUrl(req)" class="w-12 h-12 rounded-full" size="2.25rem" circle />
-				<div class="grid grid-cols-[1fr_auto] w-full gap-4">
+				<div class="grid grid-cols-[1fr_auto] w-full gap-4 items-center">
 					<div>
 						<p class="m-0">
-							<span class="text-contrast font-medium">{{ req.username }}</span> sent you a friend request
+							<span class="text-contrast font-semibold">{{ req.username }}</span> отправил вам заявку в друзья
 						</p>
 						<p class="m-0 text-sm text-secondary">
 							{{ formatRelativeTime(new Date(req.createdAt).toISOString()) }}
@@ -302,11 +491,11 @@ const messages = defineMessages({
 					<div class="flex gap-2">
 						<Button type="colored" color="brand" @click="acceptIncomingRequest(req)">
 							<UserPlusIcon />
-							Accept
+							Принять
 						</Button>
 						<Button @click="rejectIncomingRequest(req)">
 							<XIcon />
-							Ignore
+							Отклонить
 						</Button>
 					</div>
 				</div>
@@ -314,21 +503,21 @@ const messages = defineMessages({
 		</div>
 	</ModalWrapper>
 
-	<!-- Модальное окно добавления друга -->
-	<ModalWrapper ref="addFriendModal" :header="formatMessage(messages.addingAFriend)">
+	<!-- Модалка добавления друга (в точном стиле оригинального FriendsList.vue) -->
+	<ModalWrapper ref="addFriendModal" header="Добавление в друзья">
 		<div class="min-w-[30rem]">
 			<h2 class="m-0 text-base font-medium text-primary">
-				{{ formatMessage(messages.usernameTitle) }}
+				Какой никнейм у друга в Bedringh ID?
 			</h2>
 			<p class="m-0 mt-1 text-sm text-secondary leading-tight">
-				{{ formatMessage(messages.usernameDescription) }}
+				Укажите имя аккаунта игрока, зарегистрированного в системе Bedringh ID.
 			</p>
 			<div class="flex items-center gap-2 mt-4">
 				<Input
 					v-model="username"
 					:icon="UserIcon"
 					type="text"
-					:placeholder="formatMessage(messages.usernamePlaceholder)"
+					placeholder="Введите ник Bedringh ID..."
 					wrapper-class="flex-1"
 					:disabled="addingFriendLoading"
 					@keyup.enter="addFriendFromModal"
@@ -340,308 +529,424 @@ const messages = defineMessages({
 					@click="addFriendFromModal"
 				>
 					<SendIcon />
-					{{ formatMessage(messages.sendFriendRequest) }}
+					Отправить запрос дружбы
 				</Button>
+			</div>
+
+			<!-- Автодополнение / похожие пользователи Bedringh ID -->
+			<div v-if="modalSearchSuggestions.length > 0" class="mt-3 flex flex-col gap-1">
+				<span class="text-xs font-medium text-secondary">Найденные игроки Bedringh ID:</span>
+				<div
+					v-for="u in modalSearchSuggestions.slice(0, 5)"
+					:key="u.username"
+					class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl hover:bg-button-bg transition-colors"
+				>
+					<div class="flex items-center gap-2 min-w-0">
+						<Avatar :src="getAvatarUrl(u.username)" size="24px" circle no-shadow />
+						<span class="text-sm font-medium text-contrast truncate">{{ u.username }}</span>
+					</div>
+					<Button type="quiet" size="sm" @click="quickAddFriend(u.username)">
+						<UserPlusIcon />
+						Добавить
+					</Button>
+				</div>
 			</div>
 		</div>
 	</ModalWrapper>
 
-	<!-- Шапка списка друзей -->
-	<div v-if="isBedringhAuthenticated && !state.loading" class="flex gap-1 items-center mb-3 -ml-1">
-		<template v-if="sortedFriends.length > 0">
+	<!-- Встроенный мини-чат в правом сайдбаре -->
+	<div v-if="state.activeUsername && inlineChatTarget" class="flex flex-col gap-2 h-[420px]">
+		<div class="flex items-center justify-between">
+			<Button type="quiet" size="sm" @click="inlineChatTarget = null">
+				Назад к друзьям
+			</Button>
 			<IconButton
-				v-tooltip="formatMessage(messages.addFriend)"
+				v-tooltip="'Развернуть на весь экран'"
 				type="quiet"
-				:label="formatMessage(messages.addFriend)"
-				@click="showAddFriendModal"
+				label="Развернуть на весь экран"
+				@click="openFullMessenger(inlineChatTarget.id)"
 			>
-				<UserPlusIcon />
+				<ExternalIcon />
 			</IconButton>
-			<Input
-				v-model="search"
-				:icon="SearchIcon"
-				type="text"
-				appearance="transparent"
-				:placeholder="formatMessage(messages.searchFriends)"
-				clearable
-				input-class="!text-primary !placeholder:text-primary"
-				wrapper-class="flex-1 !border-button-bg [&>span:first-child]:!text-primary [&>span:first-child]:!opacity-100"
-				@keyup.esc="search = ''"
-			/>
-		</template>
-		<h3 v-else class="w-full text-base text-primary font-medium m-0">
-			{{ formatMessage(messages.friends) }}
-		</h3>
-		<IconButton
-			v-if="incomingRequests.length > 0"
-			v-tooltip="formatMessage(messages.viewFriendRequests, { count: incomingRequests.length })"
-			type="quiet"
-			:label="formatMessage(messages.viewFriendRequests, { count: incomingRequests.length })"
-			class="relative"
-			@click="friendInvitesModal.show"
-		>
-			<MailIcon />
-			<span
+		</div>
+		<BedringhChatThread
+			:target="inlineChatTarget"
+			compact
+			show-back-button
+			@back="inlineChatTarget = null"
+		/>
+	</div>
+
+	<template v-else>
+		<!-- Верхняя панель управления (только когда выполнен вход в Bedringh ID) -->
+		<div v-if="state.activeUsername" class="flex gap-1 items-center mb-3 -ml-1">
+			<template v-if="sortedFriends.length > 0 || pendingFriends.length > 0">
+				<IconButton
+					v-tooltip="formatMessage(messages.addFriend)"
+					type="quiet"
+					:label="formatMessage(messages.addFriend)"
+					@click="showAddFriendModal"
+				>
+					<UserPlusIcon />
+				</IconButton>
+				<Input
+					v-model="search"
+					:icon="SearchIcon"
+					type="text"
+					appearance="transparent"
+					:placeholder="formatMessage(messages.searchFriends)"
+					clearable
+					input-class="!text-primary !placeholder:text-primary"
+					wrapper-class="flex-1 !border-button-bg [&>span:first-child]:!text-primary [&>span:first-child]:!opacity-100"
+					@keyup.esc="search = ''"
+				/>
+			</template>
+			<template v-else>
+				<h3 class="w-full text-base text-primary font-medium m-0 pl-1">
+					{{ formatMessage(messages.friends) }}
+				</h3>
+				<IconButton
+					v-tooltip="formatMessage(messages.addFriend)"
+					type="quiet"
+					:label="formatMessage(messages.addFriend)"
+					@click="showAddFriendModal"
+				>
+					<UserPlusIcon />
+				</IconButton>
+			</template>
+
+			<IconButton
+				v-tooltip="'Чаты и сообщения'"
+				type="quiet"
+				label="Чаты и сообщения"
+				class="relative"
+				@click="openFullMessenger()"
+			>
+				<MessagesSquareIcon />
+				<span
+					v-if="totalUnreadMessages > 0"
+					aria-hidden="true"
+					class="absolute bg-brand text-brand-inverted text-[8px] top-0.5 px-1 right-0.5 min-w-3 h-3 rounded-full flex items-center justify-center font-bold"
+				>
+					{{ totalUnreadMessages }}
+				</span>
+			</IconButton>
+
+			<IconButton
 				v-if="incomingRequests.length > 0"
-				aria-hidden="true"
-				class="absolute bg-brand text-brand-inverted text-[8px] top-0.5 px-1 right-0.5 min-w-3 h-3 rounded-full flex items-center justify-center font-bold"
+				v-tooltip="formatMessage(messages.viewFriendRequests, { count: incomingRequests.length })"
+				type="quiet"
+				:label="formatMessage(messages.viewFriendRequests, { count: incomingRequests.length })"
+				class="relative"
+				@click="friendInvitesModal.show"
 			>
-				{{ incomingRequests.length }}
-			</span>
-		</IconButton>
-	</div>
+				<MailIcon />
+				<span
+					aria-hidden="true"
+					class="absolute bg-brand text-brand-inverted text-[8px] top-0.5 px-1 right-0.5 min-w-3 h-3 rounded-full flex items-center justify-center font-bold"
+				>
+					{{ incomingRequests.length }}
+				</span>
+			</IconButton>
+		</div>
 
-	<!-- Содержимое списка друзей -->
-	<div class="flex flex-col gap-3">
-		<h3 v-if="state.loading" class="text-base text-primary font-medium m-0">
-			{{ formatMessage(messages.friends) }}
-		</h3>
-		<template v-if="state.loading">
-			<div v-for="n in 5" :key="n" class="flex gap-2 items-center animate-pulse">
-				<div class="min-w-9 min-h-9 bg-button-bg rounded-full"></div>
-				<div class="flex flex-col w-full">
-					<div class="h-3 bg-button-bg rounded-full w-1/2 mb-1"></div>
-					<div class="h-2.5 bg-button-bg rounded-full w-3/4"></div>
+		<div class="flex flex-col gap-3">
+			<h3 v-if="!state.activeUsername" class="text-base text-primary font-medium m-0">
+				{{ formatMessage(messages.friends) }}
+			</h3>
+
+			<!-- Скелетон загрузки (только один раз при первичной инициализации) -->
+			<template v-if="state.loading && state.lastUpdated === 0 && sortedFriends.length === 0">
+				<div v-for="n in 5" :key="n" class="flex gap-2 items-center animate-pulse">
+					<div class="min-w-9 min-h-9 bg-button-bg rounded-full"></div>
+					<div class="flex flex-col w-full">
+						<div class="h-3 bg-button-bg rounded-full w-1/2 mb-1"></div>
+						<div class="h-2.5 bg-button-bg rounded-full w-3/4"></div>
+					</div>
 				</div>
-			</div>
-		</template>
-		<template v-else-if="sortedFriends.length === 0">
-			<div class="text-sm">
-				<div v-if="!isBedringhAuthenticated">
-					<IntlFormatted :message-id="messages.signInToAddFriends">
-						<template #link="{ children }">
-							<span class="font-semibold text-brand cursor-pointer" @click="props.signIn">
-								<component :is="() => children" />
-							</span>
-						</template>
-					</IntlFormatted>
+			</template>
+
+			<!-- Не авторизован в Bedringh ID или пустой список (из оригинального FriendsList.vue) -->
+			<template v-else-if="!state.activeUsername || (sortedFriends.length === 0 && pendingFriends.length === 0)">
+				<div class="text-sm">
+					<div v-if="!state.activeUsername">
+						<span class="font-semibold text-brand cursor-pointer hover:underline" @click="handleSignIn">
+							Войдите в аккаунт Bedringh ID
+						</span>, чтобы добавлять друзей, переписываться в чате и видеть, во что они играют!
+					</div>
+					<div v-else>
+						<span class="font-semibold text-brand cursor-pointer hover:underline" @click="showAddFriendModal">
+							Добавьте друзей
+						</span>, чтобы общаться и видеть, во что они играют!
+					</div>
 				</div>
-				<div v-else>
-					<IntlFormatted :message-id="messages.addFriendsToShare">
-						<template #link="{ children }">
-							<span class="font-semibold text-brand cursor-pointer" @click="showAddFriendModal">
-								<component :is="() => children" />
-							</span>
-						</template>
-					</IntlFormatted>
-				</div>
-			</div>
-		</template>
-		<template v-else>
-			<!-- Секция Active (В игре) -->
-			<Accordion
-				v-if="activeFriends.length > 0"
-				:open-by-default="!isFriendsSectionCollapsed('friends_active_collapsed')"
-				:force-open="!!search"
-				button-class="flex w-full items-center bg-transparent border-0 p-0 cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all"
-				@on-open="setFriendsSectionCollapsed('friends_active_collapsed', false)"
-				@on-close="setFriendsSectionCollapsed('friends_active_collapsed', true)"
-			>
-				<template #title>
-					<h3 class="text-base text-primary font-medium m-0">
-						{{ formatMessage(messages.heading, { title: formatMessage(messages.active), count: activeFriends.length }) }}
-					</h3>
-				</template>
-				<template #default>
-					<div class="pt-3 flex flex-col gap-1">
-						<div
-							v-for="friend in activeFriends"
-							:key="friend.username"
-							class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
-						>
-							<div class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2">
-								<div class="relative">
-									<Avatar :src="getAvatarUrl(friend)" size="32px" circle />
-									<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-solid border-bg-raised"></span>
+			</template>
+
+			<!-- Секции друзей (в стиле оригинального FriendsSection.vue) -->
+			<template v-else>
+				<!-- 1. В игре (Active) -->
+				<Accordion
+					v-if="activeFriends.length > 0"
+					:open-by-default="!isFriendsSectionCollapsed('friends_active_collapsed')"
+					:force-open="!!search"
+					:button-class="
+						'flex w-full items-center bg-transparent border-0 p-0' +
+						(search
+							? ''
+							: ' cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all')
+					"
+					@on-open="setFriendsSectionCollapsed('friends_active_collapsed', false)"
+					@on-close="setFriendsSectionCollapsed('friends_active_collapsed', true)"
+				>
+					<template #title>
+						<h3 class="text-base text-primary font-medium m-0">
+							{{ formatMessage(messages.heading, { title: formatMessage(messages.active), count: activeFriends.length }) }}
+						</h3>
+					</template>
+					<template #default>
+						<div class="pt-3 flex flex-col gap-1">
+							<div
+								v-for="friend in activeFriends"
+								:key="friend.username"
+								class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
+								@contextmenu.prevent.stop="
+									(event) => friendOptions?.open(event, createFriendMenuOptions(friend))
+								"
+							>
+								<div
+									class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2 text-inherit no-underline group cursor-pointer"
+									@click="openInlineChat(friend)"
+								>
+									<UserAvatar :src="getAvatarUrl(friend)" size="32px" badge>
+										<span class="block size-full rounded-full bg-purple-500" />
+									</UserAvatar>
+									<div class="flex flex-col min-w-0">
+										<div class="flex items-center gap-1.5 min-w-0">
+											<span class="text-sm m-0 group-hover:underline text-contrast truncate">
+												{{ friend.username }}
+											</span>
+											<span
+												v-if="friend.unread"
+												class="px-1.5 rounded-full bg-brand text-brand-inverted text-[10px] font-bold shrink-0"
+											>
+												{{ friend.unread }}
+											</span>
+										</div>
+										<span class="m-0 text-xs text-secondary truncate flex items-center gap-1">
+											<GameIcon class="w-3 h-3 shrink-0 text-brand" />
+											<span class="truncate">{{ getFriendSubtitle(friend) }}</span>
+										</span>
+									</div>
 								</div>
-								<div class="flex flex-col min-w-0">
-									<span class="text-sm text-contrast m-0 truncate">
-										{{ friend.username }}
-									</span>
-									<span class="text-xs text-purple-400 m-0 truncate">
-										{{ friend.gameInfo?.instanceName || friend.gameInfo?.serverAddress || formatMessage(messages.active) }}
-									</span>
+								<div class="flex items-center">
+									<IconButton
+										v-if="friend.gameInfo?.serverAddress"
+										v-tooltip="'Присоединиться к серверу'"
+										type="quiet"
+										label="Присоединиться к серверу"
+										@click.stop="handleJoinFriendServer(friend)"
+									>
+										<PlayIcon class="text-brand" />
+									</IconButton>
+									<TeleportOverflowMenu
+										type="quiet"
+										label="More options"
+										class="opacity-0 group-hover:opacity-100 transition-opacity"
+										:options="createFriendMenuOptions(friend)"
+									>
+										<MoreVerticalIcon />
+									</TeleportOverflowMenu>
 								</div>
 							</div>
-							<TeleportOverflowMenu
-								type="quiet"
-								label="More options"
-								class="opacity-0 group-hover:opacity-100 transition-opacity"
-								:options="[
-									...(friend.gameInfo?.serverAddress ? [{
-										id: 'copy-server',
-										label: 'Скопировать сервер',
-										icon: CopyIcon,
-										action: () => handleCopyServer(friend),
-									}] : []),
-									{
-										id: 'remove-friend',
-										label: formatMessage(messages.removeFriend),
-										icon: TrashIcon,
-										tone: 'red',
-										action: () => removeFriendRecord(friend),
-									}
-								]"
-							>
-								<MoreVerticalIcon />
-							</TeleportOverflowMenu>
 						</div>
-					</div>
-				</template>
-			</Accordion>
+					</template>
+				</Accordion>
 
-			<!-- Секция Online (В сети) -->
-			<Accordion
-				v-if="onlineFriends.length > 0"
-				:open-by-default="!isFriendsSectionCollapsed('friends_online_collapsed')"
-				:force-open="!!search"
-				button-class="flex w-full items-center bg-transparent border-0 p-0 cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all"
-				@on-open="setFriendsSectionCollapsed('friends_online_collapsed', false)"
-				@on-close="setFriendsSectionCollapsed('friends_online_collapsed', true)"
-			>
-				<template #title>
-					<h3 class="text-base text-primary font-medium m-0">
-						{{ formatMessage(messages.heading, { title: formatMessage(messages.online), count: onlineFriends.length }) }}
-					</h3>
-				</template>
-				<template #default>
-					<div class="pt-3 flex flex-col gap-1">
-						<div
-							v-for="friend in onlineFriends"
-							:key="friend.username"
-							class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
-						>
-							<div class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2">
-								<div class="relative">
-									<Avatar :src="getAvatarUrl(friend)" size="32px" circle />
-									<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-solid border-bg-raised"></span>
+				<!-- 2. В сети (Online) -->
+				<Accordion
+					v-if="onlineFriends.length > 0"
+					:open-by-default="!isFriendsSectionCollapsed('friends_online_collapsed')"
+					:force-open="!!search"
+					:button-class="
+						'flex w-full items-center bg-transparent border-0 p-0' +
+						(search
+							? ''
+							: ' cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all')
+					"
+					@on-open="setFriendsSectionCollapsed('friends_online_collapsed', false)"
+					@on-close="setFriendsSectionCollapsed('friends_online_collapsed', true)"
+				>
+					<template #title>
+						<h3 class="text-base text-primary font-medium m-0">
+							{{ formatMessage(messages.heading, { title: formatMessage(messages.online), count: onlineFriends.length }) }}
+						</h3>
+					</template>
+					<template #default>
+						<div class="pt-3 flex flex-col gap-1">
+							<div
+								v-for="friend in onlineFriends"
+								:key="friend.username"
+								class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
+								@contextmenu.prevent.stop="
+									(event) => friendOptions?.open(event, createFriendMenuOptions(friend))
+								"
+							>
+								<div
+									class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2 text-inherit no-underline group cursor-pointer"
+									@click="openInlineChat(friend)"
+								>
+									<UserAvatar :src="getAvatarUrl(friend)" size="32px" badge />
+									<div class="flex flex-col min-w-0">
+										<div class="flex items-center gap-1.5 min-w-0">
+											<span class="text-sm m-0 group-hover:underline text-contrast truncate">
+												{{ friend.username }}
+											</span>
+											<span
+												v-if="friend.unread"
+												class="px-1.5 rounded-full bg-brand text-brand-inverted text-[10px] font-bold shrink-0"
+											>
+												{{ friend.unread }}
+											</span>
+										</div>
+										<span v-if="friend.lastMessage" class="m-0 text-xs text-secondary truncate">
+											{{ friend.lastMessage }}
+										</span>
+									</div>
 								</div>
-								<div class="flex flex-col min-w-0">
-									<span class="text-sm text-contrast m-0 truncate">
-										{{ friend.username }}
-									</span>
-								</div>
+								<TeleportOverflowMenu
+									type="quiet"
+									label="More options"
+									class="opacity-0 group-hover:opacity-100 transition-opacity"
+									:options="createFriendMenuOptions(friend)"
+								>
+									<MoreVerticalIcon />
+								</TeleportOverflowMenu>
 							</div>
-							<TeleportOverflowMenu
-								type="quiet"
-								label="More options"
-								class="opacity-0 group-hover:opacity-100 transition-opacity"
-								:options="[
-									{
-										id: 'remove-friend',
-										label: formatMessage(messages.removeFriend),
-										icon: TrashIcon,
-										tone: 'red',
-										action: () => removeFriendRecord(friend),
-									}
-								]"
-							>
-								<MoreVerticalIcon />
-							</TeleportOverflowMenu>
 						</div>
-					</div>
-				</template>
-			</Accordion>
+					</template>
+				</Accordion>
 
-			<!-- Секция Offline (Не в сети) -->
-			<Accordion
-				v-if="offlineFriends.length > 0"
-				:open-by-default="!isFriendsSectionCollapsed('friends_offline_collapsed')"
-				:force-open="!!search"
-				button-class="flex w-full items-center bg-transparent border-0 p-0 cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all"
-				@on-open="setFriendsSectionCollapsed('friends_offline_collapsed', false)"
-				@on-close="setFriendsSectionCollapsed('friends_offline_collapsed', true)"
-			>
-				<template #title>
-					<h3 class="text-base text-primary font-medium m-0">
-						{{ formatMessage(messages.heading, { title: formatMessage(messages.offline), count: offlineFriends.length }) }}
-					</h3>
-				</template>
-				<template #default>
-					<div class="pt-3 flex flex-col gap-1">
-						<div
-							v-for="friend in offlineFriends"
-							:key="friend.username"
-							class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
-						>
-							<div class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2">
-								<Avatar :src="getAvatarUrl(friend)" size="32px" circle class="grayscale opacity-60" />
-								<div class="flex flex-col min-w-0">
-									<span class="text-sm text-primary m-0 truncate">
-										{{ friend.username }}
-									</span>
+				<!-- 3. Не в сети (Offline) -->
+				<Accordion
+					v-if="offlineFriends.length > 0"
+					:open-by-default="!isFriendsSectionCollapsed('friends_offline_collapsed')"
+					:force-open="!!search"
+					:button-class="
+						'flex w-full items-center bg-transparent border-0 p-0' +
+						(search
+							? ''
+							: ' cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all')
+					"
+					@on-open="setFriendsSectionCollapsed('friends_offline_collapsed', false)"
+					@on-close="setFriendsSectionCollapsed('friends_offline_collapsed', true)"
+				>
+					<template #title>
+						<h3 class="text-base text-primary font-medium m-0">
+							{{ formatMessage(messages.heading, { title: formatMessage(messages.offline), count: offlineFriends.length }) }}
+						</h3>
+					</template>
+					<template #default>
+						<div class="pt-3 flex flex-col gap-1">
+							<div
+								v-for="friend in offlineFriends"
+								:key="friend.username"
+								class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
+								@contextmenu.prevent.stop="
+									(event) => friendOptions?.open(event, createFriendMenuOptions(friend))
+								"
+							>
+								<div
+									class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2 text-inherit no-underline group cursor-pointer"
+									@click="openInlineChat(friend)"
+								>
+									<UserAvatar :src="getAvatarUrl(friend)" size="32px" :badge="false" grayscale />
+									<div class="flex flex-col min-w-0">
+										<div class="flex items-center gap-1.5 min-w-0">
+											<span class="text-sm m-0 group-hover:underline text-primary truncate">
+												{{ friend.username }}
+											</span>
+											<span
+												v-if="friend.unread"
+												class="px-1.5 rounded-full bg-brand text-brand-inverted text-[10px] font-bold shrink-0"
+											>
+												{{ friend.unread }}
+											</span>
+										</div>
+										<span v-if="friend.lastMessage" class="m-0 text-xs text-secondary truncate">
+											{{ friend.lastMessage }}
+										</span>
+									</div>
 								</div>
+								<TeleportOverflowMenu
+									type="quiet"
+									label="More options"
+									class="opacity-0 group-hover:opacity-100 transition-opacity"
+									:options="createFriendMenuOptions(friend)"
+								>
+									<MoreVerticalIcon />
+								</TeleportOverflowMenu>
 							</div>
-							<TeleportOverflowMenu
-								type="quiet"
-								label="More options"
-								class="opacity-0 group-hover:opacity-100 transition-opacity"
-								:options="[
-									{
-										id: 'remove-friend',
-										label: formatMessage(messages.removeFriend),
-										icon: TrashIcon,
-										tone: 'red',
-										action: () => removeFriendRecord(friend),
-									}
-								]"
-							>
-								<MoreVerticalIcon />
-							</TeleportOverflowMenu>
 						</div>
-					</div>
-				</template>
-			</Accordion>
+					</template>
+				</Accordion>
 
-			<!-- Секция Pending (Отправленные заявки) -->
-			<Accordion
-				v-if="pendingFriends.length > 0"
-				:open-by-default="!isFriendsSectionCollapsed('friends_pending_collapsed')"
-				:force-open="!!search"
-				button-class="flex w-full items-center bg-transparent border-0 p-0 cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all"
-				@on-open="setFriendsSectionCollapsed('friends_pending_collapsed', false)"
-				@on-close="setFriendsSectionCollapsed('friends_pending_collapsed', true)"
-			>
-				<template #title>
-					<h3 class="text-base text-primary font-medium m-0">
-						{{ formatMessage(messages.heading, { title: formatMessage(messages.pending), count: pendingFriends.length }) }}
-					</h3>
-				</template>
-				<template #default>
-					<div class="pt-3 flex flex-col gap-1">
-						<div
-							v-for="req in pendingFriends"
-							:key="req.id"
-							class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
-						>
-							<div class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2">
-								<Avatar :src="getAvatarUrl(req)" size="32px" circle />
-								<div class="flex flex-col min-w-0">
-									<span class="text-sm text-contrast m-0 truncate">
-										{{ req.username }}
-									</span>
-									<span class="m-0 text-xs text-secondary">
-										{{ formatMessage(messages.friendRequestSent) }}
-									</span>
+				<!-- 4. Ожидание (Pending) -->
+				<Accordion
+					v-if="pendingFriends.length > 0"
+					:open-by-default="!isFriendsSectionCollapsed('friends_pending_collapsed')"
+					:force-open="!!search"
+					:button-class="
+						'flex w-full items-center bg-transparent border-0 p-0' +
+						(search
+							? ''
+							: ' cursor-pointer hover:brightness-[--hover-brightness] active:scale-[0.98] transition-all')
+					"
+					@on-open="setFriendsSectionCollapsed('friends_pending_collapsed', false)"
+					@on-close="setFriendsSectionCollapsed('friends_pending_collapsed', true)"
+				>
+					<template #title>
+						<h3 class="text-base text-primary font-medium m-0">
+							{{ formatMessage(messages.heading, { title: formatMessage(messages.pending), count: pendingFriends.length }) }}
+						</h3>
+					</template>
+					<template #default>
+						<div class="pt-3 flex flex-col gap-1">
+							<div
+								v-for="req in pendingFriends"
+								:key="req.id"
+								class="group grid items-center grid-cols-[1fr_auto] gap-2 hover:bg-button-bg transition-colors rounded-full mr-1 select-none"
+							>
+								<div class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2">
+									<UserAvatar :src="getAvatarUrl(req)" size="32px" :badge="false" />
+									<div class="flex flex-col min-w-0">
+										<span class="text-sm m-0 text-contrast truncate">
+											{{ req.username }}
+										</span>
+										<span class="m-0 text-xs text-secondary truncate">
+											{{ formatMessage(messages.friendRequestSent) }}
+										</span>
+									</div>
 								</div>
+								<IconButton
+									v-tooltip="formatMessage(messages.cancelRequest)"
+									type="quiet"
+									:label="formatMessage(messages.cancelRequest)"
+									@click="cancelOutgoingRequest(req)"
+								>
+									<XIcon />
+								</IconButton>
 							</div>
-							<IconButton
-								v-tooltip="formatMessage(messages.cancelRequest)"
-								type="quiet"
-								:label="formatMessage(messages.cancelRequest)"
-								@click="cancelOutgoingRequest(req)"
-							>
-								<XIcon />
-							</IconButton>
 						</div>
-					</div>
-				</template>
-			</Accordion>
+					</template>
+				</Accordion>
 
-			<p v-if="filteredFriends.length === 0 && search" class="text-sm text-secondary my-1 mx-4">
-				{{ formatMessage(messages.noFriendsMatch, { query: search }) }}
-			</p>
-		</template>
-	</div>
-	</div>
+				<p
+					v-if="filteredFriends.length === 0 && pendingFriends.length === 0 && search"
+					class="text-sm text-secondary my-1 mx-4"
+				>
+					{{ formatMessage(messages.noFriendsMatch, { query: search }) }}
+				</p>
+			</template>
+		</div>
+	</template>
 </template>

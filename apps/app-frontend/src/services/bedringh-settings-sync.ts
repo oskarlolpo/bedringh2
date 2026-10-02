@@ -63,13 +63,24 @@ async function requestApi(endpoint: string, options: { method?: string; body?: a
 	throw new Error('Не удалось подключиться к серверу авторизации Bedringh')
 }
 
+export function isValidBedringhToken(token?: string | null): boolean {
+	if (!token) return false
+	const t = token.trim()
+	if (!t || t === 'offline' || t === 'null') return false
+	if (t === 'kl' || t.startsWith('kl_') || t === 'tl' || t.startsWith('tl_') || t.includes('elyby')) {
+		return false
+	}
+	return true
+}
+
 export function setActiveBedringhUser(username: string, token?: string): void {
-	if (!username) return
+	if (!username || !isValidBedringhToken(token)) return
+	const prev = localStorage.getItem(STORAGE_ACTIVE_USER_KEY)
 	localStorage.setItem(STORAGE_ACTIVE_USER_KEY, username)
 	if (token) {
 		localStorage.setItem(`${STORAGE_USER_TOKEN_PREFIX}${username.toLowerCase()}`, token)
 	}
-	if (typeof window !== 'undefined') {
+	if (typeof window !== 'undefined' && (!prev || prev.toLowerCase() !== username.toLowerCase())) {
 		window.dispatchEvent(
 			new CustomEvent('bedringh:account-changed', {
 				detail: { username, token },
@@ -79,15 +90,12 @@ export function setActiveBedringhUser(username: string, token?: string): void {
 }
 
 export function getActiveBedringhUser(): { username: string; token?: string } | null {
-	let username = localStorage.getItem(STORAGE_ACTIVE_USER_KEY)
-	if (!username) {
-		username =
-			localStorage.getItem('bedringh_current_account') ||
-			localStorage.getItem('equipped_skin_username') ||
-			null
-	}
+	const username = localStorage.getItem(STORAGE_ACTIVE_USER_KEY)
 	if (!username) return null
 	const token = localStorage.getItem(`${STORAGE_USER_TOKEN_PREFIX}${username.toLowerCase()}`) || undefined
+	if (!isValidBedringhToken(token)) {
+		return null
+	}
 	return { username, token }
 }
 
@@ -106,25 +114,32 @@ export async function resolveActiveBedringhUser(): Promise<{ username: string; t
 			u?.access_token === 'bedringh' ||
 			(typeof u?.access_token === 'string' && u.access_token.startsWith('bedringh_'))
 
-		const found = allUsers.find((u: any) => u.profile?.id === defaultId && isBedringh(u)) || allUsers.find(isBedringh)
-		if (found?.profile?.name) {
-			const token = found.access_token || ''
-			localStorage.setItem(STORAGE_ACTIVE_USER_KEY, found.profile.name)
-			if (token) {
-				localStorage.setItem(`${STORAGE_USER_TOKEN_PREFIX}${found.profile.name.toLowerCase()}`, token)
-			}
-			return { username: found.profile.name, token }
+		const defaultUser = defaultId
+			? allUsers.find((u: any) => u.profile?.id === defaultId)
+			: null
+
+		if (defaultUser && isBedringh(defaultUser) && defaultUser.profile?.name) {
+			const savedToken =
+				localStorage.getItem(`${STORAGE_USER_TOKEN_PREFIX}${defaultUser.profile.name.toLowerCase()}`) ||
+				undefined
+			const token = isValidBedringhToken(savedToken)
+				? savedToken!
+				: defaultUser.access_token || 'bedringh'
+			localStorage.setItem(STORAGE_ACTIVE_USER_KEY, defaultUser.profile.name)
+			localStorage.setItem(`${STORAGE_USER_TOKEN_PREFIX}${defaultUser.profile.name.toLowerCase()}`, token)
+			return { username: defaultUser.profile.name, token }
 		}
 	} catch (e) {
 		console.warn('[Bedringh Settings Sync] Ошибка авто-определения пользователя:', e)
 	}
 
-	return null
+	return getActiveBedringhUser()
 }
 
 export function clearActiveBedringhUser(): void {
+	const prev = localStorage.getItem(STORAGE_ACTIVE_USER_KEY)
 	localStorage.removeItem(STORAGE_ACTIVE_USER_KEY)
-	if (typeof window !== 'undefined') {
+	if (typeof window !== 'undefined' && prev) {
 		window.dispatchEvent(
 			new CustomEvent('bedringh:account-changed', {
 				detail: null,
@@ -172,13 +187,14 @@ export async function fetchRemoteSettings(username: string, token?: string): Pro
 export async function applyRemoteSettings(remoteSettings: Partial<AppSettings>): Promise<void> {
 	try {
 		const current = await getLocalSettings()
+		const { _bedringhSocial: _ignoredSocial, ...cleanRemoteSettings } = (remoteSettings || {}) as any
 
 		// Объединяем настройки, защищая локальный путь к директории инстансов от затирания несуществующим путем
 		const merged: AppSettings = {
 			...current,
-			...remoteSettings,
-			custom_dir: current.custom_dir || remoteSettings.custom_dir || null,
-			prev_custom_dir: current.prev_custom_dir || remoteSettings.prev_custom_dir || null,
+			...cleanRemoteSettings,
+			custom_dir: current.custom_dir || cleanRemoteSettings.custom_dir || null,
+			prev_custom_dir: current.prev_custom_dir || cleanRemoteSettings.prev_custom_dir || null,
 		}
 
 		// Сохраняем в локальную базу данных Theseus
@@ -249,7 +265,12 @@ export function pushRemoteSettingsDebounced(username: string, token?: string, se
  */
 export async function pushRemoteSettingsNow(username: string, token?: string, settings?: AppSettings): Promise<boolean> {
 	try {
-		const payload = settings || await getLocalSettings()
+		const localPayload = settings || await getLocalSettings()
+		const existingRemote = (await fetchRemoteSettings(username, token)) as any
+		const payload =
+			existingRemote && existingRemote._bedringhSocial
+				? { ...localPayload, _bedringhSocial: existingRemote._bedringhSocial }
+				: localPayload
 		const headers: Record<string, string> = {}
 		if (token) {
 			headers['Authorization'] = `Bearer ${token}`

@@ -302,6 +302,9 @@ uninlined_format_args = "warn"
 unnested_or_patterns = "warn"
 wildcard_dependencies = "warn"
 
+[profile.dev]
+incremental = false
+
 [profile.dev.package."*"]
 opt-level = 2
 

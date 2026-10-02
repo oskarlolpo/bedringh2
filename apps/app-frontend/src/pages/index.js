@@ -5,6 +5,7 @@ import Screenshots from './Screenshots.vue'
 import Servers from './Servers.vue'
 import ServersLibrary from './servers-library/Index.vue'
 import Skins from './Skins.vue'
+import SocialChats from './SocialChats.vue'
 import User from './User.vue'
 
-export { Browse, BrowseBedrock, Index, Screenshots, Servers, ServersLibrary, Skins, User }
+export { Browse, BrowseBedrock, Index, Screenshots, Servers, ServersLibrary, Skins, SocialChats, User }

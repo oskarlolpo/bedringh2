@@ -9,6 +9,8 @@ import {
 	SearchIcon,
 	ServerStackIcon,
 	TrashIcon,
+	UsersIcon,
+	XIcon,
 } from '@modrinth/assets'
 import {
 	Button,
@@ -26,6 +28,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import CreateHostModal, { SERVER_CATEGORIES } from './CreateHostModal.vue'
 import { useRootBreadcrumb } from '@/providers/breadcrumbs'
 import { useLocalServers } from '@/providers/local-servers'
+import { setPendingPlayInvite, useBedringhFriends } from '@/services/bedringh-friends'
 import {
 	fetchLobbyServers,
 	type LobbyHostData,
@@ -34,6 +37,7 @@ import {
 	stopHostHeartbeat,
 	subscribeLobbySSE,
 } from '@/services/bedringh-lobby'
+import { useBedringhAccount } from '@/composables/use-bedringh-account'
 import { formatSafeConnectAddress } from '@/services/bedringh-network-config'
 import { getActiveBedringhUser } from '@/services/bedringh-settings-sync'
 import { connectClientBridge, probeLocalPortOpen } from '@/services/bedringh-tunnel'
@@ -62,6 +66,7 @@ export interface HostedServer {
 const { formatMessage } = useVIntl()
 const { addNotification } = injectNotificationManager()
 const { servers: localServers } = useLocalServers()
+const { state: socialState } = useBedringhFriends()
 
 const messages = defineMessages({
 	breadcrumb: { id: 'app.nav.servers-menu', defaultMessage: 'Серверы' },
@@ -104,8 +109,10 @@ const copiedId = ref<string | null>(null)
 const isRefreshing = ref(false)
 let sseUnsubscribe: (() => void) | null = null
 
+const { bedringhAccount } = useBedringhAccount()
+
 const myRunningLocalServers = computed<HostedServer[]>(() => {
-	const hostName = getActiveBedringhUser()?.username || 'Вы'
+	const hostName = bedringhAccount.value?.username || getActiveBedringhUser()?.username || 'Вы'
 	return localServers.value
 		.filter((s) => s.status === 'running')
 		.map((s) => ({
@@ -407,6 +414,35 @@ function pillClass(active: boolean) {
 
 <template>
 	<div class="p-6 max-w-[1280px] mx-auto w-full box-border flex flex-col gap-6">
+		<!-- Плашка отложенного приглашения друга (InviteChip) -->
+		<div
+			v-if="socialState.pendingPlayInvite"
+			class="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-purple-500/15 border border-solid border-purple-500/35 text-xs"
+		>
+			<div class="flex items-center gap-2.5">
+				<UsersIcon class="size-5 text-purple-300 shrink-0" />
+				<span class="text-contrast">
+					Позовём <strong class="text-purple-300">{{ socialState.pendingPlayInvite.title }}</strong> автоматически сразу после создания хоста!
+				</span>
+			</div>
+			<div class="flex items-center gap-2">
+				<ButtonStyled color="brand" size="small">
+					<button type="button" @click="openCreateHostModal">
+						<PlusIcon aria-hidden="true" />
+						<span>Создать хост сейчас</span>
+					</button>
+				</ButtonStyled>
+				<button
+					type="button"
+					class="p-1.5 rounded-lg bg-transparent border-0 text-secondary hover:text-contrast cursor-pointer"
+					title="Отменить приглашение"
+					@click="setPendingPlayInvite(null)"
+				>
+					<XIcon class="size-4" />
+				</button>
+			</div>
+		</div>
+
 		<!-- Шапка страницы -->
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="flex flex-col gap-1">

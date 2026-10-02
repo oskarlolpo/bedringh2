@@ -398,10 +398,13 @@ const { hasLoggedIntoMinecraft, hasLoggedIntoModrinth, showChecklist } = onboard
 
 const {
 	bedringhAccount,
+	storedBedringhAccounts,
 	preferredProfile,
 	isBedringhAuthenticated,
 	setPreferredProfile,
 	setAccount: setBedringhAccount,
+	switchAccount: switchBedringhAccount,
+	removeStoredAccount: removeStoredBedringhAccount,
 	logout: logoutBedringh,
 } = useBedringhAccount()
 
@@ -521,10 +524,19 @@ onMounted(async () => {
 	document.querySelector('body').addEventListener('contextmenu', handleContextMenu)
 	document.addEventListener('fullscreenchange', handleFullscreenChange)
 
+	const handleBedringhGlobalAccountChanged = async () => {
+		await onAccountChanged()
+		await accounts.value?.refreshValues?.()
+	}
+	window.addEventListener('bedringh:account-changed', handleBedringhGlobalAccountChanged)
+	window.addEventListener('bedringh:game-accounts-updated', handleBedringhGlobalAccountChanged)
+
 	checkUpdates()
 })
 
 onUnmounted(async () => {
+	window.removeEventListener('bedringh:account-changed', handleBedringhGlobalAccountChanged)
+	window.removeEventListener('bedringh:game-accounts-updated', handleBedringhGlobalAccountChanged)
 	document.querySelector('body').removeEventListener('click', handleClick)
 	document.querySelector('body').removeEventListener('auxclick', handleAuxClick)
 	document.querySelector('body').removeEventListener('contextmenu', handleContextMenu)
@@ -1080,11 +1092,29 @@ const modrinthLoginModal = ref()
 const appSettingsModal = ref()
 const cloudPackModal = ref()
 const bedringhFriendsList = ref()
+const { state: socialState, totalSocialBadge, dismissSocialToast } = useBedringhFriends()
+
+watch(
+	() => socialState.recentToasts[0],
+	(toast) => {
+		if (!toast) return
+		dismissSocialToast(toast.id)
+		addNotification({
+			title: toast.title,
+			text: toast.subtitle,
+			type: toast.kind === 'invite' ? 'success' : 'info',
+		})
+	},
+)
 
 provide('openBedringhCloudPackModal', (code) => cloudPackModal.value?.show(code))
 provide('openBedringhFriends', () => bedringhFriendsList.value?.showAddFriendModal())
+provide('openBedringhAuthModal', (mode = 'login') => bedringhAuthModalGlobal.value?.show(mode))
 window.addEventListener('open-bedringh-cloud-pack', (e) => {
 	cloudPackModal.value?.show(e.detail?.code)
+})
+window.addEventListener('open-bedringh-auth', (e) => {
+	bedringhAuthModalGlobal.value?.show(e.detail?.mode || 'login')
 })
 provide(appSettingsModalOpenProfileKey, () => appSettingsModal.value?.showProfile())
 provide(appSettingsModalOpenSyncedOptionsKey, () => appSettingsModal.value?.showSyncedOptions())
@@ -1322,76 +1352,99 @@ const activePlatform = computed(() => {
 async function onGlobalBedringhAuthSuccess(account) {
 	if (account) {
 		setPreferredProfile('bedringh')
-		await accounts.value?.refreshValues?.()
 		if (account.profile?.name) {
 			setBedringhAccount(account.profile.name, account.access_token)
+			try {
+				const { syncGameAccountsOnBedringhLogin } = await import('@/services/bedringh-game-accounts-sync')
+				await syncGameAccountsOnBedringhLogin(account.profile.name, account.access_token)
+			} catch (e) {
+				console.warn('[App] Ошибка синхронизации игровых аккаунтов:', e)
+			}
 		}
+		await accounts.value?.refreshValues?.()
 	}
 }
 
 const profileButtonTooltip = computed(() => {
 	if (credentials.value === undefined) return formatMessage(messages.loadingProfile)
+	if (preferredProfile.value === 'bedringh' && isBedringhAuthenticated.value) {
+		return `Bedringh ID: ${bedringhAccount.value?.username || ''}`
+	}
 	if (credentials.value?.user) return formatMessage(messages.modrinthAccount)
-	return formatMessage(messages.signInToModrinthAccount)
+	return 'Войти в Bedringh ID'
 })
 
-const accountSwitcherOptions = computed(() => [
-	...accountSwitcherAccounts.value.map((account) => ({
-		id: account.optionId,
-		label: account.user.username,
-		selected: preferredProfile.value === 'modrinth' && account.current,
-		action: async () => {
-			setPreferredProfile('modrinth')
-			await switchModrinthAccount(account)
-		},
-		trailingAction: {
-			label: formatMessage(messages.removeAccount),
-			icon: XIcon,
-			color: 'red',
-			action: () => forgetModrinthAccount(account.user_id),
-		},
-	})),
-	{
-		type: 'divider',
-	},
-	{
-		id: 'account-bedringh',
-		label: isBedringhAuthenticated.value
-			? (bedringhAccount.value?.username || 'Bedringh ID')
-			: 'Войти в Bedringh ID',
-		icon: ShieldCheckIcon,
-		selected: isBedringhAuthenticated.value && preferredProfile.value === 'bedringh',
-		action: () => {
-			if (isBedringhAuthenticated.value) {
-				setPreferredProfile('bedringh')
-			} else {
-				bedringhAuthModalGlobal.value?.show('login')
-			}
-		},
-		trailingAction: isBedringhAuthenticated.value
-			? {
-					label: 'Выйти из Bedringh ID',
+const accountSwitcherOptions = computed(() => {
+	const options = []
+
+	// 1. Сохраненные аккаунты Bedringh ID
+	if (storedBedringhAccounts.value.length > 0) {
+		for (const acc of storedBedringhAccounts.value) {
+			const isCurrent =
+				isBedringhAuthenticated.value &&
+				preferredProfile.value === 'bedringh' &&
+				bedringhAccount.value?.username.toLowerCase() === acc.username.toLowerCase()
+
+			options.push({
+				id: `bedringh-${acc.username.toLowerCase()}`,
+				label: acc.username,
+				selected: isCurrent,
+				action: async () => {
+					await switchBedringhAccount(acc.username)
+					await accounts.value?.refreshValues?.()
+				},
+				trailingAction: {
+					label: 'Удалить аккаунт',
 					icon: XIcon,
 					color: 'red',
-					action: () => {
-						logoutBedringh()
-						if (credentials.value?.user) {
-							setPreferredProfile('modrinth')
-						}
-					},
-				}
-			: undefined,
-	},
-	{
+					action: () => removeStoredBedringhAccount(acc.username),
+				},
+			})
+		}
+	}
+
+	// 2. Кнопка добавления Bedringh ID
+	options.push({
+		id: 'add-bedringh-account',
+		label: 'Войти в Bedringh ID',
+		icon: PlusIcon,
+		action: () => bedringhAuthModalGlobal.value?.show('login'),
+	})
+
+	options.push({
 		type: 'divider',
-	},
-	{
+	})
+
+	// 3. Аккаунты Modrinth (если есть)
+	if (accountSwitcherAccounts.value.length > 0) {
+		for (const account of accountSwitcherAccounts.value) {
+			options.push({
+				id: account.optionId,
+				label: account.user.username,
+				selected: preferredProfile.value === 'modrinth' && account.current,
+				action: async () => {
+					setPreferredProfile('modrinth')
+					await switchModrinthAccount(account)
+				},
+				trailingAction: {
+					label: formatMessage(messages.removeAccount),
+					icon: XIcon,
+					color: 'red',
+					action: () => forgetModrinthAccount(account.user_id),
+				},
+			})
+		}
+	}
+
+	options.push({
 		id: 'add-account',
-		label: formatMessage(messages.addAccount),
+		label: 'Войти через Modrinth',
 		icon: PlusIcon,
 		action: () => requestSignIn('sign-in', true),
-	},
-])
+	})
+
+	return options
+})
 
 const isSwitchingAccount = ref(false)
 
@@ -2204,6 +2257,21 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 			<NavButton v-tooltip.right="formatMessage(appMessages.skinSelectorLabel)" to="/skins">
 				<ShirtIcon />
 			</NavButton>
+			<div class="relative inline-flex">
+				<NavButton
+					v-tooltip.right="'Друзья и Чаты'"
+					to="/chats"
+					:is-primary="(r) => r.path.startsWith('/chats')"
+				>
+					<UsersIcon />
+				</NavButton>
+				<span
+					v-if="totalSocialBadge > 0"
+					class="pointer-events-none absolute top-1 right-1 px-1 min-w-4 h-4 rounded-full bg-brand text-white text-[10px] font-bold flex items-center justify-center shadow-sm"
+				>
+					{{ totalSocialBadge > 9 ? '9+' : totalSocialBadge }}
+				</span>
+			</div>
 			<NavButton
 				v-if="globalSyncedOptionsQuery.data.value?.screenshots"
 				v-tooltip.right="formatMessage(messages.screenshots)"
@@ -2277,23 +2345,26 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 						no-shadow
 						class="pointer-events-none !size-8"
 					/>
-					<template #account-bedringh>
+					<template
+						v-for="bAcc in storedBedringhAccounts"
+						:key="bAcc.username"
+						#[`bedringh-${bAcc.username.toLowerCase()}`]
+					>
 						<img
-							v-if="isBedringhAuthenticated && bedringhAccount?.avatarUrl"
-							:src="bedringhAccount.avatarUrl"
+							:src="bAcc.avatarUrl"
 							alt=""
-							class="w-5 h-5 rounded-full object-cover border border-solid border-purple-500 shrink-0"
+							class="w-5 h-5 rounded-full object-cover border border-solid border-purple-500 shrink-0 image-pixelated"
 						/>
-						<ShieldCheckIcon v-else class="w-5 h-5 text-purple-400 shrink-0" />
-						<span class="truncate">
-							{{ isBedringhAuthenticated ? (bedringhAccount?.username || 'Bedringh ID') : 'Войти в Bedringh ID' }}
-						</span>
+						<span class="truncate font-semibold">{{ bAcc.username }}</span>
 						<span
-							v-if="isBedringhAuthenticated"
-							class="ml-auto px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/20 text-purple-400 border border-solid border-purple-500/30 shrink-0"
+							class="ml-auto px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-purple-500/20 text-purple-400 border border-solid border-purple-500/30 shrink-0"
 						>
-							Bedringh ID
+							BEDRINGH ID
 						</span>
+					</template>
+					<template #add-bedringh-account>
+						<PlusIcon class="w-4 h-4 text-purple-400 shrink-0" />
+						<span class="truncate text-purple-400 font-semibold">Добавить Bedringh ID</span>
 					</template>
 					<template
 						v-for="account in accountSwitcherAccounts"
@@ -2306,7 +2377,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 					</template>
 				</TeleportOverflowMenu>
 				<TeleportOverflowMenu
-					v-else-if="accountSwitcherAccounts.length > 0"
+					v-else-if="accountSwitcherAccounts.length > 0 || storedBedringhAccounts.length > 0"
 					type="quiet"
 					size="xl"
 					:label="formatMessage(messages.signInToModrinthAccount)"
@@ -2315,9 +2386,26 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 					:distance="4"
 				>
 					<LogInIcon class="!text-brand" />
-					<template #account-bedringh>
-						<ShieldCheckIcon class="w-5 h-5 text-purple-400 shrink-0" />
-						<span class="truncate">Войти в Bedringh ID</span>
+					<template
+						v-for="bAcc in storedBedringhAccounts"
+						:key="bAcc.username"
+						#[`bedringh-${bAcc.username.toLowerCase()}`]
+					>
+						<img
+							:src="bAcc.avatarUrl"
+							alt=""
+							class="w-5 h-5 rounded-full object-cover border border-solid border-purple-500 shrink-0 image-pixelated"
+						/>
+						<span class="truncate font-semibold">{{ bAcc.username }}</span>
+						<span
+							class="ml-auto px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-purple-500/20 text-purple-400 border border-solid border-purple-500/30 shrink-0"
+						>
+							BEDRINGH ID
+						</span>
+					</template>
+					<template #add-bedringh-account>
+						<PlusIcon class="w-4 h-4 text-purple-400 shrink-0" />
+						<span class="truncate text-purple-400 font-semibold">Войти в Bedringh ID</span>
 					</template>
 					<template
 						v-for="account in accountSwitcherAccounts"
@@ -2329,7 +2417,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 						<UserRoleIcon :role="account.user.role" />
 					</template>
 				</TeleportOverflowMenu>
-				<NavButton v-else :to="() => requestSignIn()">
+				<NavButton v-else :to="() => bedringhAuthModalGlobal?.show('login')">
 					<LogInIcon class="text-brand" />
 				</NavButton>
 			</span>
@@ -2471,17 +2559,9 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 						class="p-4 border-0 border-b-[1px] border-[--brand-gradient-border] border-solid"
 					>
 						<BedringhFriendsList
-							v-if="preferredProfile === 'bedringh'"
 							ref="bedringhFriendsList"
 							:sign-in="() => bedringhAuthModalGlobal?.show('login')"
 						/>
-						<suspense v-else>
-							<FriendsList
-								ref="friendsList"
-								:credentials="credentials"
-								:sign-in="() => requestSignIn()"
-							/>
-						</suspense>
 					</div>
 					<PrideFundraiserBanner
 						v-if="prideFundraiserEnabled"

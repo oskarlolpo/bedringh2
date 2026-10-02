@@ -1,4 +1,5 @@
 import { detectActiveLanGame, detectAllActiveLanGames } from './bedringh-lan-detect'
+import { deliverPendingPlayInvite, updatePresence } from './bedringh-friends'
 import { formatSafeConnectAddress, getRelayApiBase } from './bedringh-network-config'
 import {
 	closeHostTunnel,
@@ -102,6 +103,15 @@ export async function publishHostPresence(server: LobbyHostData): Promise<boolea
 			}
 		}
 
+		// Синхронизируем статус для друзей (чтобы друзья видели открытый сервер и могли нажать «Зайти» в 1 клик)
+		void updatePresence('in_game', {
+			instanceName: server.name,
+			mcVersion: server.version,
+			serverAddress: server.address,
+			serverName: server.name,
+			startedAt: server.createdAt || Date.now(),
+		})
+
 		const payload = {
 			name: 'host-presence',
 			clientId: server.id,
@@ -143,6 +153,9 @@ export async function publishHostPresence(server: LobbyHostData): Promise<boolea
 export async function publishHostLeave(serverId: string): Promise<boolean> {
 	stopHostHeartbeat(serverId)
 	void closeHostTunnel(serverId)
+	if (activeHeartbeats.size === 0) {
+		void updatePresence('online')
+	}
 	const base = getRelayApiBase()
 	try {
 		const payload = {
@@ -197,8 +210,14 @@ export async function startHostHeartbeat(
 		onStatusUpdate?.(server)
 	}
 
-	// 2. Сразу первая публикация в лобби
+	// 2. Сразу первая публикация в лобби и отправка отложенного приглашения другу (если было)
 	await publishHostPresence(server)
+	void deliverPendingPlayInvite({
+		addr: server.address,
+		name: server.name,
+		version: server.version,
+		edition: server.edition,
+	})
 	onStatusUpdate?.(server)
 
 	let tickCount = 0

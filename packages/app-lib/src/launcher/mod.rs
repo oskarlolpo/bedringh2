@@ -967,7 +967,7 @@ async fn sync_launch_skin(
     if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
         let user_uuid = credentials.offline_profile.id.to_string();
         let _ = client
-            .post("http://2.26.87.126:3100/api/session/register")
+            .post("http://bedringh.duckdns.org:3100/api/session/register")
             .json(&serde_json::json!({
                 "username": username,
                 "uuid": user_uuid,
@@ -975,8 +975,9 @@ async fn sync_launch_skin(
             .send()
             .await;
 
+        let mut synced = false;
         if let Ok(res) = client
-            .get(format!("http://2.26.87.126:3100/textures/skins/{}.png", username.to_lowercase()))
+            .get(format!("http://bedringh.duckdns.org:3100/textures/skins/{}.png", username.to_lowercase()))
             .send()
             .await
         {
@@ -984,7 +985,7 @@ async fn sync_launch_skin(
                 if let Ok(skin_bytes) = res.bytes().await {
                     let mut cape_bytes = None;
                     if let Ok(skin_info) = client
-                        .get(format!("http://2.26.87.126:3100/api/user/{}/skin", username))
+                        .get(format!("http://bedringh.duckdns.org:3100/api/user/{}/skin", username))
                         .send()
                         .await
                     {
@@ -1006,6 +1007,26 @@ async fn sync_launch_skin(
                         &skin_bytes,
                         cape_bytes.as_deref().map(|b| b.as_ref()),
                     );
+                    synced = true;
+                }
+            }
+        }
+
+        if !synced {
+            if let Ok(sres) = client.get(format!("https://mc-heads.net/skin/{}", username)).send().await {
+                if sres.status().is_success() {
+                    if let Ok(sb) = sres.bytes().await {
+                        if !sb.is_empty() {
+                            klauncher::restore_bedringh_csl(instance_dir);
+                            bedringh::sync_skin_to_instance(
+                                instance_dir,
+                                Some(libraries_dir),
+                                &username,
+                                &sb,
+                                None,
+                            );
+                        }
+                    }
                 }
             }
         }

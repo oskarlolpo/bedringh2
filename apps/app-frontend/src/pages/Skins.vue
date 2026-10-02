@@ -385,7 +385,9 @@ const skinVariant = computed(() => selectedSkin.value?.variant);
 const skinNametag = computed(() => (themeStore.hideNametagSkinsPage ? undefined : username.value));
 const isSkinManagementReadOnly = computed(() => {
 	const isOfflineAccount =
-		currentUser.value?.access_token === 'null' || !currentUser.value?.access_token;
+		currentUser.value?.access_token === 'offline' ||
+		currentUser.value?.access_token === 'null' ||
+		!currentUser.value?.access_token;
 	const isBedringhAccount =
 		currentUser.value?.access_token?.startsWith?.('bedringh') ||
 		currentUser.value?.refresh_token === 'bedringh_refresh';
@@ -1062,9 +1064,24 @@ watch(isSkinManagementReadOnly, (readOnly) => {
 	}
 });
 
+let isHandlingAccountChange = false;
+async function handleBedringhAccountChanged() {
+	if (isHandlingAccountChange) return;
+	isHandlingAccountChange = true;
+	try {
+		await loadCurrentUser();
+		await Promise.all([loadCapes(), loadSkins()]);
+		refreshChibiSkin();
+	} finally {
+		isHandlingAccountChange = false;
+	}
+}
+
 onMounted(() => {
 	window.addEventListener('offline', onOffline);
 	window.addEventListener('online', onOnline);
+	window.addEventListener('bedringh:account-changed', handleBedringhAccountChanged);
+	window.addEventListener('bedringh:game-accounts-updated', handleBedringhAccountChanged);
 	userCheckInterval = window.setInterval(checkUserChanges, 2000);
 	void setupAddSkinDragDropListener();
 });
@@ -1075,6 +1092,8 @@ onUnmounted(() => {
 	revokeCapeObjectUrl();
 	window.removeEventListener('offline', onOffline);
 	window.removeEventListener('online', onOnline);
+	window.removeEventListener('bedringh:account-changed', handleBedringhAccountChanged);
+	window.removeEventListener('bedringh:game-accounts-updated', handleBedringhAccountChanged);
 
 	if (userCheckInterval !== null) {
 		window.clearInterval(userCheckInterval);
@@ -1109,6 +1128,7 @@ async function checkUserChanges() {
 		if (defaultId && currentUserId.value && defaultId !== currentUserId.value) {
 			await loadCurrentUser();
 			await Promise.all([loadCapes(), loadSkins()]);
+			refreshChibiSkin();
 		}
 	} catch (error) {
 		if (currentUser.value && error instanceof Error) {
@@ -1119,7 +1139,8 @@ async function checkUserChanges() {
 	}
 }
 
-await Promise.all([loadCapes(), loadCurrentUser(), loadSkins()]);
+await loadCurrentUser();
+await Promise.all([loadCapes(), loadSkins()]);
 </script>
 
 <template>

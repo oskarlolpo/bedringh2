@@ -114,11 +114,88 @@ db.exec(`
     UNIQUE(pack_id, version_number)
   );
   CREATE INDEX IF NOT EXISTS idx_pack_versions_pack ON cloud_pack_versions(pack_id);
+
+  CREATE TABLE IF NOT EXISTS friendships (
+    id TEXT PRIMARY KEY,
+    user_a TEXT NOT NULL COLLATE NOCASE,
+    user_b TEXT NOT NULL COLLATE NOCASE,
+    created_at INTEGER NOT NULL,
+    UNIQUE(user_a, user_b)
+  );
+  CREATE INDEX IF NOT EXISTS idx_friendships_a ON friendships(user_a);
+  CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships(user_b);
+
+  CREATE TABLE IF NOT EXISTS friend_requests (
+    id TEXT PRIMARY KEY,
+    from_user TEXT NOT NULL COLLATE NOCASE,
+    to_user TEXT NOT NULL COLLATE NOCASE,
+    created_at INTEGER NOT NULL,
+    UNIQUE(from_user, to_user)
+  );
+  CREATE INDEX IF NOT EXISTS idx_friend_requests_to ON friend_requests(to_user);
+  CREATE INDEX IF NOT EXISTS idx_friend_requests_from ON friend_requests(from_user);
+
+  CREATE TABLE IF NOT EXISTS user_presence (
+    username TEXT PRIMARY KEY COLLATE NOCASE,
+    status TEXT DEFAULT 'offline',
+    place TEXT DEFAULT 'launcher',
+    instance_name TEXT,
+    loader TEXT,
+    mc_version TEXT,
+    server_address TEXT,
+    server_name TEXT,
+    pack_code TEXT,
+    started_at INTEGER,
+    total_minutes INTEGER DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    room_id TEXT,
+    sender TEXT NOT NULL COLLATE NOCASE,
+    recipient TEXT COLLATE NOCASE,
+    content TEXT NOT NULL,
+    reply_to_id TEXT,
+    reply_sender TEXT,
+    reply_preview TEXT,
+    attachment_url TEXT,
+    attachment_type TEXT,
+    voice_duration REAL,
+    voice_peaks TEXT,
+    reactions_json TEXT DEFAULT '{}',
+    edited_at INTEGER,
+    deleted INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_chat_dm ON chat_messages(sender, recipient, created_at);
+  CREATE INDEX IF NOT EXISTS idx_chat_room ON chat_messages(room_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS chat_reads (
+    reader TEXT NOT NULL COLLATE NOCASE,
+    target_key TEXT NOT NULL COLLATE NOCASE,
+    last_read_at INTEGER NOT NULL,
+    PRIMARY KEY(reader, target_key)
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_rooms (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    owner TEXT NOT NULL COLLATE NOCASE,
+    members_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 export const CUSTOM_FILES_DIR = path.join(DB_DIR, 'custom_files');
 if (!fs.existsSync(CUSTOM_FILES_DIR)) {
   fs.mkdirSync(CUSTOM_FILES_DIR, { recursive: true });
+}
+
+export const CHAT_MEDIA_DIR = path.join(DB_DIR, 'chat_media');
+if (!fs.existsSync(CHAT_MEDIA_DIR)) {
+  fs.mkdirSync(CHAT_MEDIA_DIR, { recursive: true });
 }
 
 export const SKINS_DIR = path.join(DB_DIR, 'skins');

@@ -5,8 +5,9 @@ import jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { db, UserRow, SessionRow, CloudPackRow, CloudPackVersionRow, SKINS_DIR, CAPES_DIR, CUSTOM_FILES_DIR } from './db.js';
+import { db, UserRow, SessionRow, CloudPackRow, CloudPackVersionRow, SKINS_DIR, CAPES_DIR, CUSTOM_FILES_DIR, CHAT_MEDIA_DIR } from './db.js';
 import { bot, sendPasswordResetCode } from './bot.js';
+import { registerSocialRoutes } from './social.js';
 
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bedringh_super_secret_jwt_key_2026';
@@ -20,6 +21,8 @@ app.register(cors, {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 });
+
+registerSocialRoutes(app);
 
 // Проверка здоровья
 app.get('/api/health', async () => {
@@ -35,8 +38,8 @@ app.get('/', async () => {
       implementationVersion: '1.0.0',
     },
     skinDomains: [
-      '2.26.87.126',
-      '.26.87.126',
+      'bedringh.duckdns.org',
+      '.duckdns.org',
       'textures.minecraft.net',
       'oskarlolpo.play2go.cloud',
       'mc-heads.net',
@@ -418,7 +421,7 @@ app.post<{
     } catch {}
   }
 
-  const host = request.headers.host || '2.26.87.126:3100';
+  const host = request.headers.host || 'bedringh.duckdns.org:3100';
 
   return {
     success: true,
@@ -521,7 +524,7 @@ app.get<{
     return reply.status(404).send({ error: 'Пользователь не найден' });
   }
 
-  const host = request.headers.host || '2.26.87.126:3100';
+  const host = request.headers.host || 'bedringh.duckdns.org:3100';
   const skinFileName = `${user.username.toLowerCase()}.png`;
   const hasSkin = fs.existsSync(path.join(SKINS_DIR, skinFileName));
 
@@ -586,7 +589,7 @@ const handleYggdrasilProfile = async (request: any, reply: any) => {
     return reply.status(204).send();
   }
 
-  const host = request.headers.host || '2.26.87.126:3100';
+  const host = request.headers.host || 'bedringh.duckdns.org:3100';
   const skinFileName = `${user.username.toLowerCase()}.png`;
   const hasSkin = fs.existsSync(path.join(SKINS_DIR, skinFileName));
 

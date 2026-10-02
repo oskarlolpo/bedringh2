@@ -85,6 +85,11 @@ export default new createRouter({
 			component: Pages.Skins,
 		},
 		{
+			path: '/chats',
+			name: 'SocialChats',
+			component: Pages.SocialChats,
+		},
+		{
 			path: '/screenshots',
 			name: 'Screenshots',
 			component: Pages.Screenshots,

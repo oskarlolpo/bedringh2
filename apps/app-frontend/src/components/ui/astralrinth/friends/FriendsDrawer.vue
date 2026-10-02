@@ -41,7 +41,7 @@ const {
 type TabType = 'all' | 'incoming' | 'outgoing'
 const activeTab = ref<TabType>('all')
 
-const activeUser = computed(() => getActiveBedringhUser()?.username || null)
+const activeUser = computed(() => state.activeUsername || getActiveBedringhUser()?.username || null)
 
 function openAddFriend() {
 	addFriendModal.value?.show()

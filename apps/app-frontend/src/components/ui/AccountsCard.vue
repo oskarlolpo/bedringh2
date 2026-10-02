@@ -4,12 +4,6 @@
 		class="flex flex-col gap-3 bg-button-bg border border-solid border-surface-5 rounded-xl p-3 mt-2"
 	>
 		<span class="text-sm font-medium text-secondary">{{ formatMessage(messages.notSignedIn) }}</span>
-		<ButtonStyled color="brand">
-			<button color="primary" :disabled="loginDisabled" @click="openBedringhAuth()">
-				<LogInIcon />
-				Войти через Bedringh ID
-			</button>
-		</ButtonStyled>
 		<ButtonStyled color="brand" type="outlined">
 			<button color="primary" :disabled="loginDisabled" @click="login()">
 				<LogInIcon v-if="!loginDisabled" />
@@ -22,6 +16,13 @@
 				<LogInIcon v-if="!kLauncherLoginDisabled" />
 				<SpinnerIcon v-else class="animate-spin" />
 				{{ formatMessage(messages.signInWithKLauncher) }}
+			</button>
+		</ButtonStyled>
+		<ButtonStyled color="brand" type="outlined">
+			<button color="primary" :disabled="loginDisabled || elyByLoginDisabled" @click="addElyByAccount()">
+				<LogInIcon v-if="!elyByLoginDisabled" />
+				<SpinnerIcon v-else class="animate-spin" />
+				{{ formatMessage(messages.signInWithElyBy) }}
 			</button>
 		</ButtonStyled>
 		<ButtonStyled color="brand" type="outlined">
@@ -113,12 +114,6 @@
 				</div>
 			</template>
 			<div class="flex flex-col gap-2 px-2 pt-2">
-				<ButtonStyled class="w-full" color="brand">
-					<button :disabled="loginDisabled" @click="openBedringhAuth()">
-						<PlusIcon />
-						Добавить Bedringh ID
-					</button>
-				</ButtonStyled>
 				<ButtonStyled class="w-full" color="brand" type="outlined">
 					<button :disabled="loginDisabled" @click="login()">
 						<PlusIcon />
@@ -165,7 +160,6 @@
 		@submit-tlauncher="addTLauncherProfile"
 		@submit-elyby="addElyByProfile"
 	/>
-	<BedringhAuthModal ref="bedringhAuthModal" @success="onBedringhAuthSuccess" />
 </template>
 
 <script setup lang="ts">
@@ -205,7 +199,7 @@ import { get_available_skins } from '@/helpers/skins'
 import { handleSevereError } from '@/store/error.js'
 
 import AccountsInputModals from './astralrinth/accounts/input/AccountsInputModals.vue'
-import BedringhAuthModal from './astralrinth/accounts/BedringhAuthModal.vue'
+import { getActiveBedringhUser } from '@/services/bedringh-settings-sync'
 
 const { formatMessage } = useVIntl()
 const { handleError } = injectNotificationManager()
@@ -232,7 +226,6 @@ const accountHeadCache = ref(new Map<string, string>())
 const localSteveHeadUrl = ref<string | null>(null)
 
 const accountsInputModals = ref<InstanceType<typeof AccountsInputModals> | null>(null)
-const bedringhAuthModal = ref<InstanceType<typeof BedringhAuthModal> | null>(null)
 const offlinePlayerName = ref('')
 const offlineLoginDisabled = ref(false)
 const kLauncherLoginValue = ref('')
@@ -312,15 +305,24 @@ async function fetchAccountHead(account: MinecraftCredential) {
 		} else if (accountType === 'Microsoft') {
 			// Microsoft accounts: use mc-heads.net which resolves by UUID or username
 			skinUrl = `https://mc-heads.net/skin/${profileId}`
-		} else if (accountType === 'Bedringh ID') {
-			// Bedringh ID accounts: mc-heads resolution by username
-			skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
+		} else if (accountType === 'Bedringh ID' || accountType === 'Офлайн') {
+			// Bedringh ID and Offline accounts: try custom skin on Bedringh server first, fallback to mc-heads
+			try {
+				const customUrl = `http://bedringh.duckdns.org:3100/textures/skins/${encodeURIComponent(name.toLowerCase())}.png`
+				const testBlobUrl = await fetchExternalImageObjectUrl(customUrl)
+				if (testBlobUrl) {
+					URL.revokeObjectURL(testBlobUrl)
+					skinUrl = customUrl
+				}
+			} catch {}
+			if (!skinUrl) {
+				skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
+			}
 		} else if (accountType === 'Ely.by') {
 			// Ely.by accounts: fetch skin from Ely.by textures API
 			skinUrl = `http://skinsystem.ely.by/textures/skins/${encodeURIComponent(name)}.png`
 		} else {
-			// Offline / unknown: no reliable skin source
-			return
+			skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
 		}
 
 		if (skinUrl) {
@@ -376,175 +378,227 @@ async function fetchAccountHead(account: MinecraftCredential) {
 	async function refreshValues() {
 		defaultUser.value = await get_default_user().catch(handleError)
 		const userList = await users().catch(handleError)
-		accounts.value = Array.isArray(userList) ? [...userList] : []
+		let rawAccounts: MinecraftCredential[] = Array.isArray(userList) ? [...userList] : []
+
+		// Получаем активный Bedringh ID из глобальной левой панели
+		const activeBedringh = getActiveBedringhUser()
+		const activeBedringhName = activeBedringh?.username?.toLowerCase()
+
+		// Если слева выполнен вход в Bedringh ID, гарантируем наличие игрового профиля в Theseus
+		if (activeBedringh?.username) {
+			const hasActiveInList = rawAccounts.some(
+				(a) =>
+					getAccountTypeName(a) === 'Bedringh ID' &&
+					a.profile?.name?.toLowerCase() === activeBedringhName,
+			)
+			if (!hasActiveInList) {
+				try {
+					const { bedringh_login } = await import('@/helpers/auth')
+					const created = (await bedringh_login(
+						activeBedringh.username,
+						activeBedringh.token || 'bedringh',
+					)) as MinecraftCredential | null
+					if (created && created.profile?.id) {
+						rawAccounts.push(created)
+					}
+				} catch (e) {
+					console.warn('[AccountsCard] Ошибка авто-регистрации активного Bedringh ID:', e)
+				}
+			}
+		}
+
+		// Фильтрация: среди Bedringh ID показываем ТОЛЬКО тот, который активен в левой панели!
+		// Все старые или неактивные Bedringh ID скрываются из правого игрового списка.
+		accounts.value = rawAccounts.filter((a) => {
+			const type = getAccountTypeName(a)
+			if (type === 'Bedringh ID') {
+				return activeBedringhName && a.profile?.name?.toLowerCase() === activeBedringhName
+			}
+			return true
+		})
+
 		accounts.value.sort((a, b) => {
 			const weightDiff = getAccountTypeWeight(a) - getAccountTypeWeight(b)
 			if (weightDiff !== 0) return weightDiff
 			return (a.profile?.name ?? '').localeCompare(b.profile?.name ?? '')
 		})
 
-	// Fetch head for each account in background
-	for (const account of accounts.value) {
-		void fetchAccountHead(account)
+		// Fetch head for each account in background
+		for (const account of accounts.value) {
+			void fetchAccountHead(account)
+		}
+
+		// Если слева активен Bedringh ID, гарантируем, что активным игровым аккаунтом является именно он
+		const activeBedringhCredential = accounts.value.find(
+			(a) =>
+				getAccountTypeName(a) === 'Bedringh ID' &&
+				a.profile?.name?.toLowerCase() === activeBedringhName,
+		)
+		if (activeBedringhCredential && defaultUser.value !== activeBedringhCredential.profile.id) {
+			await setAccount(activeBedringhCredential)
+		} else if (
+			(!defaultUser.value || !accounts.value.some((a) => a.profile.id === defaultUser.value)) &&
+			accounts.value.length > 0
+		) {
+			await setAccount(accounts.value[0])
+		}
+
+		try {
+			const skins = await get_available_skins()
+			equippedSkin.value = skins.find((skin) => skin.is_equipped) ?? null
+
+			if (equippedSkin.value) {
+				try {
+					const headUrl = await getPlayerHeadUrl(equippedSkin.value)
+					headUrlCache.value = new Map(headUrlCache.value).set(
+						equippedSkin.value.texture_key,
+						headUrl,
+					)
+				} catch (error) {
+					console.warn('Failed to get head render for equipped skin:', error)
+				}
+			}
+		} catch {
+			equippedSkin.value = null
+		}
 	}
 
-	try {
-		const skins = await get_available_skins()
-		equippedSkin.value = skins.find((skin) => skin.is_equipped) ?? null
+	async function setEquippedSkin(skin: Skin) {
+		equippedSkin.value = skin
 
-		if (equippedSkin.value) {
-			try {
-				const headUrl = await getPlayerHeadUrl(equippedSkin.value)
-				headUrlCache.value = new Map(headUrlCache.value).set(
-					equippedSkin.value.texture_key,
-					headUrl,
-				)
-			} catch (error) {
-				console.warn('Failed to get head render for equipped skin:', error)
+		try {
+			const headUrl = await getPlayerHeadUrl(skin)
+			headUrlCache.value = new Map(headUrlCache.value).set(skin.texture_key, headUrl)
+		} catch (error) {
+			console.warn('Failed to get head render for equipped skin:', error)
+		}
+	}
+
+	function setLoginDisabled(value: boolean) {
+		loginDisabled.value = value
+	}
+
+	defineExpose({
+		refreshValues,
+		setEquippedSkin,
+		setLoginDisabled,
+		loginDisabled,
+		login,
+		addOfflineAccount,
+		addKLauncherAccount,
+		addTLauncherAccount,
+		accounts,
+	})
+
+	await refreshValues()
+
+	const selectedAccount = computed(() =>
+		accounts.value.find((account) => account.profile.id === defaultUser.value),
+	)
+
+	const STEVE_HEAD_URL = 'https://launcher-files.modrinth.com/assets/steve_head.png'
+
+	const avatarUrl = computed(() => {
+		if (equippedSkin.value?.texture_key) {
+			const cachedUrl = headUrlCache.value.get(equippedSkin.value.texture_key)
+			if (cachedUrl) {
+				return cachedUrl
 			}
 		}
-	} catch {
-		equippedSkin.value = null
-	}
-}
+		return localSteveHeadUrl.value || STEVE_HEAD_URL
+	})
 
-async function setEquippedSkin(skin: Skin) {
-	equippedSkin.value = skin
+	function getAccountAvatarUrl(account: MinecraftCredential) {
+		const profileId = account.profile?.id
+		if (!profileId) return localSteveHeadUrl.value || STEVE_HEAD_URL
 
-	try {
-		const headUrl = await getPlayerHeadUrl(skin)
-		headUrlCache.value = new Map(headUrlCache.value).set(skin.texture_key, headUrl)
-	} catch (error) {
-		console.warn('Failed to get head render for equipped skin:', error)
-	}
-}
-
-function setLoginDisabled(value: boolean) {
-	loginDisabled.value = value
-}
-
-defineExpose({
-	refreshValues,
-	setEquippedSkin,
-	setLoginDisabled,
-	loginDisabled,
-	login,
-	addOfflineAccount,
-	addKLauncherAccount,
-	addTLauncherAccount,
-	accounts,
-})
-
-await refreshValues()
-
-const selectedAccount = computed(() =>
-	accounts.value.find((account) => account.profile.id === defaultUser.value),
-)
-
-watch(
-	selectedAccount,
-	async (account) => {
-		if (account?.profile?.name && getAccountTypeName(account) === 'Bedringh ID') {
-			try {
-				const { setActiveBedringhUser } = await import('@/services/bedringh-settings-sync')
-				setActiveBedringhUser(account.profile.name, account.access_token)
-			} catch {}
+		const cachedHead = accountHeadCache.value.get(profileId)
+		if (cachedHead) {
+			return cachedHead
 		}
-	},
-	{ immediate: true },
-)
 
-const STEVE_HEAD_URL = 'https://launcher-files.modrinth.com/assets/steve_head.png'
-
-const avatarUrl = computed(() => {
-	if (equippedSkin.value?.texture_key) {
-		const cachedUrl = headUrlCache.value.get(equippedSkin.value.texture_key)
-		if (cachedUrl) {
-			return cachedUrl
+		if (
+			profileId === selectedAccount.value?.profile?.id &&
+			equippedSkin.value?.texture_key
+		) {
+			const cachedUrl = headUrlCache.value.get(equippedSkin.value.texture_key)
+			if (cachedUrl) {
+				return cachedUrl
+			}
 		}
-	}
-	return localSteveHeadUrl.value || STEVE_HEAD_URL
-})
-
-function getAccountAvatarUrl(account: MinecraftCredential) {
-	const profileId = account.profile?.id
-	if (!profileId) return localSteveHeadUrl.value || STEVE_HEAD_URL
-
-	const cachedHead = accountHeadCache.value.get(profileId)
-	if (cachedHead) {
-		return cachedHead
+		return localSteveHeadUrl.value || STEVE_HEAD_URL
 	}
 
-	if (
-		profileId === selectedAccount.value?.profile?.id &&
-		equippedSkin.value?.texture_key
-	) {
-		const cachedUrl = headUrlCache.value.get(equippedSkin.value.texture_key)
-		if (cachedUrl) {
-			return cachedUrl
-		}
-	}
-	return localSteveHeadUrl.value || STEVE_HEAD_URL
-}
-
-async function setAccount(account: MinecraftCredential) {
-	defaultUser.value = account.profile.id
-	await set_default_user(account.profile.id).catch(handleError)
-	if (getAccountTypeName(account) === 'Bedringh ID' && account.profile?.name) {
-		try {
-			const { useBedringhAccount } = await import('@/composables/use-bedringh-account')
-			useBedringhAccount().setAccount(account.profile.name, account.access_token)
-		} catch (e) {
-			console.warn('[AccountsCard] Ошибка установки Bedringh аккаунта:', e)
-		}
-	}
-	await refreshValues()
-	emit('change')
-}
-
-async function login() {
-	loginDisabled.value = true
-	const loggedIn = await login_flow().catch(handleSevereError)
-
-	if (loggedIn) {
-		await setAccount(loggedIn)
-	}
-
-	trackEvent('AccountLogIn')
-	loginDisabled.value = false
-}
-
-async function logout(id: string) {
-	await remove_user(id).catch(handleError)
-	await refreshValues()
-	if (!selectedAccount.value && accounts.value.length > 0) {
-		await setAccount(accounts.value[0])
-	} else {
+	async function setAccount(account: MinecraftCredential) {
+		defaultUser.value = account.profile.id
+		await set_default_user(account.profile.id).catch(handleError)
+		await refreshValues()
 		emit('change')
 	}
-	trackEvent('AccountLogOut')
-}
 
-const unlisten = await process_listener(async (e) => {
-	if (e.event === 'launched') {
+	async function login() {
+		loginDisabled.value = true
+		const loggedIn = await login_flow().catch(handleSevereError)
+
+		if (loggedIn) {
+			await setAccount(loggedIn)
+		}
+
+		trackEvent('AccountLogIn')
+		loginDisabled.value = false
+	}
+
+	async function logout(id: string) {
+		const accountToRemove = accounts.value.find((a) => a.profile.id === id)
+		await remove_user(id).catch(handleError)
+
+		const activeBedringh = getActiveBedringhUser()?.username
+		if (activeBedringh && accountToRemove?.profile?.name) {
+			const type = getAccountTypeName(accountToRemove)
+			if (type === 'KLauncher' || type === 'Ely.by' || type === 'Офлайн') {
+				try {
+					const { removeGameAccountFromCloud } = await import(
+						'@/services/bedringh-game-accounts-sync'
+					)
+					await removeGameAccountFromCloud(activeBedringh, accountToRemove.profile.name)
+				} catch (e) {
+					console.warn('[AccountsCard] Ошибка удаления аккаунта из облака:', e)
+				}
+			}
+		}
+
 		await refreshValues()
+		if (!selectedAccount.value && accounts.value.length > 0) {
+			await setAccount(accounts.value[0])
+		} else {
+			emit('change')
+		}
+		trackEvent('AccountLogOut')
 	}
-})
 
-const handleBedringhAccountChange = async () => {
-	await refreshValues()
-}
+	const unlisten = await process_listener(async (e) => {
+		if (e.event === 'launched') {
+			await refreshValues()
+		}
+	})
 
-if (typeof window !== 'undefined') {
-	window.addEventListener('bedringh:account-changed', handleBedringhAccountChange)
-}
+	const handleBedringhAccountChange = async () => {
+		await refreshValues()
+		emit('change')
+	}
 
-onUnmounted(() => {
-	unlisten()
 	if (typeof window !== 'undefined') {
-		window.removeEventListener('bedringh:account-changed', handleBedringhAccountChange)
+		window.addEventListener('bedringh:account-changed', handleBedringhAccountChange)
+		window.addEventListener('bedringh:game-accounts-updated', handleBedringhAccountChange)
 	}
-})
+
+	onUnmounted(() => {
+		unlisten()
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('bedringh:account-changed', handleBedringhAccountChange)
+			window.removeEventListener('bedringh:game-accounts-updated', handleBedringhAccountChange)
+		}
+	})
 
 const messages = defineMessages({
 	notSignedIn: {
@@ -613,6 +667,20 @@ async function addOfflineProfile() {
 		if (result) {
 			await setAccount(result)
 			await refreshValues()
+			const activeBedringh = getActiveBedringhUser()?.username
+			if (activeBedringh) {
+				try {
+					const { pushLocalGameAccountsToCloud } = await import(
+						'@/services/bedringh-game-accounts-sync'
+					)
+					await pushLocalGameAccountsToCloud(activeBedringh, undefined, {
+						type: 'offline',
+						username: trimmedName,
+					})
+				} catch (e) {
+					console.warn('[AccountsCard] Ошибка синхронизации оффлайн профиля:', e)
+				}
+			}
 		}
 	} catch (error) {
 		handleError(error)
@@ -638,10 +706,26 @@ async function addKLauncherProfile() {
 	try {
 		kLauncherLoginDisabled.value = true
 		accountsInputModals.value?.hideKLauncher()
-		const result = await import('@/helpers/auth').then(m => m.klauncher_login(trimmedName, kLauncherPassword.value || null))
+		const pwd = kLauncherPassword.value || null
+		const result = await import('@/helpers/auth').then(m => m.klauncher_login(trimmedName, pwd))
 		if (result) {
 			await setAccount(result)
 			await refreshValues()
+			const activeBedringh = getActiveBedringhUser()?.username
+			if (activeBedringh) {
+				try {
+					const { pushLocalGameAccountsToCloud } = await import(
+						'@/services/bedringh-game-accounts-sync'
+					)
+					await pushLocalGameAccountsToCloud(activeBedringh, undefined, {
+						type: 'klauncher',
+						username: trimmedName,
+						password: pwd,
+					})
+				} catch (e) {
+					console.warn('[AccountsCard] Ошибка синхронизации KLauncher профиля:', e)
+				}
+			}
 		}
 	} catch (error) {
 		handleError(error)
@@ -698,12 +782,30 @@ async function addElyByProfile() {
 	try {
 		elyByLoginDisabled.value = true
 		accountsInputModals.value?.hideElyBy()
+		const pwd = elyByPassword.value || null
+		const twoFactor = elyByTwoFactorCode.value || null
 		const result = await import('@/helpers/auth').then(m =>
-			m.elyby_login(trimmedName, elyByPassword.value || null, elyByTwoFactorCode.value || null)
+			m.elyby_login(trimmedName, pwd, twoFactor)
 		)
 		if (result) {
 			await setAccount(result)
 			await refreshValues()
+			const activeBedringh = getActiveBedringhUser()?.username
+			if (activeBedringh) {
+				try {
+					const { pushLocalGameAccountsToCloud } = await import(
+						'@/services/bedringh-game-accounts-sync'
+					)
+					await pushLocalGameAccountsToCloud(activeBedringh, undefined, {
+						type: 'elyby',
+						username: trimmedName,
+						password: pwd,
+						twoFactor,
+					})
+				} catch (e) {
+					console.warn('[AccountsCard] Ошибка синхронизации Ely.by профиля:', e)
+				}
+			}
 		}
 	} catch (error) {
 		handleError(error)
@@ -712,17 +814,6 @@ async function addElyByProfile() {
 		elyByLoginValue.value = ''
 		elyByPassword.value = ''
 		elyByTwoFactorCode.value = ''
-	}
-}
-
-function openBedringhAuth() {
-	bedringhAuthModal.value?.show()
-}
-
-async function onBedringhAuthSuccess(account: any) {
-	if (account) {
-		await setAccount(account)
-		await refreshValues()
 	}
 }
 
