@@ -50,6 +50,9 @@
     "node": ">=24.15.0"
   },
   "pnpm": {
+    "overrides": {
+      "@microsoft/api-extractor": "7.58.9"
+    },
     "patchedDependencies": {
       "readable-stream@2.3.8": "patches/readable-stream@2.3.8.patch"
     },
