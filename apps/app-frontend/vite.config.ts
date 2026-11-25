@@ -97,6 +97,7 @@ export default defineConfig({
 	envPrefix: ['VITE_', 'TAURI_', 'MODRINTH_', 'SHARED_INSTANCES_'],
 	build: {
 		rolldownOptions: {
+			external: ['apexcharts/ssr'],
 			onwarn(warning, defaultHandler) {
 				if (warning.code === 'INEFFECTIVE_DYNAMIC_IMPORT') return
 				defaultHandler(warning)
