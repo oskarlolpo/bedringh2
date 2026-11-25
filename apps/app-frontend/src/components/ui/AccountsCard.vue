@@ -199,7 +199,6 @@ import { get_available_skins } from '@/helpers/skins'
 import { handleSevereError } from '@/store/error.js'
 
 import AccountsInputModals from './astralrinth/accounts/input/AccountsInputModals.vue'
-import { getActiveBedringhUser } from '@/services/bedringh-settings-sync'
 
 const { formatMessage } = useVIntl()
 const { handleError } = injectNotificationManager()
@@ -306,18 +305,7 @@ async function fetchAccountHead(account: MinecraftCredential) {
 			// Microsoft accounts: use mc-heads.net which resolves by UUID or username
 			skinUrl = `https://mc-heads.net/skin/${profileId}`
 		} else if (accountType === 'Bedringh ID' || accountType === 'Офлайн') {
-			// Bedringh ID and Offline accounts: try custom skin on Bedringh server first, fallback to mc-heads
-			try {
-				const customUrl = `http://bedringh.duckdns.org:3100/textures/skins/${encodeURIComponent(name.toLowerCase())}.png`
-				const testBlobUrl = await fetchExternalImageObjectUrl(customUrl)
-				if (testBlobUrl) {
-					URL.revokeObjectURL(testBlobUrl)
-					skinUrl = customUrl
-				}
-			} catch {}
-			if (!skinUrl) {
-				skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
-			}
+			skinUrl = `https://mc-heads.net/skin/${encodeURIComponent(name)}`
 		} else if (accountType === 'Ely.by') {
 			// Ely.by accounts: fetch skin from Ely.by textures API
 			skinUrl = `http://skinsystem.ely.by/textures/skins/${encodeURIComponent(name)}.png`
@@ -378,44 +366,8 @@ async function fetchAccountHead(account: MinecraftCredential) {
 	async function refreshValues() {
 		defaultUser.value = await get_default_user().catch(handleError)
 		const userList = await users().catch(handleError)
-		let rawAccounts: MinecraftCredential[] = Array.isArray(userList) ? [...userList] : []
-
-		// Получаем активный Bedringh ID из глобальной левой панели
-		const activeBedringh = getActiveBedringhUser()
-		const activeBedringhName = activeBedringh?.username?.toLowerCase()
-
-		// Если слева выполнен вход в Bedringh ID, гарантируем наличие игрового профиля в Theseus
-		if (activeBedringh?.username) {
-			const hasActiveInList = rawAccounts.some(
-				(a) =>
-					getAccountTypeName(a) === 'Bedringh ID' &&
-					a.profile?.name?.toLowerCase() === activeBedringhName,
-			)
-			if (!hasActiveInList) {
-				try {
-					const { bedringh_login } = await import('@/helpers/auth')
-					const created = (await bedringh_login(
-						activeBedringh.username,
-						activeBedringh.token || 'bedringh',
-					)) as MinecraftCredential | null
-					if (created && created.profile?.id) {
-						rawAccounts.push(created)
-					}
-				} catch (e) {
-					console.warn('[AccountsCard] Ошибка авто-регистрации активного Bedringh ID:', e)
-				}
-			}
-		}
-
-		// Фильтрация: среди Bedringh ID показываем ТОЛЬКО тот, который активен в левой панели!
-		// Все старые или неактивные Bedringh ID скрываются из правого игрового списка.
-		accounts.value = rawAccounts.filter((a) => {
-			const type = getAccountTypeName(a)
-			if (type === 'Bedringh ID') {
-				return activeBedringhName && a.profile?.name?.toLowerCase() === activeBedringhName
-			}
-			return true
-		})
+		const rawAccounts: MinecraftCredential[] = Array.isArray(userList) ? [...userList] : []
+		accounts.value = rawAccounts.filter((a) => getAccountTypeName(a) !== 'Bedringh ID')
 
 		accounts.value.sort((a, b) => {
 			const weightDiff = getAccountTypeWeight(a) - getAccountTypeWeight(b)
@@ -542,23 +494,7 @@ async function fetchAccountHead(account: MinecraftCredential) {
 	}
 
 	async function logout(id: string) {
-		const accountToRemove = accounts.value.find((a) => a.profile.id === id)
 		await remove_user(id).catch(handleError)
-
-		const activeBedringh = getActiveBedringhUser()?.username
-		if (activeBedringh && accountToRemove?.profile?.name) {
-			const type = getAccountTypeName(accountToRemove)
-			if (type === 'KLauncher' || type === 'Ely.by' || type === 'Офлайн') {
-				try {
-					const { removeGameAccountFromCloud } = await import(
-						'@/services/bedringh-game-accounts-sync'
-					)
-					await removeGameAccountFromCloud(activeBedringh, accountToRemove.profile.name)
-				} catch (e) {
-					console.warn('[AccountsCard] Ошибка удаления аккаунта из облака:', e)
-				}
-			}
-		}
 
 		await refreshValues()
 		if (!selectedAccount.value && accounts.value.length > 0) {
@@ -660,20 +596,6 @@ async function addOfflineProfile() {
 		if (result) {
 			await setAccount(result)
 			await refreshValues()
-			const activeBedringh = getActiveBedringhUser()?.username
-			if (activeBedringh) {
-				try {
-					const { pushLocalGameAccountsToCloud } = await import(
-						'@/services/bedringh-game-accounts-sync'
-					)
-					await pushLocalGameAccountsToCloud(activeBedringh, undefined, {
-						type: 'offline',
-						username: trimmedName,
-					})
-				} catch (e) {
-					console.warn('[AccountsCard] Ошибка синхронизации оффлайн профиля:', e)
-				}
-			}
 		}
 	} catch (error) {
 		handleError(error)
@@ -704,21 +626,6 @@ async function addKLauncherProfile() {
 		if (result) {
 			await setAccount(result)
 			await refreshValues()
-			const activeBedringh = getActiveBedringhUser()?.username
-			if (activeBedringh) {
-				try {
-					const { pushLocalGameAccountsToCloud } = await import(
-						'@/services/bedringh-game-accounts-sync'
-					)
-					await pushLocalGameAccountsToCloud(activeBedringh, undefined, {
-						type: 'klauncher',
-						username: trimmedName,
-						password: pwd,
-					})
-				} catch (e) {
-					console.warn('[AccountsCard] Ошибка синхронизации KLauncher профиля:', e)
-				}
-			}
 		}
 	} catch (error) {
 		handleError(error)
@@ -783,22 +690,6 @@ async function addElyByProfile() {
 		if (result) {
 			await setAccount(result)
 			await refreshValues()
-			const activeBedringh = getActiveBedringhUser()?.username
-			if (activeBedringh) {
-				try {
-					const { pushLocalGameAccountsToCloud } = await import(
-						'@/services/bedringh-game-accounts-sync'
-					)
-					await pushLocalGameAccountsToCloud(activeBedringh, undefined, {
-						type: 'elyby',
-						username: trimmedName,
-						password: pwd,
-						twoFactor,
-					})
-				} catch (e) {
-					console.warn('[AccountsCard] Ошибка синхронизации Ely.by профиля:', e)
-				}
-			}
 		}
 	} catch (error) {
 		handleError(error)

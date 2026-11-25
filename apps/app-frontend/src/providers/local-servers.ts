@@ -2,9 +2,6 @@ import { ref, computed } from 'vue'
 import { join } from '@tauri-apps/api/path'
 import { remove, writeTextFile } from '@tauri-apps/plugin-fs'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
-import { publishHostLeave, startHostHeartbeat } from '@/services/bedringh-lobby'
-import { formatSafeConnectAddress } from '@/services/bedringh-network-config'
-import { getActiveBedringhUser } from '@/services/bedringh-settings-sync'
 import { getServerDirectory } from '@/services/server-download'
 import { stopLocalServerProcess, scanLocalServerAddons } from '@/services/local-server-process'
 
@@ -136,7 +133,6 @@ export function useLocalServers() {
 	}
 
 	async function removeServer(id: string, deleteFiles: boolean = true) {
-		void publishHostLeave(id)
 		const s = getServerById(id)
 		if (s) {
 			try {
@@ -175,47 +171,9 @@ export function useLocalServers() {
 	function updateServerStatus(id: string, status: LocalServer['status'], players = 0) {
 		const s = getServerById(id)
 		if (s) {
-			const prevStatus = s.status
 			s.status = status
 			s.players = players
 			saveToStorage()
-
-			if (status === 'running') {
-				const hostName = getActiveBedringhUser()?.username || 'Bedringh Server'
-				const cats = s.core === 'vanilla' ? ['survival', 'vanilla'] : ['survival', 'mods']
-				void startHostHeartbeat(
-					{
-						id: s.id,
-						name: s.name,
-						iconUrl: s.iconUrl,
-						motdHtml:
-							s.motd ||
-							`<span style="color:#55FF55">Сервер ${s.core.toUpperCase()} ${s.gameVersion}</span>`,
-						edition: 'java',
-						version: s.gameVersion || '1.21.4',
-						address: formatSafeConnectAddress(s.publicPort || s.port || 25565),
-						host: hostName,
-						isMyHost: true,
-						localPort: s.port || 25565,
-						publicPort: s.publicPort,
-						players: Math.max(1, s.players || 1),
-						maxPlayers: s.maxPlayers || 20,
-						ping: 28,
-						region: 'Bedringh Relay RU',
-						categories: cats,
-						createdAt: s.createdAt,
-					},
-					(updated) => {
-						if (updated.publicPort && updated.publicPort !== s.publicPort) {
-							s.publicPort = updated.publicPort
-							s.publicAddress = updated.address
-							saveToStorage()
-						}
-					},
-				)
-			} else if (status === 'stopped' && prevStatus === 'running') {
-				void publishHostLeave(s.id)
-			}
 		}
 	}
 

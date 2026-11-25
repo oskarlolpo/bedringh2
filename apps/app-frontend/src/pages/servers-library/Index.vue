@@ -255,12 +255,6 @@ function handleContextMenuClick(args: { item: any; option: string }) {
 			/>
 
 			<div class="flex items-center gap-2">
-				<ButtonStyled color="quiet">
-					<router-link to="/hosting/manage/">
-						<GlobeIcon />
-						Bedringh Хостинг
-					</router-link>
-				</ButtonStyled>
 				<ButtonStyled color="brand">
 					<button type="button" @click="openCreateServerModal">
 						<PlusIcon />

@@ -20,7 +20,6 @@ import {
 	get_team,
 	get_version_many,
 } from '@/helpers/cache.js'
-import { instance_listener } from '@/helpers/events.js'
 import {
 	install_create_instance,
 	install_create_modpack_instance,
@@ -38,6 +37,7 @@ import {
 } from '@/helpers/instance'
 import { get_game_versions } from '@/helpers/tags'
 import type { GameInstance, InstanceLoader } from '@/helpers/types'
+import type { AppEvents } from '@/providers/app-events'
 import { useTheming } from '@/store/state'
 interface ModalRef {
 	show: (initialVersionId?: string) => void
@@ -59,12 +59,6 @@ type InstallingProjectDisplay = {
 	type?: string
 	organization?: string | null
 	team?: string
-}
-type ContentInstallInstanceEvent = {
-	event: string
-	instance_id: string
-	project_ids?: string[]
-	message?: string
 }
 
 const LOADER_ORDER = ['vanilla', 'fabric', 'quilt', 'neoforge', 'forge']
@@ -191,6 +185,7 @@ export const [injectContentInstall, provideContentInstall] = createContext<Conte
 export function createContentInstall(opts: {
 	router: Router
 	handleError: (err: unknown) => void
+	appEvents: AppEvents
 }): ContentInstallContext {
 	const { formatMessage } = useVIntl()
 	const themeStore = useTheming()
@@ -207,6 +202,22 @@ export function createContentInstall(opts: {
 	const installingItems = ref<Map<string, ContentItem[]>>(new Map())
 	const installRevisionByInstance = ref<Map<string, number>>(new Map())
 	const installFailureRevisionByInstance = ref<Map<string, number>>(new Map())
+	const completionEpochByProject = new Map<string, number>()
+
+	function projectEpochKey(instanceId: string, projectId: string) {
+		return `${instanceId}\0${projectId}`
+	}
+
+	function getCompletionEpoch(instanceId: string, projectId: string) {
+		return completionEpochByProject.get(projectEpochKey(instanceId, projectId)) ?? 0
+	}
+
+	function bumpCompletionEpoch(instanceId: string, projectIds: string[]) {
+		for (const projectId of projectIds) {
+			const key = projectEpochKey(instanceId, projectId)
+			completionEpochByProject.set(key, (completionEpochByProject.get(key) ?? 0) + 1)
+		}
+	}
 	const incompatibilityWarningVersions = ref<Labrinth.Versions.v2.Version[]>([])
 	const incompatibilityWarningCurrentGameVersion = ref('')
 	const incompatibilityWarningCurrentLoader = ref('')
@@ -314,6 +325,7 @@ export function createContentInstall(opts: {
 	}
 
 	function removeInstallingItems(instanceId: string, projectIds: string[]) {
+		bumpCompletionEpoch(instanceId, projectIds)
 		const next = new Map(installingItems.value)
 		const items = next.get(instanceId)
 		if (items) {
@@ -340,7 +352,12 @@ export function createContentInstall(opts: {
 		plan: ResolveContentPlan,
 		primaryProject: Labrinth.Projects.v2.Project,
 		primaryVersion: Labrinth.Versions.v2.Version,
+		expectedEpoch: number,
 	) {
+		if (getCompletionEpoch(instanceId, primaryProject.id) !== expectedEpoch) {
+			return
+		}
+
 		const entries = [plan.primary, ...plan.dependencies]
 		const projectIds = [...new Set(entries.map((entry) => entry.project_id))]
 		const versionIds = [...new Set(entries.map((entry) => entry.version_id))]
@@ -355,6 +372,10 @@ export function createContentInstall(opts: {
 			get_project_many(projectIds, 'bypass').catch(() => []),
 			get_version_many(versionIds, 'bypass').catch(() => []),
 		])
+
+		if (getCompletionEpoch(instanceId, primaryProject.id) !== expectedEpoch) {
+			return
+		}
 
 		for (const project of projects as InstallingProjectDisplay[]) {
 			if (project?.id) projectMap.set(project.id, project)
@@ -394,7 +415,7 @@ export function createContentInstall(opts: {
 		installFailureRevisionByInstance.value = next
 	}
 
-	void instance_listener((event: ContentInstallInstanceEvent) => {
+	opts.appEvents.on('instance', (event) => {
 		if (event.event === 'content_install_finished') {
 			markInstanceContentChanged(event.instance_id)
 			removeInstallingItems(event.instance_id, event.project_ids ?? [])
@@ -404,7 +425,7 @@ export function createContentInstall(opts: {
 			markInstanceContentChanged(event.instance_id)
 			opts.handleError(event.message ?? 'Failed to install content')
 		}
-	}).catch(opts.handleError)
+	})
 
 	let modalRef: ModalRef | null = null
 	let modpackAlreadyInstalledModalRef: ModpackAlreadyInstalledModalRef | null = null
@@ -619,6 +640,7 @@ export function createContentInstall(opts: {
 
 		const installedProjectIds: string[] = [currentProject.id]
 		let plannedProjectIds: string[] = [currentProject.id]
+		const installEpoch = getCompletionEpoch(instance.id, currentProject.id)
 		addInstallingItem(instance.id, currentProject, version)
 
 		try {
@@ -629,7 +651,7 @@ export function createContentInstall(opts: {
 			}
 			const plan = await install_project_with_dependencies(instance.id, request)
 			plannedProjectIds = resolvedProjectIds(plan)
-			await addInstallingItemsForPlan(instance.id, plan, currentProject, version)
+			await addInstallingItemsForPlan(instance.id, plan, currentProject, version, installEpoch)
 			installedProjectIds.splice(
 				0,
 				installedProjectIds.length,
@@ -758,6 +780,7 @@ export function createContentInstall(opts: {
 			const id = installJobInstanceId(job)
 			if (!id) return
 			createdInstanceId = id
+			const installEpoch = getCompletionEpoch(id, currentProject!.id)
 			addInstallingItem(id, currentProject!, version)
 
 			const plan = await install_project_with_dependencies(id, {
@@ -765,7 +788,7 @@ export function createContentInstall(opts: {
 				version_id: version.id,
 				content_type: resolveContentType(currentProject!.project_type),
 			})
-			await addInstallingItemsForPlan(id, plan, currentProject!, version)
+			await addInstallingItemsForPlan(id, plan, currentProject!, version, installEpoch)
 			await opts.router.push(`/instance/${encodeURIComponent(id)}`)
 
 			trackEvent('InstanceCreate', {
@@ -979,6 +1002,7 @@ export function createContentInstall(opts: {
 
 				const installedProjectIds: string[] = [project.id]
 				let plannedProjectIds: string[] = [project.id]
+				const installEpoch = getCompletionEpoch(instanceId, project.id)
 				addInstallingItem(instanceId, project, version)
 				try {
 					const request = {
@@ -988,7 +1012,7 @@ export function createContentInstall(opts: {
 					}
 					const plan = await install_project_with_dependencies(instance.id, request)
 					plannedProjectIds = resolvedProjectIds(plan)
-					await addInstallingItemsForPlan(instanceId, plan, project, version)
+					await addInstallingItemsForPlan(instanceId, plan, project, version, installEpoch)
 					installedProjectIds.splice(
 						0,
 						installedProjectIds.length,

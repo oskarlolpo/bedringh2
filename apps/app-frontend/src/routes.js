@@ -28,11 +28,6 @@ export default new createRouter({
 			redirect: '/servers/library',
 		},
 		{
-			path: '/hosting/manage/',
-			name: 'Servers',
-			component: Pages.Servers,
-		},
-		{
 			path: '/server/:id',
 			name: 'ServerView',
 			component: () => import('@/pages/ServerView.vue'),
@@ -83,11 +78,6 @@ export default new createRouter({
 			path: '/skins',
 			name: 'Skin selector',
 			component: Pages.Skins,
-		},
-		{
-			path: '/chats',
-			name: 'SocialChats',
-			component: Pages.SocialChats,
 		},
 		{
 			path: '/screenshots',

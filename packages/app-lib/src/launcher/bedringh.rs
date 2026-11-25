@@ -1,4 +1,7 @@
 use std::path::{Path, PathBuf};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::OnceCell;
 
 pub fn is_bedringh_user(access_token: &str, refresh_token: &str) -> bool {
     access_token == "bedringh"
@@ -33,7 +36,6 @@ pub fn prepare_bedringh_authlib(libraries_dir: &Path) -> Option<PathBuf> {
     let urls = [
         "https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.5/authlib-injector-1.2.5.jar",
         "https://authlib-injector.yushijinhun.com/artifact/latest/authlib-injector.jar",
-        "http://127.0.0.1:3100/downloads/authlib-injector.jar",
     ];
 
     for url in urls {
@@ -252,5 +254,165 @@ pub fn clear_skin_from_instance(instance_dir: &Path, username: &str) {
     let target_cape = local_skin_dir.join("capes").join(format!("{}.png", username));
     let _ = std::fs::remove_file(target_skin);
     let _ = std::fs::remove_file(target_cape);
+}
+
+static LOCAL_YGGDRASIL_PORT: OnceCell<u16> = OnceCell::const_new();
+
+/// Starts a lightweight local Yggdrasil HTTP server on 127.0.0.1:<ephemeral_port>
+/// so authlib-injector can handle offline LAN multiplayer (join/hasJoined/certificates)
+/// without any external hosting server.
+pub async fn ensure_local_yggdrasil_server() -> Option<u16> {
+    let port = LOCAL_YGGDRASIL_PORT
+        .get_or_init(|| async {
+            let listener = match TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::warn!("Failed to bind local Yggdrasil server: {}", e);
+                    return 0;
+                }
+            };
+            let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
+            if port == 0 {
+                return 0;
+            }
+            tracing::info!("Started local Bedringh Yggdrasil bridge on http://127.0.0.1:{}", port);
+            tokio::spawn(async move {
+                loop {
+                    match listener.accept().await {
+                        Ok((stream, _)) => {
+                            tokio::spawn(async move {
+                                let _ = handle_yggdrasil_conn(stream).await;
+                            });
+                        }
+                        Err(e) => {
+                            tracing::debug!("Local Yggdrasil accept error: {}", e);
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                    }
+                }
+            });
+            port
+        })
+        .await;
+
+    if *port == 0 {
+        None
+    } else {
+        Some(*port)
+    }
+}
+
+fn deterministic_offline_uuid_hex(username: &str) -> String {
+    let input = format!("OfflinePlayer:{}", username);
+    let digest = sha1_smol::Sha1::from(input.as_bytes()).digest().bytes();
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&digest[..16]);
+    b[6] = (b[6] & 0x0f) | 0x30;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    uuid::Uuid::from_bytes(b).simple().to_string()
+}
+
+fn extract_query_param(query: &str, key: &str) -> Option<String> {
+    for pair in query.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        let k = parts.next()?;
+        let v = parts.next().unwrap_or("");
+        if k == key {
+            return Some(urlencoding::decode(v).map(|s| s.into_owned()).unwrap_or_else(|_| v.to_string()));
+        }
+    }
+    None
+}
+
+async fn write_http_response(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: Option<&str>,
+    body: &[u8],
+) -> std::io::Result<()> {
+    let mut header = format!(
+        "HTTP/1.1 {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        status,
+        body.len()
+    );
+    if let Some(ct) = content_type {
+        header.push_str(&format!("Content-Type: {}\r\n", ct));
+    }
+    header.push_str("\r\n");
+    stream.write_all(header.as_bytes()).await?;
+    if !body.is_empty() {
+        stream.write_all(body).await?;
+    }
+    stream.flush().await
+}
+
+async fn handle_yggdrasil_conn(mut stream: TcpStream) -> std::io::Result<()> {
+    let mut reader = BufReader::new(&mut stream);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line).await? == 0 {
+        return Ok(());
+    }
+
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let target = parts.next().unwrap_or("/");
+
+    let mut content_length: usize = 0;
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 || line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some((name, val)) = line.split_once(':') {
+            if name.trim().eq_ignore_ascii_case("content-length") {
+                content_length = val.trim().parse().unwrap_or(0);
+            }
+        }
+    }
+
+    if content_length > 0 && content_length <= 64 * 1024 {
+        let mut body_buf = vec![0u8; content_length];
+        let _ = reader.read_exact(&mut body_buf).await;
+    }
+
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
+    match (method, path) {
+        ("GET", "/") => {
+            let root = serde_json::json!({
+                "meta": {
+                    "serverName": "Bedringh Offline",
+                    "implementationName": "bedringh-local-yggdrasil",
+                    "implementationVersion": "1.0.0"
+                },
+                "skinDomains": ["127.0.0.1", "localhost", "textures.minecraft.net", "mc-heads.net"]
+            });
+            let body = serde_json::to_vec(&root).unwrap_or_default();
+            write_http_response(&mut stream, "200 OK", Some("application/json; charset=utf-8"), &body).await
+        }
+        ("POST", "/session/minecraft/join")
+        | ("POST", "/sessionserver/session/minecraft/join")
+        | ("POST", "/minecraftservices/player/certificates")
+        | ("POST", "/player/certificates") => {
+            write_http_response(&mut stream, "204 No Content", None, &[]).await
+        }
+        ("GET", "/session/minecraft/hasJoined")
+        | ("GET", "/sessionserver/session/minecraft/hasJoined") => {
+            if let Some(username) = extract_query_param(query, "username") {
+                let id = deterministic_offline_uuid_hex(&username);
+                let payload = serde_json::json!({
+                    "id": id,
+                    "name": username,
+                    "properties": []
+                });
+                let body = serde_json::to_vec(&payload).unwrap_or_default();
+                write_http_response(&mut stream, "200 OK", Some("application/json; charset=utf-8"), &body).await
+            } else {
+                write_http_response(&mut stream, "204 No Content", None, &[]).await
+            }
+        }
+        _ => write_http_response(&mut stream, "204 No Content", None, &[]).await,
+    }
 }
 

@@ -965,67 +965,18 @@ async fn sync_launch_skin(
     let client = &*crate::api::minecraft_skins::KL_CLIENT;
 
     if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
-        let user_uuid = credentials.offline_profile.id.to_string();
-        let _ = client
-            .post("http://bedringh.duckdns.org:3100/api/session/register")
-            .json(&serde_json::json!({
-                "username": username,
-                "uuid": user_uuid,
-            }))
-            .send()
-            .await;
-
-        let mut synced = false;
-        if let Ok(res) = client
-            .get(format!("http://bedringh.duckdns.org:3100/textures/skins/{}.png", username.to_lowercase()))
-            .send()
-            .await
-        {
-            if res.status().is_success() {
-                if let Ok(skin_bytes) = res.bytes().await {
-                    let mut cape_bytes = None;
-                    if let Ok(skin_info) = client
-                        .get(format!("http://bedringh.duckdns.org:3100/api/user/{}/skin", username))
-                        .send()
-                        .await
-                    {
-                        if let Ok(json) = skin_info.json::<serde_json::Value>().await {
-                            if let Some(cape_url) = json.get("capeUrl").and_then(|u| u.as_str()) {
-                                if let Ok(cres) = client.get(cape_url).send().await {
-                                    if let Ok(cb) = cres.bytes().await {
-                                        cape_bytes = Some(cb);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    klauncher::restore_bedringh_csl(instance_dir);
-                    bedringh::sync_skin_to_instance(
-                        instance_dir,
-                        Some(libraries_dir),
-                        &username,
-                        &skin_bytes,
-                        cape_bytes.as_deref().map(|b| b.as_ref()),
-                    );
-                    synced = true;
-                }
-            }
-        }
-
-        if !synced {
-            if let Ok(sres) = client.get(format!("https://mc-heads.net/skin/{}", username)).send().await {
-                if sres.status().is_success() {
-                    if let Ok(sb) = sres.bytes().await {
-                        if !sb.is_empty() {
-                            klauncher::restore_bedringh_csl(instance_dir);
-                            bedringh::sync_skin_to_instance(
-                                instance_dir,
-                                Some(libraries_dir),
-                                &username,
-                                &sb,
-                                None,
-                            );
-                        }
+        if let Ok(sres) = client.get(format!("https://mc-heads.net/skin/{}", username)).send().await {
+            if sres.status().is_success() {
+                if let Ok(sb) = sres.bytes().await {
+                    if !sb.is_empty() {
+                        klauncher::restore_bedringh_csl(instance_dir);
+                        bedringh::sync_skin_to_instance(
+                            instance_dir,
+                            Some(libraries_dir),
+                            &username,
+                            &sb,
+                            None,
+                        );
                     }
                 }
             }
@@ -1370,9 +1321,22 @@ pub async fn launch_minecraft(
                 let mut extra_jvm_args = Vec::from(java_args);
                 let is_kl = klauncher::is_klauncher_user(&credentials.access_token, &credentials.refresh_token);
                 if bedringh::is_bedringh_user(&credentials.access_token, &credentials.refresh_token) {
-                    // Bedringh скины полностью обслуживаются локально через CustomSkinLoader (CSL).
-                    // Не инжектируем несуществующий локальный authlib агент (127.0.0.1:3100), чтобы JVM не падала/зависала при старте.
-                    tracing::info!("Launching Bedringh account with native CustomSkinLoader skin support");
+                    if let (Some(injector_path), Some(local_port)) = (
+                        bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()),
+                        bedringh::ensure_local_yggdrasil_server().await,
+                    ) {
+                        tracing::info!(
+                            "Injecting local Yggdrasil authlib-injector on http://127.0.0.1:{}",
+                            local_port
+                        );
+                        extra_jvm_args.push(format!(
+                            "-javaagent:{}=http://127.0.0.1:{}",
+                            injector_path.to_string_lossy(),
+                            local_port
+                        ));
+                    } else {
+                        tracing::info!("Launching offline/Bedringh account with local CustomSkinLoader skin support");
+                    }
                 } else if elyby::is_elyby_user(&credentials.access_token, &credentials.refresh_token) {
                     if let Some(injector_path) = bedringh::prepare_bedringh_authlib(&state.directories.libraries_dir()) {
                         tracing::info!("Injecting Ely.by authlib-injector Java agent: {:?}", injector_path);

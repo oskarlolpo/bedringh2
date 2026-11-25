@@ -243,8 +243,6 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ExportModal from '@/components/ui/ExportModal.vue'
-import CloudPackPublishModal from '@/components/ui/astralrinth/packs/CloudPackPublishModal.vue'
-import CloudPackVersionsModal from '@/components/ui/astralrinth/packs/CloudPackVersionsModal.vue'
 import ModrinthAccountRequiredModal from '@/components/ui/modal/ModrinthAccountRequiredModal.vue'
 import SharedInstancePublishModal from '@/components/ui/shared-instances/SharedInstancePublishModal.vue'
 import {
@@ -259,15 +257,6 @@ import {
 	useSharedInstanceErrors,
 } from '@/helpers/shared-instance-errors'
 import { loadInstanceContentData } from '@/helpers/instance-content'
-import {
-	checkAuthorHasChanges,
-	checkInstanceCloudPackUpdate,
-	getLocalInstancePackMeta,
-	publishInstanceAsCloudPack,
-	syncSubscriberPackUpdate,
-	type CloudPackMeta,
-} from '@/services/bedringh-cloud-packs'
-import { getActiveBedringhUser, resolveActiveBedringhUser } from '@/services/bedringh-settings-sync'
 
 import { injectInstancePage } from '../instance-context'
 import { injectSharedInstance } from '../shared-instance-context'
@@ -303,190 +292,8 @@ const sharedInstanceActionsLocked = actionsLocked
 const currentUserId = computed(() => auth.user.value?.id ?? null)
 const isSignedIn = computed(() => !!auth.session_token.value)
 const exportModal = ref<InstanceType<typeof ExportModal>>()
-const cloudPublishModal = ref<InstanceType<typeof CloudPackPublishModal>>()
-const versionsModal = ref<InstanceType<typeof CloudPackVersionsModal>>()
 const { addNotification, handleError } = injectNotificationManager()
 const sharedInstancesApiUnavailable = ref(false)
-
-const activeBedringhUser = ref<{ username: string; token?: string } | null>(getActiveBedringhUser())
-const hasChangesToPublish = ref(true)
-
-async function refreshAuthorChangesStatus() {
-	if (instance.value && cloudMeta.value?.role === 'author') {
-		hasChangesToPublish.value = await checkAuthorHasChanges(instance.value).catch(() => true)
-	} else {
-		hasChangesToPublish.value = true
-	}
-}
-
-function handleShareAccountChanged() {
-	activeBedringhUser.value = getActiveBedringhUser()
-	void refreshAuthorChangesStatus()
-}
-
-onMounted(async () => {
-	if (!activeBedringhUser.value?.username) {
-		activeBedringhUser.value = await resolveActiveBedringhUser()
-	}
-	window.addEventListener('bedringh:account-changed', handleShareAccountChanged)
-	void refreshAuthorChangesStatus()
-})
-
-onUnmounted(() => {
-	window.removeEventListener('bedringh:account-changed', handleShareAccountChanged)
-})
-
-const cloudMeta = ref<CloudPackMeta | null>(
-	instance.value?.path ? getLocalInstancePackMeta(instance.value.path) : null,
-)
-const isPublishing = ref(false)
-const isUpdating = ref(false)
-const isCheckingUpdates = ref(false)
-const hasCloudUpdate = ref(false)
-const cloudUpdateDetails = ref<{ latestVersion?: number; currentVersion?: number; author?: string } | null>(null)
-
-const isAuthor = computed(() => cloudMeta.value?.role === 'author')
-const isSubscriber = computed(() => cloudMeta.value?.role === 'subscriber')
-
-watch(
-	() => instance.value?.path,
-	(newPath) => {
-		if (!newPath) return
-		cloudMeta.value = getLocalInstancePackMeta(newPath)
-		hasCloudUpdate.value = false
-		cloudUpdateDetails.value = null
-		void refreshAuthorChangesStatus()
-		if (cloudMeta.value?.role === 'subscriber') {
-			void handleCheckUpdate(false)
-		}
-	},
-	{ immediate: true },
-)
-
-async function copyText(text: string, title: string) {
-	try {
-		await navigator.clipboard.writeText(text)
-		addNotification({
-			type: 'success',
-			title,
-			text: text,
-		})
-	} catch (e) {
-		handleError(e as Error)
-	}
-}
-
-async function openPublishModal() {
-	let user = activeBedringhUser.value ?? getActiveBedringhUser()
-	if (!user?.username) {
-		user = await resolveActiveBedringhUser()
-		if (user) {
-			activeBedringhUser.value = user
-		}
-	}
-
-	if (!user?.username) {
-		addNotification({
-			type: 'warning',
-			title: 'Требуется Bedringh ID',
-			text: 'Чтобы делиться живыми сборками через облако, войдите в аккаунт Bedringh ID в настройках лаунчера.',
-		})
-		return
-	}
-
-	if (instance.value) {
-		cloudPublishModal.value?.show(instance.value)
-	}
-}
-
-function openVersionsModal() {
-	if (instance.value && cloudMeta.value?.packId) {
-		versionsModal.value?.show(instance.value, cloudMeta.value.packId)
-	}
-}
-
-async function onPackPublished(payload: { packId: string; version: number; shareCode: string; noChanges?: boolean }) {
-	if (!instance.value) return
-	cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
-	await refreshAuthorChangesStatus()
-	await copyText(payload.shareCode, 'Код сборки скопирован')
-
-	if (payload.noChanges) {
-		addNotification({
-			type: 'info',
-			title: 'Сборка актуальна',
-			text: `Состав модов не менялся. Текущая версия: v${payload.version}. Код: ${payload.shareCode}`,
-		})
-	} else {
-		addNotification({
-			type: 'success',
-			title: 'Сборка обновлена в облаке!',
-			text: `Версия v${payload.version} успешно опубликована! Код сборки: ${payload.shareCode}.`,
-		})
-	}
-}
-
-async function onPackRolledBack(targetVersion: number) {
-	if (!instance.value) return
-	cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
-	await refreshAuthorChangesStatus()
-	queryClient.invalidateQueries()
-}
-
-async function handleCheckUpdate(notifyIfUpToDate = false) {
-	if (!cloudMeta.value?.packId) return
-	try {
-		isCheckingUpdates.value = true
-		const update = await checkInstanceCloudPackUpdate(instance.value.path)
-		if (update?.hasUpdate) {
-			hasCloudUpdate.value = true
-			cloudUpdateDetails.value = update
-			addNotification({
-				type: 'info',
-				title: 'Доступно обновление сборки!',
-				text: `Автор выпустил версию v${update.latestVersion}. Вы можете обновить её прямо сейчас.`,
-			})
-		} else {
-			hasCloudUpdate.value = false
-			if (notifyIfUpToDate) {
-				addNotification({
-					type: 'success',
-					title: 'Сборка актуальна',
-					text: `У вас установлена последняя версия (v${cloudMeta.value.version}).`,
-				})
-			}
-		}
-	} catch (err) {
-		console.warn('Failed to check cloud pack update:', err)
-	} finally {
-		isCheckingUpdates.value = false
-	}
-}
-
-async function handleSyncPack() {
-	try {
-		isUpdating.value = true
-		await syncSubscriberPackUpdate(instance.value, (text) => {
-			console.log('[SyncPack]', text)
-		})
-		cloudMeta.value = getLocalInstancePackMeta(instance.value.path)
-		hasCloudUpdate.value = false
-		cloudUpdateDetails.value = null
-		addNotification({
-			type: 'success',
-			title: 'Сборка обновлена!',
-			text: `Моды синхронизированы с версией автора (v${cloudMeta.value?.version}).`,
-		})
-	} catch (err: any) {
-		addNotification({
-			type: 'error',
-			title: 'Ошибка обновления сборки',
-			text: err?.message || 'Не удалось синхронизировать сборку',
-		})
-	} finally {
-		isUpdating.value = false
-	}
-}
 
 async function copyModList() {
 	try {

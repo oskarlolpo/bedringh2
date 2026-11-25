@@ -265,6 +265,14 @@ const installingBuffer = ref<ContentItem[]>([])
 const handledInstallRevision = ref(0)
 
 watch(
+	() => instance.value.id,
+	() => {
+		installingBuffer.value = []
+		handledInstallRevision.value = 0
+	},
+)
+
+watch(
 	() => installingItems.value.get(instance.value.id),
 	(items) => {
 		if (items && items.length > 0) {
@@ -277,8 +285,9 @@ watch(
 watch(projects, (newProjects) => {
 	if (installingBuffer.value.length === 0) return
 	const realProjectIds = new Set(newProjects.map((p) => p.project?.id).filter(Boolean))
-	if (installingBuffer.value.every((item) => realProjectIds.has(item.project?.id))) {
-		installingBuffer.value = []
+	const remaining = installingBuffer.value.filter((item) => !realProjectIds.has(item.project?.id))
+	if (remaining.length !== installingBuffer.value.length) {
+		installingBuffer.value = remaining
 	}
 })
 
@@ -286,12 +295,15 @@ const mergedProjects = computed<ContentItem[]>(() => {
 	const active = installingItems.value.get(instance.value.id)
 	const pending = active ?? installingBuffer.value
 	if (pending.length === 0) return projects.value
-	const pendingProjectIds = new Set(pending.map((p) => p.project?.id).filter(Boolean))
-	const displayProjects = projects.value.map((project) =>
-		project.project?.id && pendingProjectIds.has(project.project.id)
-			? { ...project, installing: true }
-			: project,
-	)
+	const activeProjectIds = new Set((active ?? []).map((p) => p.project?.id).filter(Boolean))
+	const displayProjects =
+		activeProjectIds.size > 0
+			? projects.value.map((project) =>
+					project.project?.id && activeProjectIds.has(project.project.id)
+						? { ...project, installing: true }
+						: project,
+				)
+			: projects.value
 	const realProjectIds = new Set(displayProjects.map((p) => p.project?.id).filter(Boolean))
 	const placeholders = pending.filter((item) => !realProjectIds.has(item.project?.id))
 	return placeholders.length > 0 ? [...displayProjects, ...placeholders] : displayProjects
@@ -1241,7 +1253,7 @@ watch(
 	async (revision) => {
 		if (revision <= handledInstallRevision.value) return
 		handledInstallRevision.value = revision
-		await refreshContentState('must_revalidate')
+		await refreshContentState()
 	},
 )
 
@@ -1687,7 +1699,7 @@ function loadInitialContent() {
 	const installRevision = getInstallRevision()
 	if (installRevision > handledInstallRevision.value) {
 		handledInstallRevision.value = installRevision
-		return initProjects('must_revalidate')
+		return initProjects()
 	}
 
 	return initProjects(undefined, 30_000)

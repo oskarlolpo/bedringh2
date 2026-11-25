@@ -309,28 +309,7 @@ pub async fn get_available_capes() -> crate::Result<Vec<Cape>> {
     }
 
     let capes = if is_bedringh_user(&selected_credentials) {
-        let username = selected_credentials.offline_profile.name.clone();
-        let pending_skin_change = pending_effective_skin_change(selected_credentials.offline_profile.id).await;
-        let pending_cape_id = pending_skin_change
-            .as_ref()
-            .map(PendingEffectiveSkinChange::cape_id);
-
-        let current_cape_url = async {
-            let client = &*KL_CLIENT;
-            let res = client
-                .get(format!("http://bedringh.duckdns.org:3100/api/user/{}/skin", username))
-                .send()
-                .await
-                .ok()?;
-            let json = res.json::<serde_json::Value>().await.ok()?;
-            json.get("capeUrl").and_then(|u| u.as_str()).map(|s| s.to_string())
-        }
-        .await;
-
-        get_official_minecraft_capes(
-            current_cape_url.as_deref(),
-            pending_cape_id,
-        )
+        Vec::new()
     } else if let Some(kl_token) = klauncher_token(&selected_credentials) {
         get_klauncher_capes(&selected_credentials, kl_token).await?
     } else if let Some(profile) = selected_credentials.online_profile_fresh().await {
@@ -629,29 +608,13 @@ pub async fn get_available_skins() -> crate::Result<Vec<Skin>> {
             }
         }
 
-        // Pull remote skin for Bedringh / Offline accounts if not already saved locally
+        // Pull remote skin for Offline accounts from mc-heads.net if not already saved locally
         if is_bedringh_user(&selected_credentials) {
             let name = &selected_credentials.offline_profile.name;
             let client = &*KL_CLIENT;
             let mut downloaded_bytes: Option<bytes::Bytes> = None;
 
-            // 1. Try Bedringh skin server first
-            let bedringh_skin_url = format!(
-                "http://bedringh.duckdns.org:3100/textures/skins/{}.png",
-                name.to_lowercase()
-            );
-            if let Ok(bytes_resp) = client.get(&bedringh_skin_url).send().await {
-                if bytes_resp.status().is_success() {
-                    if let Ok(bytes) = bytes_resp.bytes().await {
-                        if !bytes.is_empty() {
-                            downloaded_bytes = Some(bytes);
-                        }
-                    }
-                }
-            }
-
-            // 2. Fallback to mc-heads.net by nickname if no custom skin saved yet
-            if downloaded_bytes.is_none() && saved_custom_skins.is_empty() {
+            if saved_custom_skins.is_empty() {
                 if let Ok(bytes_resp) = client.get(format!("https://mc-heads.net/skin/{}", name)).send().await {
                     if bytes_resp.status().is_success() {
                         if let Ok(bytes) = bytes_resp.bytes().await {
@@ -873,31 +836,7 @@ pub fn get_official_minecraft_capes(
     current_cape_url: Option<&str>,
     pending_cape_id: Option<Option<Uuid>>,
 ) -> Vec<Cape> {
-    let official_capes: &[(&str, &str, &str)] = &[
-        ("15th Anniversary Cape", "http://bedringh.duckdns.org:3100/textures/capes/15th_Anniversary.png", "5170d9a1-7c05-4f33-bfa4-39908cf4f447"),
-        ("Cherry Blossom Cape", "http://bedringh.duckdns.org:3100/textures/capes/Cherry_Blossom.png", "97b39869-aa57-41a4-b040-42cf431f4e19"),
-        ("Vanilla Cape", "http://bedringh.duckdns.org:3100/textures/capes/Vanilla.png", "4c94eaef-5883-4ee1-b0cf-5b72e01dfcf4"),
-        ("Migrator Cape", "http://bedringh.duckdns.org:3100/textures/capes/Migrator.png", "8f120319-c62e-4172-bb2d-74d3fb06461a"),
-        ("Twitch Cape", "http://bedringh.duckdns.org:3100/textures/capes/Purple_Heart.png", "3b3f272c-8069-45e7-a902-ec328b9759be"),
-        ("TikTok Cape", "http://bedringh.duckdns.org:3100/textures/capes/Followers.png", "1c6f4996-ef33-4f99-9065-27a3c30a84e5"),
-        ("Experience Cape (2024)", "http://bedringh.duckdns.org:3100/textures/capes/Experience.png", "ea633b49-f4fc-4aa0-bb65-728b7e28328c"),
-        ("Minecon 2011", "http://bedringh.duckdns.org:3100/textures/capes/Minecon_2011.png", "fd04a6e4-4fa9-43c2-bf7c-88d44747ebdf"),
-        ("Minecon 2012", "http://bedringh.duckdns.org:3100/textures/capes/Minecon_2012.png", "0a2c510b-85c8-47fb-a704-58bc753bbce3"),
-        ("Minecon 2013", "http://bedringh.duckdns.org:3100/textures/capes/Minecon_2013.png", "56b1f22c-a2fd-4a1b-944a-ee8490a61201"),
-        ("Minecon 2015", "http://bedringh.duckdns.org:3100/textures/capes/Minecon_2015.png", "2a488e0c-99d8-4a94-81ee-5f9df266395b"),
-        ("Minecon 2016", "http://bedringh.duckdns.org:3100/textures/capes/Minecon_2016.png", "4a58b68a-6ca6-4d13-a442-ae5b51b0f023"),
-        ("Founder's Cape", "http://bedringh.duckdns.org:3100/textures/capes/Founders.png", "7b049d56-78ff-4536-a36c-2f928e469e38"),
-        ("Turtle Cape", "http://bedringh.duckdns.org:3100/textures/capes/Turtle.png", "d3d2cf59-9f79-450f-9092-231362e52cbe"),
-        ("Mojang Studios (Classic)", "http://bedringh.duckdns.org:3100/textures/capes/Mojang_Classic.png", "49a1f1b2-1327-4c07-b30f-9f73fa8ffec6"),
-        ("Mojang Studios (New)", "http://bedringh.duckdns.org:3100/textures/capes/Mojang_Studios.png", "58f44d18-3561-46bb-8933-28eb2ad34a41"),
-        ("Cobalt Cape", "http://bedringh.duckdns.org:3100/textures/capes/Cobalt.png", "855be634-118c-449e-8c33-3118d09aa158"),
-        ("Prismarine Cape", "http://bedringh.duckdns.org:3100/textures/capes/Prismarine.png", "7ea87c08-518a-40a2-b258-005183ca6498"),
-        ("Millionth Customer Cape", "http://bedringh.duckdns.org:3100/textures/capes/Millionth_Customer.png", "29f8f260-8da1-4aa7-920f-07611ef420f1"),
-        ("Translator Cape", "http://bedringh.duckdns.org:3100/textures/capes/Translator.png", "3b306b38-e67c-4734-a1bf-4b95cb2e1e7e"),
-        ("Realms MapMaker Cape", "http://bedringh.duckdns.org:3100/textures/capes/Realms.png", "5d1189c4-1a3b-4860-a2e6-728b9d033990"),
-        ("MCC 15th Year Cape", "http://bedringh.duckdns.org:3100/textures/capes/MCC_15th_Year.png", "6f8c7b12-9e4a-4d2c-8b1a-3c5d7e9f1a2b"),
-        ("Pan Cape", "http://bedringh.duckdns.org:3100/textures/capes/Pan.png", "8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d"),
-    ];
+    let official_capes: &[(&str, &str, &str)] = &[];
 
     official_capes
         .iter()
@@ -1281,23 +1220,7 @@ async fn add_and_equip_custom_skin_now(
             (None, None)
         };
 
-        use base64::Engine;
-        let base64_texture = base64::engine::general_purpose::STANDARD.encode(&texture_blob);
-        let model_str = if variant == MinecraftSkinVariant::Slim { "slim" } else { "classic" };
-
-        let user_uuid = selected_credentials.offline_profile.id.to_string();
-        let _ = client
-            .post("http://bedringh.duckdns.org:3100/api/skin/equip")
-            .json(&serde_json::json!({
-                "username": username,
-                "uuid": user_uuid,
-                "skinBytesBase64": base64_texture,
-                "model": model_str,
-                "capeUrl": cape_url,
-                "capeName": cape_name,
-            }))
-            .send()
-            .await;
+        let _ = (&client, &username, &cape_url, &cape_name, &variant);
 
         let texture_url = png_util::blob_to_data_url(texture_blob.clone())
             .or_else(|| {
@@ -1515,23 +1438,7 @@ async fn equip_skin_now(
             })
             .await?;
 
-        use base64::Engine;
-        let base64_texture = base64::engine::general_purpose::STANDARD.encode(&texture_blob);
-        let model_str = if skin.variant == MinecraftSkinVariant::Slim { "slim" } else { "classic" };
-
-        let user_uuid = selected_credentials.offline_profile.id.to_string();
-        let _ = client
-            .post("http://bedringh.duckdns.org:3100/api/skin/equip")
-            .json(&serde_json::json!({
-                "username": username,
-                "uuid": user_uuid,
-                "skinBytesBase64": base64_texture,
-                "model": model_str,
-                "capeUrl": cape_url,
-                "capeName": cape_name,
-            }))
-            .send()
-            .await;
+        let _ = (&client, &username, &texture_blob, &cape_url, &cape_name);
 
         let profile = Arc::new(MinecraftProfile {
             id: selected_credentials.offline_profile.id,

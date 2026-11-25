@@ -101,17 +101,7 @@ export async function get() {
 
 // Set full settings object
 export async function set(settings: AppSettings) {
-	const res = await invoke('plugin:settings|settings_set', { settings })
-
-	try {
-		const { getActiveBedringhUser, pushRemoteSettingsDebounced } = await import('@/services/bedringh-settings-sync')
-		const user = getActiveBedringhUser()
-		if (user && user.username) {
-			pushRemoteSettingsDebounced(user.username, user.token, settings)
-		}
-	} catch {}
-
-	return res
+	return await invoke('plugin:settings|settings_set', { settings })
 }
 
 export async function cancel_directory_change(): Promise<void> {

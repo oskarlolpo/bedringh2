@@ -32,7 +32,6 @@ import PrivacySettings from '@/components/ui/settings/account/PrivacySettings.vu
 import BedrockSettings from '@/components/ui/settings/BedrockSettings.vue'
 import KLauncherSettings from '@/components/ui/settings/KLauncherSettings.vue'
 import ProfileSettings from '@/components/ui/settings/account/ProfileSettings.vue'
-import SocialSettings from '@/components/ui/settings/account/SocialSettings.vue'
 import AppearanceSettings from '@/components/ui/settings/display/AppearanceSettings.vue'
 import BehaviorSettings from '@/components/ui/settings/display/BehaviorSettings.vue'
 import FeatureFlagSettings from '@/components/ui/settings/display/FeatureFlagSettings.vue'
@@ -124,12 +123,6 @@ const tabs = [
 		category: tabCategories.account,
 		icon: UserIcon,
 		content: ProfileSettings,
-	},
-	{
-		name: commonSettingsMessages.social,
-		category: tabCategories.account,
-		icon: HeartHandshakeIcon,
-		content: SocialSettings,
 	},
 	{
 		name: defineMessage({
